@@ -1,0 +1,15 @@
+{
+  "appId": "com.komazipos",
+  "appName": "Komazi POS",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

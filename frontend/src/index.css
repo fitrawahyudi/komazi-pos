@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: #2A2A2A;
+  }
+  
+  /* Modern sleek scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #0A0A0A;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #2A2A2A;
+    border-radius: 9999px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3F3F3F;
+  }
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Number tabular styles */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom glow utilities */
+.glow-coral {
+  box-shadow: 0 0 20px rgba(255, 90, 77, 0.25);
+}
+
+.glow-teal {
+  box-shadow: 0 0 20px rgba(31, 111, 107, 0.25);
+}
+
+/* Receipt Print Styles (Thermal POS Optimized) */
+@media print {
+  @page {
+    margin: 0mm;
+    size: auto;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  /* Prevent fixed modals and scroll containers from clipping the print content */
+  .fixed, [class*="max-h-"], [class*="overflow-"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    background: transparent !important;
+  }
+  #printable-receipt, #printable-receipt *,
+  #thermal-receipt, #thermal-receipt * {
+    visibility: visible !important;
+  }
+  #printable-receipt, #thermal-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  #printable-receipt.receipt-58mm, #thermal-receipt.receipt-58mm {
+    width: 58mm !important;
+    max-width: 58mm !important;
+  }
+  #printable-receipt.receipt-80mm, #thermal-receipt.receipt-80mm {
+    width: 80mm !important;
+    max-width: 80mm !important;
+  }
+}
