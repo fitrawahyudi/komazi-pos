@@ -268,7 +268,6 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         serviceFee: Number(summary.serviceFee) || 0,
         tax: Number(summary.tax) || 0,
         total: Number(summary.grandTotal) || 0,
-        shiftId: activeShift?.id || null,
         paymentMethod: method,
         cashReceived: method === 'CASH' ? Number(cashTendered) : null,
         cashChange: method === 'CASH' ? Number(change) : 0,

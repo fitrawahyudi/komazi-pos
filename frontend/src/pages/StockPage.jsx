@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStockStore } from '../store/stockStore';
 import { useAuthStore } from '../store/authStore';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { formatDateTime, formatRupiah } from '../utils/format';
 import {
   Boxes,
@@ -147,13 +148,13 @@ export default function StockPage() {
 
   // Filter & Pagination States
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'LOW_STOCK' | 'SAFE'
-  const [unitFilter, setUnitFilter] = useState('ALL');     // 'ALL' | specific unit
-  const [sortBy, setSortBy] = useState('name_asc');        // 'name_asc' | 'name_desc' | 'stock_asc' | 'stock_desc' | 'cost_desc' | 'cost_asc'
+  const [statusFilter, setStatusFilter] = usePersistentState('stock_statusFilter', 'ALL'); // 'ALL' | 'LOW_STOCK' | 'SAFE'
+  const [unitFilter, setUnitFilter] = usePersistentState('stock_unitFilter', 'ALL');     // 'ALL' | specific unit
+  const [sortBy, setSortBy] = usePersistentState('stock_sortBy', 'name_asc');        // 'name_asc' | 'name_desc' | 'stock_asc' | 'stock_desc' | 'cost_desc' | 'cost_asc'
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('stock_itemsPerPage', 10);
   const [movementPage, setMovementPage] = useState(1);
-  const [movementsPerPage, setMovementsPerPage] = useState(10);
+  const [movementsPerPage, setMovementsPerPage] = usePersistentState('stock_movementsPerPage', 10);
 
   const paginatedMovements = useMemo(() => {
     const start = (movementPage - 1) * movementsPerPage;

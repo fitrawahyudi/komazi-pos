@@ -4,11 +4,38 @@ let topBarWatchdogTimer = null;
  
 export const useUiStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       isMobileSidebarOpen: false,
       isMobileCartOpen: false,
       isSidebarCollapsed: false,
       isBluetoothModalOpen: false,
+
+      // Generic Feature Preferences dictionary
+      featurePreferences: {},
+      setFeaturePreference: (featureKey, keyOrValues, value) => {
+        set((state) => {
+          const current = state.featurePreferences[featureKey] || {};
+          let updated;
+          if (typeof keyOrValues === 'string') {
+            updated = { ...current, [keyOrValues]: value };
+          } else if (typeof keyOrValues === 'object' && keyOrValues !== null) {
+            updated = { ...current, ...keyOrValues };
+          } else {
+            updated = current;
+          }
+          return {
+            featurePreferences: {
+              ...state.featurePreferences,
+              [featureKey]: updated,
+            },
+          };
+        });
+      },
+      getFeaturePreference: (featureKey, key, defaultValue) => {
+        const prefs = get().featurePreferences[featureKey];
+        if (!prefs || prefs[key] === undefined) return defaultValue;
+        return prefs[key];
+      },
 
       setMobileSidebarOpen: (isOpen) => set({ isMobileSidebarOpen: isOpen }),
       toggleMobileSidebar: () => set((state) => ({ isMobileSidebarOpen: !state.isMobileSidebarOpen })),
@@ -64,7 +91,10 @@ export const useUiStore = create(
     }),
     {
       name: 'komazi-ui-prefs',
-      partialize: () => ({}),
+      partialize: (state) => ({
+        isSidebarCollapsed: state.isSidebarCollapsed,
+        featurePreferences: state.featurePreferences,
+      }),
     }
   )
 );

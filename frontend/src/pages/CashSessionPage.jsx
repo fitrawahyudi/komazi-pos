@@ -231,16 +231,6 @@ export default function CashSessionPage() {
                 </span>
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsShiftModalOpen(true)}
-                className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 border border-komazi-border text-xs font-bold text-komazi-text transition-all active:scale-95 shadow-sm"
-              >
-                Kelola Arus Kas
-              </button>
-            </div>
           </div>
 
           {/* Key Metrics Grid */}

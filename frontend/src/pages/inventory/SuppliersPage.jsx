@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { useInventoryStore } from '../../store/inventoryStore';
 import { toast } from '../../store/toastStore';
 import {
@@ -26,11 +27,11 @@ export default function SuppliersPage() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier, bulkDeleteSuppliers } = useInventoryStore();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [categoryFilter, setCategoryFilter] = usePersistentState('suppliers_categoryFilter', 'ALL');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('suppliers_itemsPerPage', 10);
 
   // Multi-Select State
   const [selectedSupplierIds, setSelectedSupplierIds] = useState([]);

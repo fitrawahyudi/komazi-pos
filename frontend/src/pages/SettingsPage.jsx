@@ -43,6 +43,7 @@ import {
   MapPin,
   Camera,
   LocateFixed,
+  Database,
 } from 'lucide-react';
 import ReceiptPreviewCard from '../components/settings/ReceiptPreviewCard';
 import PrinterPage from './PrinterPage';
@@ -51,6 +52,7 @@ import QrisUploader from '../components/settings/QrisUploader';
 import BankTransferSettingsCard from '../components/settings/BankTransferSettingsCard';
 import TelegramBotSettingsCard from '../components/settings/TelegramBotSettingsCard';
 import AndroidNotificationCard from '../components/settings/AndroidNotificationCard';
+import BackupRecoveryCard from '../components/settings/BackupRecoveryCard';
 import OwnerResetPasswordModal from '../components/auth/OwnerResetPasswordModal';
 import {
   convertStaticToDynamicQris,
@@ -72,6 +74,7 @@ export default function SettingsPage() {
     { id: 'printer', label: 'Printer & Hardware', icon: Printer, desc: 'Koneksi thermal printer, Bluetooth, USB & laci uang' },
     { id: 'integrations', label: 'Notifikasi & Bot', icon: Send, desc: 'Notifikasi & Bot Telegram' },
     { id: 'security', label: 'Keamanan & PIN', icon: ShieldCheck, desc: 'PIN otorisasi void transaksi, refund dana & tautan modul HRIS' },
+    { id: 'backup', label: 'Backup & Recovery', icon: Database, desc: 'Pencadangan database MySQL, retensi, snapshot terverifikasi & pemulihan' },
   ];
 
   const resolvedTab = rawTab === 'users' ? 'security' : rawTab;
@@ -1264,6 +1267,13 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 7. Backup & Recovery Database MySQL */}
+        {activeTab === 'backup' && (
+          <div className="space-y-6 animate-fadeIn">
+            <BackupRecoveryCard />
           </div>
         )}
         </div>

@@ -1,6 +1,4 @@
 import XLSX from 'xlsx-js-style';
-import { usePosStore } from '../store/posStore';
-import { useStockStore } from '../store/stockStore';
 
 /**
  * Excel Palette & Styling Tokens
@@ -387,7 +385,7 @@ function buildReferenceSheet(headers, rows = []) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. TEMPLATE RESEP PRODUK (BOM) — Persis seperti screenshot pengguna
 // ─────────────────────────────────────────────────────────────────────────────
-export function downloadRecipeTemplate() {
+export function downloadRecipeTemplate(options = {}) {
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Data (Persis Image 1)
@@ -441,7 +439,7 @@ export function downloadRecipeTemplate() {
   XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
 
   // Sheet 3: Data Produk (Persis Image 3)
-  const liveProducts = typeof usePosStore !== 'undefined' ? usePosStore.getState?.()?.products || [] : [];
+  const liveProducts = options.products || [];
   const productRows = liveProducts.length > 0
     ? liveProducts.map((p) => ({
         'SKU Produk': p.sku || `PRD-${p.id}`,
@@ -476,7 +474,7 @@ export function downloadRecipeTemplate() {
   XLSX.utils.book_append_sheet(wb, wsProduk, 'Data Produk');
 
   // Sheet 4: Data Sumber Persediaan (Persis Image 4)
-  const liveIngredients = typeof useStockStore !== 'undefined' ? useStockStore.getState?.()?.ingredients || [] : [];
+  const liveIngredients = options.ingredients || [];
   const ingredientRows = liveIngredients.length > 0
     ? liveIngredients.map((i) => ({
         'Nama Sumber Persediaan': i.name,
@@ -528,7 +526,7 @@ export function downloadRecipeTemplate() {
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. TEMPLATE MENU & PRODUK
 // ─────────────────────────────────────────────────────────────────────────────
-export function downloadMenuTemplate() {
+export function downloadMenuTemplate(options = {}) {
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Data
@@ -619,7 +617,7 @@ export function downloadMenuTemplate() {
   XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
 
   // Sheet 3: Data Kategori Terdaftar
-  const liveCategories = usePosStore.getState?.()?.categories || [];
+  const liveCategories = options.categories || [];
   const catRows = liveCategories.length > 0
     ? liveCategories.map((c) => ({
         'Nama Kategori': c.name,
@@ -636,7 +634,7 @@ export function downloadMenuTemplate() {
   XLSX.utils.book_append_sheet(wb, wsCat, 'Data Kategori');
 
   // Sheet 4: Data Bahan Baku Terdaftar
-  const liveIngredients = useStockStore.getState?.()?.ingredients || [];
+  const liveIngredients = options.ingredients || [];
   const ingRows = liveIngredients.length > 0
     ? liveIngredients.map((ing) => ({
         'Nama Bahan': ing.name,
@@ -1139,7 +1137,7 @@ export function exportOrdersToExcel({
     const sub = Number(o.subtotal || 0);
     const disc = Number(o.discount || 0);
     const tax = Number(o.tax || 0);
-    const qty = (o.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+    const qty = (o.items || []).reduce((sum, it) => sum + (Number(it.qty ?? it.quantity ?? 1) || 1), 0);
 
     totalSubtotal += sub;
     totalDiscount += disc;
@@ -1236,13 +1234,15 @@ export function exportOrdersToExcel({
     const itemsSummary =
       (o.items || [])
         .map((it) => {
-          const name = it.product?.name || it.name || 'Item';
-          const variant = it.variantName ? ` (${it.variantName})` : '';
-          return `${it.quantity}x ${name}${variant}`;
+          const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+          const name = it.product?.name || it.productName || it.name || 'Item';
+          const variantName = it.variantName || it.variant?.name;
+          const variant = variantName ? ` (${variantName})` : '';
+          return `${qty}x ${name}${variant}`;
         })
         .join(', ') || '-';
 
-    const totalQty = (o.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+    const totalQty = (o.items || []).reduce((sum, it) => sum + (Number(it.qty ?? it.quantity ?? 1) || 1), 0);
 
     const paymentMethod = o.payments?.[0]?.method || o.paymentMethod || 'CASH';
     let formattedMethod = paymentMethod;
@@ -1462,13 +1462,363 @@ export function exportOrdersToExcel({
   const lastColLetter = getColumnLetter(headers.length - 1);
   ws['!autofilter'] = { ref: `A${headerRowIdx}:${lastColLetter}${dataEndRowIdx}` };
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Pesanan');
+  XLSX.utils.book_append_sheet(wb, ws, 'Daftar Transaksi');
+
+  // ─── SHEET 2: Rincian Item Menu Terjual ───────────────────────────────────
+  const itemHeaders = [
+    'No',
+    'No. Invoice',
+    'Waktu Transaksi (WIB)',
+    'Status Pesanan',
+    'Nama Menu / Produk',
+    'Varian',
+    'Kategori',
+    'Qty',
+    'Harga Satuan (Rp)',
+    'Total Baris (Rp)',
+    'Stasiun Dapur',
+    'Catatan Khusus',
+  ];
+
+  let itemRowIdx = 1;
+  const itemDataRows = [];
+  let totalItemsQuantity = 0;
+  let totalItemsAmount = 0;
+
+  orders.forEach((o) => {
+    const waktu = o.createdAt
+      ? new Intl.DateTimeFormat('id-ID', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        }).format(new Date(o.createdAt)).replace(/\./g, ':')
+      : '-';
+
+    let statusLabel = o.status;
+    if (o.status === 'PAID') statusLabel = 'LUNAS';
+    else if (o.status === 'VOIDED') statusLabel = 'DIBATALKAN';
+    else if (o.status === 'REFUNDED') statusLabel = 'REFUND';
+    else if (o.status === 'OPEN') statusLabel = 'BELUM DIBAYAR';
+
+    (o.items || []).forEach((it) => {
+      const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+      const unitPrice = Number(it.unitPrice ?? it.price ?? 0);
+      const lineTotal = Number(it.lineTotal ?? it.total ?? (qty * unitPrice));
+      totalItemsQuantity += qty;
+      totalItemsAmount += lineTotal;
+
+      itemDataRows.push([
+        itemRowIdx++,
+        o.invoiceNo || '-',
+        waktu,
+        statusLabel,
+        it.product?.name || it.productName || it.name || 'Item Menu',
+        it.variantName || it.variant?.name || '-',
+        it.categoryName || it.product?.category?.name || it.category?.name || '-',
+        qty,
+        unitPrice,
+        lineTotal,
+        it.station?.name || it.stationName || (it.station?.type === 'BAR' ? 'Barista (BAR)' : 'Dapur (KITCHEN)'),
+        it.notes || it.note || '-',
+      ]);
+    });
+  });
+
+  const itemTotalRow = [
+    'TOTAL RINCIAN ITEM',
+    '',
+    '',
+    '',
+    '',
+    '',
+    `${itemDataRows.length} Baris Item`,
+    totalItemsQuantity,
+    '',
+    totalItemsAmount,
+    '',
+    '',
+  ];
+
+  const itemSheetData = [
+    [`${storeName.toUpperCase()} - RINCIAN ITEM MENU TERJUAL`],
+    [`Filter: ${filterSegments.join(' | ')}`],
+    [
+      `Total: ${itemDataRows.length} Baris Item | Total Kuantitas: ${totalItemsQuantity} pcs | Nilai Kotor: Rp ${totalItemsAmount.toLocaleString('id-ID')} | Diunduh: ${nowStr} WIB`,
+    ],
+    emptyRow,
+    itemHeaders,
+    ...itemDataRows,
+    emptyRow,
+    itemTotalRow,
+  ];
+
+  const wsItems = XLSX.utils.aoa_to_sheet(itemSheetData);
+
+  // Lebar kolom sheet item
+  wsItems['!cols'] = [
+    { wch: 6 },  // No
+    { wch: 22 }, // No. Invoice
+    { wch: 22 }, // Waktu Transaksi
+    { wch: 14 }, // Status
+    { wch: 30 }, // Nama Menu
+    { wch: 16 }, // Varian
+    { wch: 16 }, // Kategori
+    { wch: 8 },  // Qty
+    { wch: 16 }, // Harga Satuan
+    { wch: 18 }, // Total Baris
+    { wch: 18 }, // Stasiun Dapur
+    { wch: 26 }, // Catatan Khusus
+  ];
+
+  const itemHeaderRowIdx = 5;
+  const itemDataStartRowIdx = 6;
+  const itemDataEndRowIdx = itemDataStartRowIdx + Math.max(itemDataRows.length, 1) - 1;
+  const itemTotalRowIdx = itemSheetData.length;
+
+  if (wsItems['A1']) wsItems['A1'].s = EXCEL_STYLES.title;
+  if (wsItems['A2']) {
+    wsItems['A2'].s = {
+      font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '4B5563' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+  if (wsItems['A3']) {
+    wsItems['A3'].s = {
+      font: { name: 'Calibri', sz: 10.5, bold: true, color: { rgb: '105932' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+
+  // Header styles
+  itemHeaders.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}${itemHeaderRowIdx}`;
+    if (wsItems[cellRef]) {
+      wsItems[cellRef].s = EXCEL_STYLES.header;
+    }
+  });
+
+  // Data rows styles
+  itemDataRows.forEach((row, rIdx) => {
+    const currentRowNum = itemDataStartRowIdx + rIdx;
+    const isEven = rIdx % 2 === 0;
+    const baseStyle = isEven ? EXCEL_STYLES.cell : EXCEL_STYLES.cellZebra;
+
+    itemHeaders.forEach((_, colIdx) => {
+      const colLetter = getColumnLetter(colIdx);
+      const cellRef = `${colLetter}${currentRowNum}`;
+      if (wsItems[cellRef]) {
+        const val = row[colIdx];
+        const isNum = typeof val === 'number';
+
+        let align = 'left';
+        if (colIdx === 0 || colIdx === 3 || colIdx === 7 || colIdx === 10) {
+          align = 'center';
+        } else if (isNum) {
+          align = 'right';
+        }
+
+        const cellStyle = {
+          ...baseStyle,
+          alignment: {
+            vertical: 'center',
+            horizontal: align,
+          },
+        };
+
+        if (isNum && (colIdx === 8 || colIdx === 9)) {
+          wsItems[cellRef].z = '#,##0';
+        }
+
+        wsItems[cellRef].s = cellStyle;
+      }
+    });
+  });
+
+  // Total row styles
+  itemHeaders.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}${itemTotalRowIdx}`;
+    if (wsItems[cellRef]) {
+      const val = itemTotalRow[colIdx];
+      const isNum = typeof val === 'number';
+
+      wsItems[cellRef].s = {
+        fill: { patternType: 'solid', fgColor: { rgb: 'F3F4F6' } },
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '105932' } },
+        alignment: {
+          vertical: 'center',
+          horizontal: isNum ? 'right' : colIdx === 0 ? 'left' : 'center',
+        },
+        border: {
+          top: { style: 'medium', color: { rgb: '105932' } },
+          bottom: { style: 'double', color: { rgb: '105932' } },
+          left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          right: { style: 'thin', color: { rgb: 'E5E7EB' } },
+        },
+      };
+
+      if (isNum && colIdx === 9) {
+        wsItems[cellRef].z = '#,##0';
+      }
+    }
+  });
+
+  const lastItemColLetter = getColumnLetter(itemHeaders.length - 1);
+  wsItems['!autofilter'] = { ref: `A${itemHeaderRowIdx}:${lastItemColLetter}${itemDataEndRowIdx}` };
+
+  XLSX.utils.book_append_sheet(wb, wsItems, 'Rincian Item Menu');
 
   const dateFileStr = new Date().toISOString().slice(0, 10);
   const fileName = `KOMAZI_Riwayat_Pesanan_${dateFileStr}.xlsx`;
 
   XLSX.writeFile(wb, fileName);
-  return { success: true, count: orders.length, fileName };
+  return { success: true, count: orders.length, itemCount: itemDataRows.length, fileName, workbook: wb };
+}
+
+/**
+ * Ekspor Riwayat Transaksi Pesanan ke format CSV (.csv)
+ * Standar RFC 4180 dengan UTF-8 BOM (\uFEFF) untuk kompatibilitas sempurna Microsoft Excel & Google Sheets.
+ */
+export function exportOrdersToCsv({
+  orders = [],
+  filterMeta = {},
+  storeName = 'Komazi Coffee & Workspace',
+}) {
+  if (!Array.isArray(orders) || orders.length === 0) {
+    throw new Error('Tidak ada data pesanan untuk diekspor.');
+  }
+
+  const escapeCsv = (val) => {
+    if (val === null || val === undefined) return '';
+    const str = String(val).trim();
+    if (str.includes(',') || str.includes('"') || str.includes(';') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const headers = [
+    'No',
+    'No. Invoice',
+    'Waktu Transaksi (WIB)',
+    'Status',
+    'Tipe Pesanan',
+    'Meja',
+    'Pelanggan',
+    'Kasir',
+    'Shift ID',
+    'Rincian Menu Pesanan',
+    'Total Qty',
+    'Subtotal (Rp)',
+    'Diskon (Rp)',
+    'Pajak (Rp)',
+    'Total Akhir (Rp)',
+    'Metode Pembayaran',
+    'Catatan / Alasan',
+  ];
+
+  const rows = orders.map((o, idx) => {
+    const waktu = o.createdAt
+      ? new Intl.DateTimeFormat('id-ID', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        }).format(new Date(o.createdAt)).replace(/\./g, ':')
+      : '-';
+
+    let statusLabel = o.status;
+    if (o.status === 'PAID') statusLabel = 'LUNAS';
+    else if (o.status === 'VOIDED') statusLabel = 'DIBATALKAN';
+    else if (o.status === 'REFUNDED') statusLabel = 'REFUND';
+    else if (o.status === 'OPEN') statusLabel = 'BELUM DIBAYAR';
+
+    const orderType =
+      o.type === 'TAKE_AWAY' || o.type === 'TAKEAWAY'
+        ? 'Take-Away'
+        : o.type === 'DELIVERY'
+        ? 'Delivery'
+        : 'Dine-In';
+
+    const tableNo = o.tableNo ? `Meja ${o.tableNo}` : '-';
+    const customer = o.customerName || o.customer?.name || 'Pelanggan Dine In';
+    const cashier = o.cashierName || o.cashier?.name || o.shift?.cashier?.name || '-';
+    const shift = o.shiftId ? `#${o.shiftId}` : '-';
+
+    const itemsSummary =
+      (o.items || [])
+        .map((it) => {
+          const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+          const name = it.product?.name || it.productName || it.name || 'Item';
+          const variantName = it.variantName || it.variant?.name;
+          const variant = variantName ? ` (${variantName})` : '';
+          return `${qty}x ${name}${variant}`;
+        })
+        .join('; ') || '-';
+
+    const totalQty = (o.items || []).reduce((sum, it) => sum + (Number(it.qty ?? it.quantity ?? 1) || 1), 0);
+
+    const paymentMethod = o.payments?.[0]?.method || o.paymentMethod || 'CASH';
+    let formattedMethod = paymentMethod;
+    if (paymentMethod === 'CASH') formattedMethod = 'Tunai (Cash)';
+    else if (paymentMethod === 'TRANSFER') formattedMethod = 'Transfer Bank';
+    else if (paymentMethod === 'QRIS') formattedMethod = 'QRIS';
+
+    const notes = o.notes || o.voidReason || o.refundReason || '-';
+
+    return [
+      idx + 1,
+      o.invoiceNo || '-',
+      waktu,
+      statusLabel,
+      orderType,
+      tableNo,
+      customer,
+      cashier,
+      shift,
+      itemsSummary,
+      totalQty,
+      Number(o.subtotal || 0),
+      Number(o.discount || 0),
+      Number(o.tax || 0),
+      Number(o.total || 0),
+      formattedMethod,
+      notes,
+    ];
+  });
+
+  const csvContent =
+    '\uFEFF' +
+    [headers.map(escapeCsv).join(',')]
+      .concat(rows.map((row) => row.map(escapeCsv).join(',')))
+      .join('\r\n');
+
+  const dateFileStr = new Date().toISOString().slice(0, 10);
+  const fileName = `KOMAZI_Riwayat_Pesanan_${dateFileStr}.csv`;
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return { success: true, count: orders.length, fileName, csvContent };
 }
 
 /**
@@ -1976,7 +2326,13 @@ export function exportZReportToExcel({
 
     orders.forEach((o, idx) => {
       const menuDesc = (o.items || [])
-        .map((it) => `${it.qty || it.quantity || 1}x ${it.productName || it.name || 'Menu'}${it.variantName ? ` (${it.variantName})` : ''}`)
+        .map((it) => {
+          const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+          const name = it.product?.name || it.productName || it.name || 'Menu';
+          const variantName = it.variantName || it.variant?.name;
+          const variant = variantName ? ` (${variantName})` : '';
+          return `${qty}x ${name}${variant}`;
+        })
         .join('; ');
 
       const payMethod = (o.payments?.[0]?.method || o.paymentMethod || 'CASH').toUpperCase();

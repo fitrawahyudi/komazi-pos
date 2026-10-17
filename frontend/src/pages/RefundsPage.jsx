@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   Undo2,
   Receipt,
@@ -57,7 +58,7 @@ export default function RefundsPage() {
 
   // Pagination for refunded orders table
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('refunds_itemsPerPage', 10);
 
   const loadPendingApprovals = async () => {
     try {

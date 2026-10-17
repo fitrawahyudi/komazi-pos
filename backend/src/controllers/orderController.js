@@ -141,10 +141,25 @@ function canViewCostData(userRole) {
 
 export async function getAllOrders(req, res) {
   try {
-    const { status, search, startDate, endDate, page = 1, limit = 50 } = req.query;
+    const {
+      status,
+      search,
+      startDate,
+      endDate,
+      cashierId,
+      shiftId,
+      paymentMethod,
+      page = 1,
+      limit = 50,
+    } = req.query;
 
     const where = {};
     if (status && status !== 'ALL') where.status = status;
+    if (cashierId && cashierId !== 'ALL') where.cashierId = parseInt(cashierId);
+    if (shiftId && shiftId !== 'ALL') where.shiftId = parseInt(shiftId);
+    if (paymentMethod && paymentMethod !== 'ALL') {
+      where.payments = { some: { method: paymentMethod } };
+    }
     if (search) {
       where.OR = [
         { invoiceNo: { contains: search } },
@@ -158,8 +173,10 @@ export async function getAllOrders(req, res) {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    const safeLimit = Math.min(100, Math.max(1, parseInt(limit) || 50));
+    const safePage = Math.max(1, parseInt(page) || 1);
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
@@ -942,6 +959,21 @@ export async function payOrder(req, res) {
         );
       }
       // Jika sudah ada pergerakan SALE sebelumnya, STOK TIDAK DIPOTONG LAGI!
+
+      // Audit trail: Catat pelunasan transaksi dan kasir pelaksana secara atomik
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'PAY_ORDER',
+          detail: {
+            orderId: updatedOrder.id,
+            invoiceNo: updatedOrder.invoiceNo,
+            total: updatedOrder.total,
+            paymentMethods: (payments || []).map((p) => p.method),
+            shiftId: resolvedShiftId,
+          },
+        },
+      });
 
       return updatedOrder;
     });

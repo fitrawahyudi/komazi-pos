@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { useInventoryStore } from '../../store/inventoryStore';
 import { useStockStore } from '../../store/stockStore';
 import { useAuthStore } from '../../store/authStore';
@@ -31,11 +32,11 @@ export default function StockOpnamePage() {
 
   // Table filters & search
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = usePersistentState('stockopname_statusFilter', 'ALL');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('stockopname_itemsPerPage', 10);
 
   // Multi-Select State
   const [selectedSessionIds, setSelectedSessionIds] = useState([]);

@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useOrdersStore } from '../store/ordersStore';
 import { useAuthStore } from '../store/authStore';
 import { useKdsSocket } from '../hooks/useKdsSocket';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { playKitchenChime } from '../utils/audio';
 import { formatDateTime, formatOrderType, isDrinkItem } from '../utils/format';
 import {
@@ -150,33 +151,29 @@ export default function KdsPage() {
   const isCashier = user?.role === 'CASHIER';
   const canBump = isKitchen || isBarista;
 
-  const [viewMode, setViewMode] = useState(() => {
+  const [viewMode, setViewMode] = usePersistentState('kds_viewMode', () => {
     if (isBarista) return 'BAR';
     if (isKitchen) return 'KITCHEN';
     return 'SPLIT';
   });
 
-  if (isCashier) {
-    return <Navigate to="/pos" replace />;
-  }
-
-  const [statusTab, setStatusTab] = useState('ACTIVE');
+  const [statusTab, setStatusTab] = usePersistentState('kds_statusTab', 'ACTIVE');
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   // ─── Search & Filters State ───
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'READY' | 'DELAYED' | 'HOLD'
-  const [orderTypeFilter, setOrderTypeFilter] = useState('ALL'); // 'ALL' | 'DINE_IN' | 'TAKE_AWAY' | 'DELIVERY'
-  const [sortBy, setSortBy] = useState('FIFO'); // 'FIFO' | 'NEWEST' | 'DELAY'
+  const [statusFilter, setStatusFilter] = usePersistentState('kds_statusFilter', 'ALL'); // 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'READY' | 'DELAYED' | 'HOLD'
+  const [orderTypeFilter, setOrderTypeFilter] = usePersistentState('kds_orderTypeFilter', 'ALL'); // 'ALL' | 'DINE_IN' | 'TAKE_AWAY' | 'DELIVERY'
+  const [sortBy, setSortBy] = usePersistentState('kds_sortBy', 'FIFO'); // 'FIFO' | 'NEWEST' | 'DELAY'
   const [selectedProductFilter, setSelectedProductFilter] = useState(null);
-  const [showItemSummary, setShowItemSummary] = useState(false);
+  const [showItemSummary, setShowItemSummary] = usePersistentState('kds_showItemSummary', false);
 
   const searchInputRef = useRef(null);
 
   // Pagination for Served / Historical Orders
   const [servedPage, setServedPage] = useState(1);
-  const [servedPerPage, setServedPerPage] = useState(10);
+  const [servedPerPage, setServedPerPage] = usePersistentState('kds_servedPerPage', 10);
 
   useEffect(() => {
     setServedPage(1);
@@ -613,6 +610,10 @@ export default function KdsPage() {
     { key: 'NEWEST', label: 'Terbaru Masuk' },
     { key: 'DELAY', label: 'Prioritas Terlambat' },
   ];
+
+  if (isCashier) {
+    return <Navigate to="/pos" replace />;
+  }
 
   return (
     <div className="p-4 sm:p-6 pb-24 lg:pb-6 space-y-5 max-w-[1600px] mx-auto select-none">

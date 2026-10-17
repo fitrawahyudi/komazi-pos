@@ -494,6 +494,8 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* Database Backup & Recovery (Owner only shortcut) */}
+          <Route path="backup" element={<Navigate to="/settings?tab=backup" replace />} />
 
           {/* Printer Kasir & Hardware Management */}
           <Route

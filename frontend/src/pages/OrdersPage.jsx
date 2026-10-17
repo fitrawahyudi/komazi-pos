@@ -9,7 +9,9 @@ import Pagination from '../components/ui/Pagination';
 import OrdersTableSkeleton from '../components/ui/loading/skeletons/OrdersTableSkeleton';
 import { toast } from '../store/toastStore';
 import { api } from '../services/api';
-import { exportOrdersToExcel } from '../utils/excel';
+import { exportOrdersToExcel, exportOrdersToCsv } from '../utils/excel';
+import ExportOrdersModal from '../components/orders/ExportOrdersModal';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   Receipt,
   Search,
@@ -37,6 +39,9 @@ import {
   CreditCard,
   ChevronDown,
   FileSpreadsheet,
+  FileText,
+  Download,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 export default function OrdersPage() {
@@ -89,16 +94,30 @@ export default function OrdersPage() {
 
   // Filter States (Matching requested filter design)
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PAID' | 'VOIDED' | 'REFUNDED'
-  const [methodFilter, setMethodFilter] = useState('ALL'); // 'ALL' | 'CASH' | 'QRIS' | 'TRANSFER'
+  const [statusFilter, setStatusFilter] = usePersistentState('orders_statusFilter', 'ALL'); // 'ALL' | 'PAID' | 'VOIDED' | 'REFUNDED'
+  const [methodFilter, setMethodFilter] = usePersistentState('orders_methodFilter', 'ALL'); // 'ALL' | 'CASH' | 'QRIS' | 'TRANSFER'
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [shiftFilter, setShiftFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | specific shiftId
-  const [cashierFilter, setCashierFilter] = useState('ALL'); // 'ALL' | cashierName
+  const [shiftFilter, setShiftFilter] = usePersistentState('orders_shiftFilter', 'ALL'); // 'ALL' | 'ACTIVE' | specific shiftId
+  const [cashierFilter, setCashierFilter] = usePersistentState('orders_cashierFilter', 'ALL'); // 'ALL' | cashierName
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const exportDropdownRef = React.useRef(null);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target)) {
+        setShowExportDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Void modal state
   const [voidTargetOrder, setVoidTargetOrder] = useState(null);
@@ -215,7 +234,7 @@ export default function OrdersPage() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('orders_itemsPerPage', 10);
 
   // Reset ke halaman pertama saat filter atau pencarian berubah
   useEffect(() => {
@@ -350,51 +369,69 @@ export default function OrdersPage() {
     }
   };
 
-  const handleExportExcel = () => {
-    if (!filteredOrders || filteredOrders.length === 0) {
-      toast.warning('Tidak ada data pesanan untuk diekspor pada filter ini.');
+  const getFilterMeta = (scope = 'FILTERED') => {
+    let shiftLabel = 'Semua Shift';
+    if (shiftFilter === 'ACTIVE') {
+      shiftLabel = activeShift ? `Shift Aktif (${activeShift.cashierName})` : 'Shift Aktif';
+    } else if (shiftFilter !== 'ALL') {
+      const found = (shiftHistory || []).find((s) => String(s.id) === String(shiftFilter));
+      shiftLabel = found ? `Shift #${found.id} - ${found.cashierName}` : `Shift #${shiftFilter}`;
+    }
+
+    let dateRangeLabel = 'Semua Tanggal';
+    if (startDate && endDate) {
+      dateRangeLabel = `${startDate} s/d ${endDate}`;
+    } else if (startDate) {
+      dateRangeLabel = `Mulai ${startDate}`;
+    } else if (endDate) {
+      dateRangeLabel = `Sampai ${endDate}`;
+    }
+
+    return {
+      status: scope === 'ALL' ? 'ALL' : statusFilter,
+      method: scope === 'ALL' ? 'ALL' : methodFilter,
+      dateRange: scope === 'ALL' ? 'Semua Riwayat' : dateRangeLabel,
+      cashier: scope === 'ALL' ? 'Semua Kasir' : cashierFilter,
+      shift: scope === 'ALL' ? 'Semua Shift' : shiftLabel,
+      search: scope === 'ALL' ? '' : searchQuery.trim(),
+      scope: scope === 'ALL' ? 'Semua Riwayat' : 'Data Terfilter',
+    };
+  };
+
+  const handleQuickExport = (format = 'XLSX', scope = 'FILTERED') => {
+    setShowExportDropdown(false);
+    const targetList = scope === 'ALL' ? orders : filteredOrders;
+    if (!targetList || targetList.length === 0) {
+      toast.warning('Tidak ada data pesanan untuk diekspor pada pilihan ini.');
       return;
     }
 
     try {
-      // Siapkan label shift yang sedang difilter
-      let shiftLabel = 'Semua';
-      if (shiftFilter === 'ACTIVE') {
-        shiftLabel = activeShift ? `Shift Aktif (${activeShift.cashierName})` : 'Shift Aktif';
-      } else if (shiftFilter !== 'ALL') {
-        const found = (shiftHistory || []).find((s) => String(s.id) === String(shiftFilter));
-        shiftLabel = found ? `Shift #${found.id} - ${found.cashierName}` : `Shift #${shiftFilter}`;
+      const meta = getFilterMeta(scope);
+      if (format === 'XLSX') {
+        const res = exportOrdersToExcel({
+          orders: targetList,
+          filterMeta: meta,
+          storeName: 'Komazi Coffee & Workspace',
+        });
+        toast.success(
+          `Berhasil mengekspor ${res.count} transaksi (${res.itemCount || 0} baris item) ke file ${res.fileName}`,
+          'Ekspor Excel'
+        );
+      } else {
+        const res = exportOrdersToCsv({
+          orders: targetList,
+          filterMeta: meta,
+          storeName: 'Komazi Coffee & Workspace',
+        });
+        toast.success(
+          `Berhasil mengekspor ${res.count} transaksi ke file ${res.fileName}`,
+          'Ekspor CSV'
+        );
       }
-
-      // Format label rentang tanggal
-      let dateRangeLabel = 'Semua Tanggal';
-      if (startDate && endDate) {
-        dateRangeLabel = `${startDate} s/d ${endDate}`;
-      } else if (startDate) {
-        dateRangeLabel = `Mulai ${startDate}`;
-      } else if (endDate) {
-        dateRangeLabel = `Sampai ${endDate}`;
-      }
-
-      const res = exportOrdersToExcel({
-        orders: filteredOrders,
-        filterMeta: {
-          status: statusFilter,
-          method: methodFilter,
-          dateRange: dateRangeLabel,
-          cashier: cashierFilter,
-          shift: shiftLabel,
-          search: searchQuery.trim(),
-        },
-      });
-
-      toast.success(
-        `Berhasil mengekspor ${res.count} transaksi ke file ${res.fileName}`,
-        'Ekspor Excel'
-      );
     } catch (err) {
-      console.error('[ExportOrdersExcel]', err);
-      toast.error(err?.message || 'Gagal mengekspor riwayat pesanan ke Excel');
+      console.error('[ExportOrders Error]', err);
+      toast.error(err?.message || 'Gagal mengekspor riwayat pesanan');
     }
   };
 
@@ -418,20 +455,116 @@ export default function OrdersPage() {
         </div>
 
         {/* Header Action Buttons */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            disabled={filteredOrders.length === 0}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            title="Ekspor riwayat pesanan (mengikuti filter aktif) ke Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
-            <span className="hidden sm:inline">Ekspor Excel</span>
-            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-900/40 text-emerald-100 font-mono font-bold">
-              {filteredOrders.length}
-            </span>
-          </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Export Dropdown Group */}
+          <div className="relative" ref={exportDropdownRef}>
+            <div className="inline-flex items-center rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-all overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(true)}
+                disabled={orders.length === 0}
+                className="inline-flex items-center gap-2 pl-3.5 pr-2.5 py-2.5 text-white font-bold text-xs active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Buka panel dialog ekspor riwayat pesanan (Excel & CSV)"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                <span>Ekspor</span>
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-900/50 text-emerald-100 font-mono font-bold">
+                  {filteredOrders.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowExportDropdown((prev) => !prev)}
+                disabled={orders.length === 0}
+                className="pr-2.5 pl-1.5 py-2.5 text-white/90 hover:text-white border-l border-emerald-500/50 cursor-pointer active:scale-95 disabled:opacity-40"
+                title="Pilihan cepat ekspor Excel / CSV"
+              >
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    showExportDropdown ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Dropdown Menu */}
+            {showExportDropdown && (
+              <div className="absolute right-0 mt-2 w-64 bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl p-1.5 z-40 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-komazi-muted border-b border-komazi-border/70 flex items-center justify-between">
+                  <span>Pilihan Cepat Ekspor</span>
+                  <span className="font-mono text-komazi-coral">{filteredOrders.length} Terfilter</span>
+                </div>
+
+                {/* Section Excel */}
+                <div className="py-1">
+                  <div className="px-3 py-1 text-[10px] font-bold text-emerald-400 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-3 h-3" />
+                    <span>Microsoft Excel (.xlsx)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickExport('XLSX', 'FILTERED')}
+                    disabled={filteredOrders.length === 0}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-komazi-text hover:bg-komazi-surface-2 flex items-center justify-between disabled:opacity-40 cursor-pointer transition-colors"
+                  >
+                    <span>Sesuai Filter Aktif</span>
+                    <span className="text-[10px] text-komazi-muted font-mono">{filteredOrders.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickExport('XLSX', 'ALL')}
+                    disabled={orders.length === 0}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-komazi-text hover:bg-komazi-surface-2 flex items-center justify-between disabled:opacity-40 cursor-pointer transition-colors"
+                  >
+                    <span>Semua Riwayat</span>
+                    <span className="text-[10px] text-komazi-muted font-mono">{orders.length}</span>
+                  </button>
+                </div>
+
+                {/* Section CSV */}
+                <div className="py-1 border-t border-komazi-border/60">
+                  <div className="px-3 py-1 text-[10px] font-bold text-blue-400 flex items-center gap-1.5">
+                    <FileText className="w-3 h-3" />
+                    <span>Format CSV (.csv)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickExport('CSV', 'FILTERED')}
+                    disabled={filteredOrders.length === 0}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-komazi-text hover:bg-komazi-surface-2 flex items-center justify-between disabled:opacity-40 cursor-pointer transition-colors"
+                  >
+                    <span>Sesuai Filter Aktif</span>
+                    <span className="text-[10px] text-komazi-muted font-mono">{filteredOrders.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickExport('CSV', 'ALL')}
+                    disabled={orders.length === 0}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-komazi-text hover:bg-komazi-surface-2 flex items-center justify-between disabled:opacity-40 cursor-pointer transition-colors"
+                  >
+                    <span>Semua Riwayat</span>
+                    <span className="text-[10px] text-komazi-muted font-mono">{orders.length}</span>
+                  </button>
+                </div>
+
+                {/* Custom Modal Option */}
+                <div className="pt-1 border-t border-komazi-border/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExportDropdown(false);
+                      setIsExportModalOpen(true);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-komazi-coral hover:bg-komazi-coral/10 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Opsi</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -448,6 +581,7 @@ export default function OrdersPage() {
           </button>
         </div>
       </div>
+
 
       {/* 2. ROLE-SPECIFIC BANNER / STATS CARDS */}
       {isCashier ? (
@@ -1099,6 +1233,36 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
+      {/* 5. Export Orders Modal */}
+      <ExportOrdersModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        orders={orders}
+        filteredOrders={filteredOrders}
+        activeFilters={{
+          status: statusFilter,
+          method: methodFilter,
+          dateRange:
+            startDate && endDate
+              ? `${startDate} s/d ${endDate}`
+              : startDate
+              ? `Mulai ${startDate}`
+              : endDate
+              ? `Sampai ${endDate}`
+              : 'Semua Tanggal',
+          cashier: cashierFilter,
+          shift:
+            shiftFilter === 'ACTIVE'
+              ? activeShift
+                ? `Shift Aktif (${activeShift.cashierName})`
+                : 'Shift Aktif'
+              : shiftFilter !== 'ALL'
+              ? `Shift #${shiftFilter}`
+              : 'Semua Shift',
+          search: searchQuery.trim(),
+        }}
+      />
     </div>
   );
 }

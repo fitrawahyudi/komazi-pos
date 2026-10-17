@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { useInventoryStore } from '../../store/inventoryStore';
 import { useStockStore } from '../../store/stockStore';
 import { toast } from '../../store/toastStore';
@@ -28,11 +29,11 @@ export default function InboundStockPage() {
   const { ingredients } = useStockStore();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = usePersistentState('inbound_statusFilter', 'ALL');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('inbound_itemsPerPage', 10);
 
   // Multi-Select State
   const [selectedRecordIds, setSelectedRecordIds] = useState([]);

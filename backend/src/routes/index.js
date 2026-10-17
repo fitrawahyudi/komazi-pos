@@ -28,6 +28,7 @@ import printerRoutes, {
 } from './printerRoutes.js';
 import publicRoutes from './publicRoutes.js';
 import cmsRoutes from './cmsRoutes.js';
+import backupRoutes from './backupRoutes.js';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ const router = Router();
 router.use('/public', publicRoutes);
 router.use('/cms', cmsRoutes);
 
+router.use('/backup', backupRoutes);
 router.use('/hris', hrisRoutes);
 router.use('/approvals', approvalRoutes);
 router.use('/notifications', notificationRoutes);

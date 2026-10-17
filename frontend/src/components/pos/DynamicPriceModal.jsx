@@ -365,7 +365,7 @@ export default function DynamicPriceModal({
           {product?.modifiers && product.modifiers.length > 0 && (
             <div className="pt-2 border-t border-komazi-border/50">
               <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-2">
-                Tambahan / Modifier:
+                Tambahan:
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {product.modifiers.map((mod) => {

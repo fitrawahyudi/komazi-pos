@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   Wallet,
   ArrowDownLeft,
@@ -36,7 +37,7 @@ export default function CashDrawerPage() {
   const { isConnected: isPrinterConnected, openCashDrawer } = usePrinterStore();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'IN' | 'OUT'
+  const [filterType, setFilterType] = usePersistentState('cashdrawer_filterType', 'ALL'); // 'ALL' | 'IN' | 'OUT'
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
 
   // Modal Kas Masuk / Keluar State
@@ -48,7 +49,7 @@ export default function CashDrawerPage() {
 
   // Pagination for cash movements
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('cashdrawer_itemsPerPage', 10);
 
   useEffect(() => {
     fetchActiveShift?.();

@@ -146,15 +146,17 @@ export const useOrdersStore = create(
         });
       },
 
-      fetchOrders: async () => {
-        if (inFlightFetchOrdersPromise) {
-          return inFlightFetchOrdersPromise;
+      fetchOrders: async (options = {}) => {
+        if (!options || Object.keys(options).length === 0) {
+          if (inFlightFetchOrdersPromise) {
+            return inFlightFetchOrdersPromise;
+          }
         }
 
-        inFlightFetchOrdersPromise = (async () => {
+        const runFetch = (async () => {
           try {
             set({ isLoading: true });
-            const res = await api.orders.getAll();
+            const res = await api.orders.getAll(options);
             if (res && res.success && Array.isArray(res.data)) {
               const formatted = res.data.map((o) => ({
                 ...o,
@@ -190,10 +192,13 @@ export const useOrdersStore = create(
           return get().orders;
         })();
 
-        return inFlightFetchOrdersPromise;
+        if (!options || Object.keys(options).length === 0) {
+          inFlightFetchOrdersPromise = runFetch;
+        }
+        return runFetch;
       },
 
-      fetchBackendOrders: async () => {
+      fetchBackendOrders: async (options = {}) => {
         if (inFlightFetchBackendOrdersPromise) {
           return inFlightFetchBackendOrdersPromise;
         }
@@ -202,7 +207,7 @@ export const useOrdersStore = create(
           const state = get();
           try {
             set({ isLoading: true });
-            const res = await api.orders.getAll();
+            const res = await api.orders.getAll(options);
             if (res && res.success && Array.isArray(res.data)) {
               const formatted = res.data.map((o) => ({
                 ...o,

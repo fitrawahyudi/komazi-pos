@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useCustomerStore } from '../store/customerStore';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { formatRupiah } from '../utils/format';
 import {
   Users,
@@ -45,10 +46,10 @@ export default function CustomersPage() {
 
   // Filter & Search States
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTier, setSelectedTier] = useState('ALL');
-  const [segmentFilter, setSegmentFilter] = useState('ALL'); // 'ALL' | 'LOYAL' | 'TOP_SPENDER' | 'HAS_POINTS' | 'NEW' | 'ZERO_ORDERS'
-  const [periodFilter, setPeriodFilter] = useState('ALL');   // 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH'
-  const [sortBy, setSortBy] = useState('recent');            // 'recent' | 'oldest' | 'points_desc' | 'points_asc' | 'spent_desc' | 'spent_asc' | 'visits_desc' | 'name_asc' | 'name_desc'
+  const [selectedTier, setSelectedTier] = usePersistentState('customers_tier', 'ALL');
+  const [segmentFilter, setSegmentFilter] = usePersistentState('customers_segment', 'ALL'); // 'ALL' | 'LOYAL' | 'TOP_SPENDER' | 'HAS_POINTS' | 'NEW' | 'ZERO_ORDERS'
+  const [periodFilter, setPeriodFilter] = usePersistentState('customers_period', 'ALL');   // 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH'
+  const [sortBy, setSortBy] = usePersistentState('customers_sortBy', 'recent');            // 'recent' | 'oldest' | 'points_desc' | 'points_asc' | 'spent_desc' | 'spent_asc' | 'visits_desc' | 'name_asc' | 'name_desc'
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -306,7 +307,7 @@ export default function CustomersPage() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('customers_itemsPerPage', 10);
 
   // Reset page when filter changes
   useEffect(() => {

@@ -328,27 +328,38 @@ export const api = {
   },
   orders: {
     getAll: (options = {}) => {
+      const { force, ...queryParams } = options || {};
+      const qs = toCleanQuery(queryParams);
+      const isParamQuery = Boolean(qs);
+
       const now = Date.now();
-      // Reuse cached orders if fetched within the last 2000ms and not forced
-      if (!options?.force && ordersGetAllCachedData && now - ordersGetAllLastFetchTime < 2000) {
+      // Reuse cached orders if fetched within the last 2000ms and not forced, only for unparameterized queries
+      if (!force && !isParamQuery && ordersGetAllCachedData && now - ordersGetAllLastFetchTime < 2000) {
         return Promise.resolve(ordersGetAllCachedData);
       }
-      // If a request is already in-flight, return the existing promise (deduplication)
-      if (ordersGetAllInFlightPromise) {
+      // If an identical unparameterized request is already in-flight, return the existing promise (deduplication)
+      if (!isParamQuery && ordersGetAllInFlightPromise) {
         return ordersGetAllInFlightPromise;
       }
-      ordersGetAllInFlightPromise = request('/orders')
+
+      const reqPromise = request(`/orders${qs}`)
         .then((res) => {
-          if (res && res.success) {
+          if (!isParamQuery && res && res.success) {
             ordersGetAllCachedData = res;
             ordersGetAllLastFetchTime = Date.now();
           }
           return res;
         })
         .finally(() => {
-          ordersGetAllInFlightPromise = null;
+          if (!isParamQuery) {
+            ordersGetAllInFlightPromise = null;
+          }
         });
-      return ordersGetAllInFlightPromise;
+
+      if (!isParamQuery) {
+        ordersGetAllInFlightPromise = reqPromise;
+      }
+      return reqPromise;
     },
     getById: (id) => request(`/orders/${id}`),
     create: (data) => {
@@ -578,6 +589,25 @@ export const api = {
     registerDevice: (data) => request('/notifications/devices', { method: 'POST', body: JSON.stringify(data) }),
     logoutDevice: (data = {}) => request('/notifications/devices/logout', { method: 'POST', body: JSON.stringify(data) }),
     testPush: () => request('/notifications/test-push', { method: 'POST' }),
+  },
+  backup: {
+    getSummary: () => request('/backup/summary'),
+    getHistory: (params = {}) => {
+      const qs = toCleanQuery(params);
+      return request(`/backup${qs}`);
+    },
+    triggerManual: (data = {}) =>
+      request('/backup/manual', { method: 'POST', body: JSON.stringify(data) }),
+    getDetail: (id) => request(`/backup/${id}`),
+    verifyIntegrity: (id) => request(`/backup/${id}/verify`, { method: 'POST' }),
+    downloadUrl: (id) => `${API_BASE_URL}/backup/${id}/download`,
+    testRestore: (id) => request(`/backup/${id}/test-restore`, { method: 'POST' }),
+    executeRestore: (id, confirmationPhrase) =>
+      request(`/backup/${id}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ confirmationPhrase }),
+      }),
+    runRetention: () => request('/backup/retention/run', { method: 'POST' }),
   },
 };
 

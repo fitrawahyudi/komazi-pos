@@ -4,6 +4,7 @@ import { usePosStore } from '../store/posStore';
 import { useAuthStore } from '../store/authStore';
 import { useRecipeStore } from '../store/useRecipeStore';
 import { useStockStore } from '../store/stockStore';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { formatRupiah, getProductInitials, getProductColor } from '../utils/format';
 import {
   UtensilsCrossed,
@@ -82,7 +83,7 @@ export default function MenuPage() {
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState('all');
+  const [selectedCatId, setSelectedCatId] = usePersistentState('menu_selectedCatId', 'all');
 
   // Otomatis pilih kategori jika URL memiliki parameter ?cat=
   useEffect(() => {
@@ -94,10 +95,10 @@ export default function MenuPage() {
       }
     }
   }, [searchParams]);
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'AVAILABLE' | 'SOLDOUT' | 'INACTIVE'
-  const [recipeFilter, setRecipeFilter] = useState('ALL'); // 'ALL' | 'WITH_RECIPE' | 'NO_RECIPE'
-  const [priceRangeFilter, setPriceRangeFilter] = useState('ALL'); // 'ALL' | 'UNDER_25K' | '25K_TO_40K' | 'ABOVE_40K'
-  const [sortBy, setSortBy] = useState('DEFAULT'); // 'DEFAULT' | 'NAME_ASC' | 'NAME_DESC' | 'PRICE_ASC' | 'PRICE_DESC' | 'NEWEST'
+  const [statusFilter, setStatusFilter] = usePersistentState('menu_statusFilter', 'ALL'); // 'ALL' | 'AVAILABLE' | 'SOLDOUT' | 'INACTIVE'
+  const [recipeFilter, setRecipeFilter] = usePersistentState('menu_recipeFilter', 'ALL'); // 'ALL' | 'WITH_RECIPE' | 'NO_RECIPE'
+  const [priceRangeFilter, setPriceRangeFilter] = usePersistentState('menu_priceRangeFilter', 'ALL'); // 'ALL' | 'UNDER_25K' | '25K_TO_40K' | 'ABOVE_40K'
+  const [sortBy, setSortBy] = usePersistentState('menu_sortBy', 'DEFAULT'); // 'DEFAULT' | 'NAME_ASC' | 'NAME_DESC' | 'PRICE_ASC' | 'PRICE_DESC' | 'NEWEST'
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [productToDelete, setProductToDelete] = useState(null);
@@ -439,7 +440,7 @@ export default function MenuPage() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('menu_itemsPerPage', 10);
 
   // Reset ke halaman 1 jika filter berubah
   useEffect(() => {
@@ -504,7 +505,7 @@ export default function MenuPage() {
         <div>
           <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
             <UtensilsCrossed className="w-6 h-6 text-komazi-coral" />
-            <span>Manajemen Menu</span>
+            <span>Menu</span>
           </h1>
           <p className="text-xs text-komazi-muted mt-0.5">
             Kelola daftar minuman, makanan, harga dasar, pilihan ukuran, tambahan (add-ons), dan ketersediaan stok.

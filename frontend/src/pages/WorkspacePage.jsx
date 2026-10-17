@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useOrdersStore } from '../store/ordersStore';
 import { useShiftStore } from '../store/shiftStore';
@@ -35,7 +36,7 @@ export default function WorkspacePage() {
 
   // Pagination for Workspace Areas
   const [areaPage, setAreaPage] = useState(1);
-  const [areasPerPage, setAreasPerPage] = useState(10);
+  const [areasPerPage, setAreasPerPage] = usePersistentState('workspace_areasPerPage', 10);
 
   const paginatedAreas = useMemo(() => {
     const start = (areaPage - 1) * areasPerPage;

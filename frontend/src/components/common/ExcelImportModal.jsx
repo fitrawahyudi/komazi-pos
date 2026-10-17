@@ -158,13 +158,19 @@ export default function ExcelImportModal({
   const handleDownloadTemplate = () => {
     switch (type) {
       case 'MENU':
-        downloadMenuTemplate();
+        downloadMenuTemplate({
+          categories: usePosStore.getState?.()?.categories || [],
+          ingredients: useStockStore.getState?.()?.ingredients || [],
+        });
         break;
       case 'INGREDIENT':
         downloadIngredientTemplate();
         break;
       case 'RECIPE':
-        downloadRecipeTemplate();
+        downloadRecipeTemplate({
+          products: usePosStore.getState?.()?.products || [],
+          ingredients: useStockStore.getState?.()?.ingredients || [],
+        });
         break;
       case 'CUSTOMER':
         downloadCustomerTemplate();
@@ -512,24 +518,12 @@ export default function ExcelImportModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-display font-black text-lg text-komazi-text">{title}</h2>
-                {type === 'MENU' && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                    <Calculator className="w-3 h-3" /> Auto-HPP & Resep
-                  </span>
-                )}
               </div>
               <p className="text-xs text-komazi-muted">
                 Unggah spreadsheet Excel (.xlsx, .xls) atau CSV untuk memasukkan puluhan data sekaligus.
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="w-9 h-9 rounded-xl bg-komazi-surface hover:bg-komazi-surface-3 border border-komazi-border text-komazi-muted hover:text-white flex items-center justify-center transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Content Area */}
@@ -544,7 +538,7 @@ export default function ExcelImportModal({
                 <h3 className="font-bold text-sm text-komazi-text">1. Unduh Template Excel Resmi</h3>
                 <p className="text-xs text-komazi-muted mt-0.5">
                   {type === 'MENU'
-                    ? 'Template terbaru kini dilengkapi kolom "HPP / Modal (Rp)", "Resep / Bahan Baku", dan sheet referensi Data Bahan Baku.'
+                    ? 'Template ini dilengkapi kolom "HPP / Modal (Rp)", "Resep / Bahan Baku", dan sheet referensi Data Bahan Baku.'
                     : type === 'STAFF'
                     ? 'Template registrasi staf lengkap: Nama, Username, Password Sementara, Peran, Dept, Jabatan, dan Komponen Gaji.'
                     : 'Gunakan format kolom standar Komazi agar data terbaca otomatis dan bebas error.'}

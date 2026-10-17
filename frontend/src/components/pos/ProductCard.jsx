@@ -132,7 +132,7 @@ function ProductCard({ product, onSelect }) {
             {product.name}
           </h3>
           <p className="mt-1 text-[11px] sm:text-xs text-komazi-muted line-clamp-2 leading-relaxed min-h-[2rem]">
-            {product.description || 'Pilihan menu spesial Komazi Coffee & Workspace'}
+            {product.description || ''}
           </p>
         </div>
 

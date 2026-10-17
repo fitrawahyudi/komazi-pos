@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   History,
   Clock,
@@ -47,13 +48,13 @@ export default function ShiftHistoryPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCashier, setSelectedCashier] = useState('ALL');
-  const [dateFilter, setDateFilter] = useState('ALL'); // 'ALL' | 'TODAY' | '7DAYS' | 'MONTH'
-  const [differenceFilter, setDifferenceFilter] = useState('ALL'); // 'ALL' | 'MATCH' | 'DEFICIT' | 'SURPLUS'
+  const [selectedCashier, setSelectedCashier] = usePersistentState('shifthistory_cashier', 'ALL');
+  const [dateFilter, setDateFilter] = usePersistentState('shifthistory_date', 'ALL'); // 'ALL' | 'TODAY' | '7DAYS' | 'MONTH'
+  const [differenceFilter, setDifferenceFilter] = usePersistentState('shifthistory_diff', 'ALL'); // 'ALL' | 'MATCH' | 'DEFICIT' | 'SURPLUS'
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState('shifthistory_itemsPerPage', 10);
 
   // Selected shift for detail modal
   const [selectedShiftId, setSelectedShiftId] = useState(null);

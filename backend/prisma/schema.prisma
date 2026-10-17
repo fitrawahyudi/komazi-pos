@@ -957,3 +957,44 @@ model CmsOutletInfo {
   updatedAt       DateTime @updatedAt
 }
 
+// ==========================================
+// Database Backup & Recovery Records
+// ==========================================
+model BackupRecord {
+  id                  Int       @id @default(autoincrement())
+  executionId         String    @unique // e.g. "bak_20261017_020000_a1b2c3d4"
+  backupType          String    @default("MANUAL") // "SCHEDULED" | "MANUAL"
+  status              String    @default("QUEUED") // "QUEUED" | "RUNNING" | "VERIFYING" | "SUCCESS" | "FAILED"
+  startedAt           DateTime  @default(now())
+  finishedAt          DateTime?
+  durationSeconds     Int?      @default(0)
+  timezone            String    @default("Asia/Jakarta")
+  fileSizeBytes       Float?    @default(0)
+  fileName            String
+  storageProvider     String    @default("LOCAL") // "LOCAL" | "S3" | "CLOUDINARY"
+  storagePath         String
+  checksumSha256      String?
+  checksumAlgorithm   String    @default("SHA-256")
+  isEncrypted         Boolean   @default(true)
+  encryptionAlgorithm String    @default("AES-256-GCM")
+  isVerified          Boolean   @default(false)
+  verifiedAt          DateTime?
+  databaseEngine      String    @default("MySQL")
+  tablesCount         Int       @default(0)
+  totalRows           Int       @default(0)
+  attempt             Int       @default(1)
+  triggeredBy         String    @default("OWNER") // "OWNER" | "SYSTEM_CRON" | username/id
+  errorCode           String?
+  errorMessage        String?   @db.Text
+  retentionCategory   String    @default("MANUAL") // "DAILY" | "WEEKLY" | "MONTHLY" | "MANUAL"
+  isProtected         Boolean   @default(false)
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status])
+  @@index([backupType])
+  @@index([createdAt])
+  @@index([retentionCategory, isProtected])
+}
+

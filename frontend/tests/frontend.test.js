@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getColumnLetter, exportOrdersToExcel, exportZReportToExcel } from '../src/utils/excel.js';
+import { getColumnLetter, exportOrdersToExcel, exportOrdersToCsv, exportZReportToExcel } from '../src/utils/excel.js';
 import { formatWibDateTime, formatOrderType } from '../src/utils/exportReport.js';
 
 test('1. Excel Column Letter Conversion: accurately converts 0-indexed column to Excel letters', () => {
@@ -23,7 +23,7 @@ test('3. WIB Timestamp Formatter: formats ISO string with Asia/Jakarta timezone'
   assert.ok(formatted.includes('10:00:00 WIB') || formatted.includes('WIB'));
 });
 
-test('4. Orders Excel Export: validates empty input guard and returns valid file metadata', () => {
+test('4. Orders Excel Export: validates empty input guard, item details resolution, and returns valid file metadata', () => {
   assert.throws(() => exportOrdersToExcel({ orders: [] }), /Tidak ada data pesanan/);
 
   const mockOrders = [
@@ -44,16 +44,50 @@ test('4. Orders Excel Export: validates empty input guard and returns valid file
       paymentMethod: 'QRIS',
       items: [{ quantity: 2, name: 'Kopi Susu Aren' }],
     },
+    {
+      id: 2,
+      invoiceNo: 'KMZ-20261017-0001',
+      createdAt: '2026-10-17T17:11:05Z',
+      status: 'PAID',
+      type: 'DINE_IN',
+      tableNo: null,
+      customerName: 'Pelanggan Dine In',
+      cashierName: 'Naia Dawami Hafillah',
+      shiftId: 1,
+      subtotal: 25000,
+      discount: 0,
+      tax: 0,
+      total: 25000,
+      paymentMethod: 'CASH',
+      items: [{ qty: 1, productName: 'Kopi Susu Aren', variantName: 'Ice' }],
+    },
   ];
 
   const result = exportOrdersToExcel({
     orders: mockOrders,
-    filterMeta: { status: 'PAID', method: 'QRIS' },
+    filterMeta: { status: 'PAID', method: 'ALL' },
   });
 
   assert.equal(result.success, true);
-  assert.equal(result.count, 1);
+  assert.equal(result.count, 2);
   assert.ok(result.fileName.includes('KOMAZI_Riwayat_Pesanan_'));
+
+  // Verify the worksheets exist and do not have 'undefined' in any cell
+  const sheet1 = result.workbook.Sheets['Daftar Transaksi'];
+  assert.ok(sheet1, 'Main worksheet exists');
+  const cells1 = Object.keys(sheet1).filter((k) => !k.startsWith('!'));
+  for (const cellKey of cells1) {
+    const val = String(sheet1[cellKey].v ?? '');
+    assert.equal(val.includes('undefined'), false, `Sheet 1 Cell ${cellKey} should not contain undefined but was: "${val}"`);
+  }
+
+  const sheet2 = result.workbook.Sheets['Rincian Item Menu'];
+  assert.ok(sheet2, 'Items worksheet exists');
+  const cells2 = Object.keys(sheet2).filter((k) => !k.startsWith('!'));
+  for (const cellKey of cells2) {
+    const val = String(sheet2[cellKey].v ?? '');
+    assert.equal(val.includes('undefined'), false, `Sheet 2 Cell ${cellKey} should not contain undefined but was: "${val}"`);
+  }
 });
 
 test('5. Z-Report Excel Export: formats accounting tables, variance reconciliation, and order details', () => {
@@ -137,3 +171,83 @@ test('5. Z-Report Excel Export: formats accounting tables, variance reconciliati
   assert.equal(result.session.id, 42);
 });
 
+test('6. Orders CSV Export: formats valid RFC 4180 CSV with UTF-8 BOM without undefined items', () => {
+  assert.throws(() => exportOrdersToCsv({ orders: [] }), /Tidak ada data pesanan/);
+
+  const mockOrders = [
+    {
+      id: 201,
+      invoiceNo: 'KMZ-20261015-0201',
+      createdAt: '2026-10-15T09:15:00Z',
+      status: 'PAID',
+      type: 'TAKE_AWAY',
+      tableNo: null,
+      customerName: 'Dewi Lestari',
+      cashierName: 'Ahmad Staff',
+      shiftId: 14,
+      subtotal: 55000,
+      discount: 0,
+      tax: 5500,
+      total: 60500,
+      paymentMethod: 'CASH',
+      items: [{ quantity: 1, name: 'Americano Double' }],
+    },
+    {
+      id: 202,
+      invoiceNo: 'KMZ-20261017-0001',
+      createdAt: '2026-10-17T17:11:05Z',
+      status: 'PAID',
+      type: 'DINE_IN',
+      tableNo: null,
+      customerName: 'Pelanggan Dine In',
+      cashierName: 'Naia Dawami Hafillah',
+      shiftId: 1,
+      subtotal: 25000,
+      discount: 0,
+      tax: 0,
+      total: 25000,
+      paymentMethod: 'CASH',
+      items: [{ qty: 1, productName: 'Kopi Susu Aren', variantName: 'Ice' }],
+    },
+  ];
+
+  const result = exportOrdersToCsv({
+    orders: mockOrders,
+    filterMeta: { status: 'PAID', method: 'CASH' },
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.count, 2);
+  assert.ok(result.fileName.includes('KOMAZI_Riwayat_Pesanan_'));
+  assert.ok(result.csvContent.startsWith('\uFEFFNo,No. Invoice'));
+  assert.ok(result.csvContent.includes('KMZ-20261015-0201'));
+  assert.ok(result.csvContent.includes('KMZ-20261017-0001'));
+  assert.ok(result.csvContent.includes('1x Kopi Susu Aren (Ice)'));
+  assert.equal(result.csvContent.includes('undefined'), false, 'CSV content should never contain undefined');
+});
+test('7. UI Store Persistence: validates that isSidebarCollapsed and featurePreferences are persisted', async () => {
+  // Setup mock localStorage if not available in Node.js
+  const storageMap = new Map();
+  if (!globalThis.localStorage) {
+    globalThis.localStorage = {
+      getItem: (key) => storageMap.get(key) || null,
+      setItem: (key, val) => storageMap.set(key, String(val)),
+      removeItem: (key) => storageMap.delete(key),
+      clear: () => storageMap.clear(),
+    };
+  }
+
+  const { useUiStore } = await import('../src/store/uiStore.js');
+  
+  // Set sidebar collapsed to true
+  useUiStore.getState().setSidebarCollapsed(true);
+  assert.equal(useUiStore.getState().isSidebarCollapsed, true);
+
+  // Toggle back to false and verify
+  useUiStore.getState().toggleSidebarCollapsed();
+  assert.equal(useUiStore.getState().isSidebarCollapsed, false);
+
+  // Set feature preferences
+  useUiStore.getState().setFeaturePreference('orders', 'itemsPerPage', 25);
+  assert.equal(useUiStore.getState().getFeaturePreference('orders', 'itemsPerPage', 10), 25);
+});

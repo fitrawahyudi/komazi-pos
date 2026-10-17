@@ -103,7 +103,7 @@ export default function CloseSessionReportModal({ session, onClose }) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-display font-black text-lg text-komazi-text">
-                  Laporan Penutupan Sesi #{session.id}
+                  Laporan Penutupan Sesi 
                 </h3>
               </div>
               <p className="text-xs text-komazi-muted">
@@ -331,13 +331,6 @@ export default function CloseSessionReportModal({ session, onClose }) {
               <span>Cetak Laporan</span>
             </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-komazi-primary hover:bg-komazi-primary-hover text-white font-bold text-xs transition-colors shadow-sm"
-          >
-            Selesai
-          </button>
         </div>
       </div>
     </div>

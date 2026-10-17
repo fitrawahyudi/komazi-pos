@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useOrdersStore } from '../store/ordersStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -68,7 +69,7 @@ export default function ReportsPage({ tab: propTab }) {
     else navigate('/reports/sales');
   };
 
-  const [dateRange, setDateRange] = useState('TODAY'); // 'TODAY' | 'WEEK' | 'MONTH'
+  const [dateRange, setDateRange] = usePersistentState('reports_dateRange', 'TODAY'); // 'TODAY' | 'WEEK' | 'MONTH'
 
   React.useEffect(() => {
     let lastFetched = Date.now();

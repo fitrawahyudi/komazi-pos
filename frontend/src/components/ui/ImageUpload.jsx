@@ -222,7 +222,7 @@ export default function ImageUpload({
                   Klik untuk upload atau seret file gambar ke sini
                 </p>
                 <p className="text-[11px] text-komazi-muted">
-                  PNG, JPG, WebP hingga 5 MB • Otomatis tersimpan di Cloudinary
+                  PNG, JPG, WebP hingga 5 MB
                 </p>
               </div>
             </>

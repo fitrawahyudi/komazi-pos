@@ -123,7 +123,7 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
           {product.modifiers && product.modifiers.length > 0 && (
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-2">
-                Tambahan / Modifier (Add-ons):
+                Tambahan:
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {product.modifiers.map((mod) => {
