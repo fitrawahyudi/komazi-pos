@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../services/api';
+import { NotificationService } from '../services/notification.service';
 
 export const useAuthStore = create(
   persist(
@@ -16,6 +17,7 @@ export const useAuthStore = create(
         const { token, user } = get();
         if (!storedToken || !token || !user || token.startsWith('mock-jwt-token-')) {
           localStorage.removeItem('komazi-auth-token');
+          localStorage.removeItem('komazi-refresh-token');
           set({ user: null, token: null, isAuthenticated: false, users: [] });
         }
       },
@@ -25,11 +27,16 @@ export const useAuthStore = create(
           const res = await api.auth.login({ username, password });
           if (res && res.success && res.data?.token) {
             localStorage.setItem('komazi-auth-token', res.data.token);
+            if (res.data.refreshToken) {
+              localStorage.setItem('komazi-refresh-token', res.data.refreshToken);
+            }
             set({
               user: res.data.user,
               token: res.data.token,
               isAuthenticated: true,
             });
+            // Sinkronkan token perangkat FCM dengan akun user yang baru login
+            NotificationService.syncPushTokenWithBackend().catch(() => {});
             return { success: true, user: res.data.user };
           }
           return {
@@ -78,7 +85,72 @@ export const useAuthStore = create(
         }
       },
 
-      // Reset password via Forgot Password (Login screen)
+      // Terbitkan token reset password sekali pakai oleh Owner
+      createResetToken: async (userId) => {
+        try {
+          const res = await api.users.createResetToken(userId);
+          if (res && res.success && res.data) {
+            return { success: true, data: res.data, message: res.message };
+          }
+          return { success: false, message: res?.message || 'Gagal menerbitkan token reset' };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      },
+
+      // Cabut token reset aktif oleh Owner
+      revokeResetToken: async (userId) => {
+        try {
+          const res = await api.users.revokeResetToken(userId);
+          if (res && res.success) {
+            return { success: true, message: res.message || 'Token berhasil dibatalkan' };
+          }
+          return { success: false, message: res?.message || 'Gagal membatalkan token' };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      },
+
+      // Cek status token reset aktif untuk user tertentu
+      getResetTokenStatus: async (userId) => {
+        try {
+          const res = await api.users.getResetTokenStatus(userId);
+          if (res && res.success && res.data) {
+            return res.data;
+          }
+        } catch (err) {
+          console.warn('[AuthStore] Gagal mengecek status token:', err?.message);
+        }
+        return { hasActiveToken: false };
+      },
+
+      // Verifikasi token reset publik sebelum submit form
+      verifyResetToken: async (token) => {
+        try {
+          const res = await api.auth.verifyResetToken(token);
+          if (res && res.success && res.data) {
+            return { success: true, data: res.data };
+          }
+          return { success: false, message: res?.message || 'Token tidak valid' };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      },
+
+      // Pengguna menyelesaikan pergantian password dengan token sekali pakai
+      completePasswordReset: async ({ token, newPassword, confirmPassword }) => {
+        try {
+          const res = await api.auth.completePasswordReset({ token, newPassword, confirmPassword });
+          if (res && res.success) {
+            return { success: true, message: res.message || 'Password berhasil diperbarui' };
+          }
+          return { success: false, message: res?.message || 'Gagal mengubah password' };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      },
+
+      // Reset password via Forgot Password (Login screen legacy)
       resetPasswordWithPin: async ({ username, securityPin, newPassword }) => {
         try {
           const res = await api.auth.resetPassword({ username, securityPin, newPassword });
@@ -141,8 +213,62 @@ export const useAuthStore = create(
         }
       },
 
+      // Ambil data profil terbaru dari database
+      refreshProfile: async () => {
+        try {
+          const res = await api.auth.getProfile();
+          if (res && res.success && res.data) {
+            const currentUser = get().user || {};
+            const updated = { ...currentUser, ...res.data };
+            set((state) => ({
+              user: updated,
+              users: state.users.map((u) => (u.id === updated.id ? { ...u, ...res.data } : u)),
+            }));
+            return { success: true, user: updated };
+          }
+          return { success: false, message: res?.message || 'Gagal memuat profil' };
+        } catch (err) {
+          console.warn('[AuthStore] Failed to refresh profile:', err);
+          return { success: false, message: err.message };
+        }
+      },
+
+      // Buat kode tautan Telegram untuk akun saat ini
+      generateTelegramLinkCode: async () => {
+        const currentUser = get().user;
+        if (!currentUser) return { success: false, message: 'Tidak ada sesi aktif' };
+        try {
+          const res = await api.telegram.generateLinkCode(currentUser.id);
+          if (res && res.success && res.data) {
+            return { success: true, data: res.data };
+          }
+          return { success: false, message: res?.message || 'Gagal membuat kode tautan' };
+        } catch (err) {
+          return { success: false, message: err.message || 'Terjadi kesalahan sistem' };
+        }
+      },
+
+      // Putuskan tautan bot Telegram akun saat ini
+      unlinkTelegram: async () => {
+        const currentUser = get().user;
+        if (!currentUser) return { success: false, message: 'Tidak ada sesi aktif' };
+        try {
+          const res = await api.telegram.unlink(currentUser.id);
+          if (res && res.success) {
+            await get().refreshProfile();
+            return { success: true, message: 'Tautan Telegram berhasil diputuskan' };
+          }
+          return { success: false, message: res?.message || 'Gagal memutuskan tautan' };
+        } catch (err) {
+          return { success: false, message: err.message || 'Terjadi kesalahan sistem' };
+        }
+      },
+
       logout: () => {
+        // Lepas relasi token perangkat FCM agar akun berikutnya tidak menerima notifikasi akun ini
+        NotificationService.unregisterPushToken().catch(() => {});
         localStorage.removeItem('komazi-auth-token');
+        localStorage.removeItem('komazi-refresh-token');
         set({
           user: null,
           token: null,

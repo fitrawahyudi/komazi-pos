@@ -99,7 +99,20 @@ export const useRecipeStore = create(
         try {
           const res = await api.recipes.getOverview();
           if (res && res.success && Array.isArray(res.data)) {
-            set({ cogsOverview: res.data, loading: false });
+            const recipesMap = {};
+            res.data.forEach((prod) => {
+              if (Array.isArray(prod.recipeItems)) {
+                recipesMap[prod.id] = prod.recipeItems;
+              }
+            });
+            set((state) => ({
+              cogsOverview: res.data,
+              recipes: {
+                ...state.recipes,
+                ...recipesMap,
+              },
+              loading: false,
+            }));
             return res.data;
           }
         } catch (err) {
@@ -109,13 +122,13 @@ export const useRecipeStore = create(
         // Local calculate from posStore products & stockStore ingredients
         const products = usePosStore.getState().products || [];
         const ingredients = useStockStore.getState().ingredients || [];
-        const ingMap = new Map(ingredients.map((i) => [i.id, i]));
+        const ingMap = new Map(ingredients.map((i) => [Number(i.id), i]));
         const recipes = get().recipes || {};
 
         const overview = products.map((prod) => {
           const recipe = recipes[prod.id] || [];
           const baseCost = recipe.reduce((sum, item) => {
-            const ing = ingMap.get(item.ingredientId);
+            const ing = ingMap.get(Number(item.ingredientId));
             return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
           }, 0);
 
@@ -144,12 +157,17 @@ export const useRecipeStore = create(
 
       // Calculate single product HPP helper
       calculateProductHpp: (productId) => {
+        const overviewItem = get().cogsOverview.find((p) => p.id === productId);
+        if (overviewItem && overviewItem.hasRecipe) {
+          return Number(overviewItem.hpp) || 0;
+        }
+
         const recipe = get().recipes[productId] || [];
         const ingredients = useStockStore.getState().ingredients || [];
-        const ingMap = new Map(ingredients.map((i) => [i.id, i]));
+        const ingMap = new Map(ingredients.map((i) => [Number(i.id), i]));
 
         const cost = recipe.reduce((sum, item) => {
-          const ing = ingMap.get(item.ingredientId);
+          const ing = ingMap.get(Number(item.ingredientId));
           return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
         }, 0);
 

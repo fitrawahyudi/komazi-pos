@@ -48,6 +48,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Tablet & Mobile Virtual Keyboard Safe Scroll */
+.modal-keyboard-safe {
+  max-height: calc(100dvh - 1.5rem);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Custom glow utilities */
 .glow-coral {
   box-shadow: 0 0 20px rgba(255, 90, 77, 0.25);
@@ -57,10 +64,44 @@
   box-shadow: 0 0 20px rgba(31, 111, 107, 0.25);
 }
 
-/* Receipt Print Styles (Thermal POS Optimized) */
+/* Skeleton Shimmer Gradient Utility */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: #1a1a1a;
+}
+
+.skeleton-shimmer::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.04) 20%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 80%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.8s infinite linear;
+  content: '';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+    opacity: 0.3;
+  }
+}
+
+
+/* Receipt Print Styles (Thermal POS Optimized - WYSIWYG 1:1) */
 @media print {
   @page {
-    margin: 0mm;
+    margin: 0 !important;
     size: auto;
   }
   html, body {
@@ -71,6 +112,7 @@
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
+    font-family: 'Courier New', Courier, monospace !important;
   }
   body * {
     visibility: hidden !important;
@@ -91,12 +133,18 @@
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    margin: 0 !important;
-    padding: 2mm !important;
+    margin: 0 auto !important;
+    padding: 0 1mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
+    box-sizing: border-box !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   #printable-receipt.receipt-58mm, #thermal-receipt.receipt-58mm {
     width: 58mm !important;
@@ -107,3 +155,4 @@
     max-width: 80mm !important;
   }
 }
+

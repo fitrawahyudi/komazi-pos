@@ -26,10 +26,15 @@ import {
   ArrowRight,
   Wifi,
   WifiOff,
+  Search,
+  X,
+  SearchX,
+  Filter,
 } from 'lucide-react';
 import { toast } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
 import { formatOrderType, isDrinkItem } from '../utils/format';
+import OrderTicket from '../components/kds/OrderTicket';
 
 export default function KdsStandaloneScreen() {
   const navigate = useNavigate();
@@ -50,6 +55,16 @@ export default function KdsStandaloneScreen() {
   const isBarista = user?.role === 'BARISTA';
   const isKitchen = user?.role === 'KITCHEN';
   const isStaffOnly = isBarista || isKitchen;
+  const isOwner = user?.role === 'OWNER';
+  const isCashier = user?.role === 'CASHIER';
+
+  // Guard: Kasir dilarang mengakses layar operasional KDS dapur
+  useEffect(() => {
+    if (isCashier) {
+      toast.error('Akses ditolak: Kasir tidak memiliki akses ke layar produksi KDS');
+      navigate('/pos', { replace: true });
+    }
+  }, [isCashier, navigate]);
 
   const [stationFilter, setStationFilter] = useState(() => {
     if (isBarista) return 'BAR';
@@ -64,6 +79,10 @@ export default function KdsStandaloneScreen() {
   const [clockString, setClockString] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'READY' | 'HOLD'
 
   // Digital clock update
   useEffect(() => {
@@ -113,7 +132,7 @@ export default function KdsStandaloneScreen() {
       window.removeEventListener('komazi:orders-updated', handleSync);
       window.removeEventListener('storage', handleSync);
     };
-  }, [fetchBackendOrders]);
+  }, []);
 
   // Filter pesanan aktif
   const activeOrders = orders.filter((o) => {
@@ -124,8 +143,8 @@ export default function KdsStandaloneScreen() {
     if (status === 'VOIDED' || status === 'REFUNDED' || status === 'SERVED') return false;
 
     const items = o.items || [];
-    const hasDrinks = items.some((i) => (i.station?.type ? i.station.type === 'BAR' : isDrinkItem(i)));
-    const hasFood = items.some((i) => (i.station?.type ? i.station.type === 'KITCHEN' : !isDrinkItem(i)));
+    const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+    const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
 
     const barStatus = o.barStatus || 'PENDING';
     const kitchenStatus = o.kitchenStatus || 'PENDING';
@@ -158,7 +177,17 @@ export default function KdsStandaloneScreen() {
     const targetStation = station || (isBarista ? 'BAR' : 'KITCHEN');
     const res = await bumpItem(itemId, targetStation);
     if (res.success) {
-      toast.success(`Item diperbarui: ${res.item?.productName || ''} (${res.item?.status})`);
+      const itemName = res.item?.productName || res.item?.name || 'Item';
+      const statusMap = {
+        PENDING: 'Menunggu',
+        PREPARING: 'Diproses',
+        IN_PROGRESS: 'Diproses',
+        READY: 'Siap Saji',
+        SERVED: 'Disajikan',
+        COMPLETED: 'Selesai',
+      };
+      const statusLabel = statusMap[res.item?.status] || res.item?.status || 'Diproses';
+      toast.success(`Item diperbarui: ${itemName} (${statusLabel})`);
     } else {
       toast.error('Gagal memperbarui status item');
     }
@@ -207,6 +236,45 @@ export default function KdsStandaloneScreen() {
   }).length;
 
   const holdCount = activeOrders.filter((o) => ['HOLD', 'OPEN'].includes((o.status || '').toUpperCase())).length;
+
+  // Filter pesanan sesuai search & quick status filter
+  const displayedOrders = activeOrders.filter((o) => {
+    // 1. Status Filter
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'HOLD') {
+        if (!['HOLD', 'OPEN'].includes((o.status || '').toUpperCase())) return false;
+      } else {
+        const curStatus =
+          isBarista || effectiveStation === 'BAR'
+            ? o.barStatus || 'PENDING'
+            : o.kitchenStatus || 'PENDING';
+        if (curStatus !== statusFilter) return false;
+      }
+    }
+
+    // 2. Search Query Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchInv = (o.invoiceNo || '').toLowerCase().includes(q);
+      const matchCust = (o.customerName || '').toLowerCase().includes(q);
+      const matchTable = (o.tableNumber || '').toLowerCase().includes(q);
+      const matchNotes = (o.notes || '').toLowerCase().includes(q);
+      const matchItems = (o.items || []).some(
+        (i) =>
+          (i.productName || '').toLowerCase().includes(q) ||
+          (i.variantName || '').toLowerCase().includes(q) ||
+          (i.notes || '').toLowerCase().includes(q)
+      );
+      if (!matchInv && !matchCust && !matchTable && !matchNotes && !matchItems) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const hasScreenFilters = statusFilter !== 'ALL' || Boolean(searchQuery.trim());
+  const hasActiveScreenFilters = hasScreenFilters;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#080808] text-komazi-text flex flex-col overflow-hidden select-none font-sans">
@@ -339,282 +407,179 @@ export default function KdsStandaloneScreen() {
         </div>
       </header>
 
-      {/* 2. STATS BAR */}
-      <div className="h-12 px-4 sm:px-6 bg-[#0E0E0E] border-b border-komazi-border flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 sm:gap-6 overflow-x-auto no-scrollbar">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-neutral-500" />
-            <span className="text-xs font-bold text-neutral-400">Antrian:</span>
-            <span className="font-mono font-black text-sm text-white">{pendingCount}</span>
-          </div>
-          <div className="w-px h-4 bg-komazi-border" />
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-            <span className="text-xs font-bold text-amber-400">Diproses:</span>
-            <span className="font-mono font-black text-sm text-amber-400">{inProgressCount}</span>
-          </div>
-          <div className="w-px h-4 bg-komazi-border" />
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <span className="text-xs font-bold text-emerald-400">Siap Saji:</span>
-            <span className="font-mono font-black text-sm text-emerald-400">{readyCount}</span>
-          </div>
+      {/* 2. STATS BAR & QUICK FILTER */}
+      <div className="h-12 px-4 sm:px-6 bg-[#0E0E0E] border-b border-komazi-border flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 overflow-x-auto no-scrollbar">
+          {/* Antrian Filter Button */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter((prev) => (prev === 'PENDING' ? 'ALL' : 'PENDING'))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'PENDING'
+                ? 'bg-neutral-800 text-white border border-neutral-600 shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+            title="Filter pesanan Menunggu / Pending"
+          >
+            <span className="w-2 h-2 rounded-full bg-neutral-500" />
+            <span>Antrian:</span>
+            <span className="font-mono font-black text-white">{pendingCount}</span>
+          </button>
+
+          <div className="w-px h-4 bg-komazi-border hidden sm:block" />
+
+          {/* Diproses Filter Button */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter((prev) => (prev === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS'))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'IN_PROGRESS'
+                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-sm'
+                : 'text-amber-400 hover:text-amber-300'
+            }`}
+            title="Filter pesanan Sedang Diproses"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span>Diproses:</span>
+            <span className="font-mono font-black text-amber-400">{inProgressCount}</span>
+          </button>
+
+          <div className="w-px h-4 bg-komazi-border hidden sm:block" />
+
+          {/* Siap Saji Filter Button */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter((prev) => (prev === 'READY' ? 'ALL' : 'READY'))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'READY'
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                : 'text-emerald-400 hover:text-emerald-300'
+            }`}
+            title="Filter pesanan Siap Saji"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>Siap Saji:</span>
+            <span className="font-mono font-black text-emerald-400">{readyCount}</span>
+          </button>
+
           {holdCount > 0 && (
             <>
-              <div className="w-px h-4 bg-komazi-border" />
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-                <span className="text-xs font-bold text-blue-400">Hold Bill:</span>
-                <span className="font-mono font-black text-sm text-blue-400">{holdCount}</span>
-              </div>
+              <div className="w-px h-4 bg-komazi-border hidden sm:block" />
+              <button
+                type="button"
+                onClick={() => setStatusFilter((prev) => (prev === 'HOLD' ? 'ALL' : 'HOLD'))}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  statusFilter === 'HOLD'
+                    ? 'bg-blue-500/25 text-blue-300 border border-blue-500/50 shadow-sm'
+                    : 'text-blue-400 hover:text-blue-300'
+                }`}
+                title="Filter pesanan Hold Bill"
+              >
+                <span className="w-2 h-2 rounded-full bg-blue-400" />
+                <span>Hold:</span>
+                <span className="font-mono font-black text-blue-400">{holdCount}</span>
+              </button>
             </>
+          )}
+
+          {hasScreenFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('ALL');
+                setSearchQuery('');
+              }}
+              className="text-[10px] text-komazi-coral hover:underline font-bold ml-1 px-1.5 py-0.5 rounded bg-komazi-coral/10 border border-komazi-coral/30"
+            >
+              Reset
+            </button>
           )}
         </div>
 
+        {/* Right Search Input & Refresh Button */}
         <div className="flex items-center gap-2">
+          {/* Quick Search Field */}
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-2.5 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari meja/invoice..."
+              className="w-32 sm:w-44 bg-[#181818] border border-komazi-border text-[11px] rounded-lg pl-8 pr-7 py-1 text-white placeholder:text-neutral-500 focus:outline-none focus:border-komazi-coral transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 text-neutral-400 hover:text-white"
+                title="Hapus pencarian"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => {
               fetchBackendOrders();
               toast.info('Menyinkronkan data antrean...');
             }}
-            className="text-[11px] text-komazi-muted hover:text-white font-bold flex items-center gap-1 transition-colors"
+            className="text-[11px] text-komazi-muted hover:text-white font-bold flex items-center gap-1 transition-colors shrink-0"
+            title="Sinkronkan antrean"
           >
             <RotateCcw className="w-3 h-3 text-komazi-coral" />
-            <span className="hidden sm:inline">Refresh Data</span>
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
 
       {/* 3. TICKET BOARD (GRID) */}
       <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
-        {activeOrders.length === 0 ? (
+        {displayedOrders.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6">
             <div className="w-20 h-20 rounded-3xl bg-[#141414] border border-komazi-border flex items-center justify-center text-emerald-400 mb-4 shadow-xl">
-              <CheckCircle2 className="w-10 h-10 opacity-80" />
+              {hasScreenFilters ? (
+                <SearchX className="w-10 h-10 text-komazi-coral opacity-80" />
+              ) : (
+                <CheckCircle2 className="w-10 h-10 opacity-80" />
+              )}
             </div>
-            <h2 className="text-xl font-black text-white">Semua Pesanan Selesai!</h2>
+            <h2 className="text-xl font-black text-white">
+              {hasScreenFilters ? 'Tidak Ada Tiket yang Cocok' : 'Semua Pesanan Selesai!'}
+            </h2>
             <p className="text-xs text-komazi-muted max-w-sm mt-1">
-              Tidak ada antrian pesanan yang perlu disiapkan saat ini. Pesanan baru dari POS akan langsung tampil secara realtime.
+              {hasScreenFilters
+                ? 'Tidak ditemukan tiket aktif dengan kata kunci atau filter status tersebut.'
+                : 'Tidak ada antrian pesanan yang perlu disiapkan saat ini. Pesanan baru dari POS akan langsung tampil secara realtime.'}
             </p>
+            {hasScreenFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setSearchQuery('');
+                }}
+                className="mt-3 px-3.5 py-1.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs transition-colors shadow-md"
+              >
+                Reset Filter & Pencarian
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {activeOrders.map((order) => {
-              const isBar = effectiveStation === 'BAR';
-              const status = isBar ? (order.barStatus || 'PENDING') : (order.kitchenStatus || 'PENDING');
-              const isOrderHold = ['HOLD', 'OPEN'].includes((order.status || '').toUpperCase());
-
-              const targetMinutes = isBar ? 5 : 10;
-              const elapsedSec = Math.max(0, Math.floor((currentTime - new Date(order.createdAt).getTime()) / 1000));
-              const elapsedMin = Math.floor(elapsedSec / 60);
-              const elapsedSecRemaining = elapsedSec % 60;
-              const formattedTime = `${String(elapsedMin).padStart(2, '0')}:${String(elapsedSecRemaining).padStart(2, '0')}`;
-
-              const isDelayed = elapsedMin >= targetMinutes;
-              const isMedium = elapsedMin >= Math.floor(targetMinutes / 2) && !isDelayed;
-
-              const displayedItems = (order.items || []).filter((item) => {
-                if (effectiveStation === 'ALL') return true;
-                if (item.station?.type) return item.station.type === effectiveStation;
-                const drink = isDrinkItem(item);
-                if (effectiveStation === 'BAR') return drink;
-                if (effectiveStation === 'KITCHEN') return !drink;
-                return true;
-              });
-
-              if (displayedItems.length === 0) return null;
-
-              return (
-                <div
-                  key={order.id}
-                  className={`rounded-2xl border flex flex-col justify-between overflow-hidden shadow-2xl transition-all ${
-                    isDelayed
-                      ? 'bg-[#221010] border-red-500 shadow-red-500/25'
-                      : status === 'READY'
-                      ? 'bg-[#121E17] border-emerald-500 shadow-emerald-500/15'
-                      : status === 'IN_PROGRESS'
-                      ? 'bg-[#1E1715] border-amber-500 shadow-amber-500/15'
-                      : isOrderHold
-                      ? 'bg-[#131722] border-blue-500/70'
-                      : 'bg-[#131313] border-komazi-border'
-                  }`}
-                >
-                  {/* Card Header */}
-                  <div
-                    className={`p-3.5 border-b flex items-start justify-between gap-2 ${
-                      isDelayed
-                        ? 'bg-red-500/20 border-red-500/30'
-                        : status === 'READY'
-                        ? 'bg-emerald-500/20 border-emerald-500/30'
-                        : status === 'IN_PROGRESS'
-                        ? 'bg-amber-500/20 border-amber-500/30'
-                        : isOrderHold
-                        ? 'bg-blue-500/20 border-blue-500/30'
-                        : 'bg-[#1A1A1A] border-komazi-border'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-display font-black text-lg text-white">
-                          {order.tableNo ? `MEJA ${order.tableNo}` : order.type === 'TAKE_AWAY' ? 'TAKE AWAY' : 'DINE IN'}
-                        </span>
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-komazi-muted">
-                          {order.invoiceNo}
-                        </span>
-                        {isOrderHold && (
-                          <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300">
-                            ⏸ HOLD
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs font-semibold text-neutral-300 mt-0.5 truncate max-w-[180px]">
-                        {order.customerName || order.label || 'Tamu'}
-                      </p>
-                    </div>
-
-                    {/* Timer Pill & Delay Tag */}
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <div
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono font-bold text-xs shadow-md ${
-                          isDelayed
-                            ? 'bg-red-500 text-white animate-pulse shadow-red-500/30'
-                            : isMedium
-                            ? 'bg-amber-500 text-black'
-                            : 'bg-[#252525] text-neutral-300 border border-white/10'
-                        }`}
-                      >
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{formattedTime}</span>
-                      </div>
-                      {isDelayed && (
-                        <span className="text-[8px] font-black uppercase tracking-wider text-red-400 bg-red-950/80 px-1 py-0.5 rounded border border-red-800 animate-pulse">
-                          ⚠ DELAYED
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Items List Body (Item-Level Status & Bump) */}
-                  <div className="p-3.5 space-y-2 flex-1 overflow-y-auto max-h-[360px]">
-                    {displayedItems.map((item, idx) => {
-                      const itemStatus = (item.status || 'PENDING').toUpperCase();
-                      const isItemDone = itemStatus === 'SERVED';
-                      const isItemReady = itemStatus === 'READY';
-                      const isItemPrep = itemStatus === 'PREPARING';
-
-                      return (
-                        <div
-                          key={item.id || idx}
-                          className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between gap-1.5 ${
-                            isItemDone
-                              ? 'bg-black/30 border-white/5 opacity-40 line-through'
-                              : isItemReady
-                              ? 'bg-emerald-500/10 border-emerald-500/30'
-                              : isItemPrep
-                              ? 'bg-amber-500/10 border-amber-500/30'
-                              : 'bg-[#1A1A1A] border-komazi-border'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2.5">
-                              <span className="w-6 h-6 rounded-lg bg-komazi-surface border border-komazi-border flex items-center justify-center font-mono font-bold text-xs text-komazi-coral shrink-0">
-                                {item.qty}x
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold text-xs text-white leading-tight">
-                                  {item.productName || item.name}
-                                </p>
-                                {item.variantName && (
-                                  <p className="text-[10px] text-komazi-coral font-semibold mt-0.5">
-                                    Varian: {item.variantName}
-                                  </p>
-                                )}
-                                {item.modifiers && (
-                                  <p className="text-[10px] text-komazi-teal-light font-medium mt-0.5">
-                                    + {item.modifiers}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Item BUMP button */}
-                            {!isItemDone ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (item.id) handleBumpItem(item.id, effectiveStation);
-                                }}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all active:scale-95 ${
-                                  isItemReady
-                                    ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40'
-                                    : isItemPrep
-                                    ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40'
-                                    : 'bg-[#222222] text-neutral-400 hover:text-white border border-neutral-700'
-                                }`}
-                              >
-                                <span>{itemStatus}</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                            ) : (
-                              <span className="text-[10px] font-bold text-neutral-500 px-1 py-0.5">
-                                SERVED
-                              </span>
-                            )}
-                          </div>
-
-                          {item.note && (
-                            <div className="mt-1 p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                              <span>Catatan: {item.note}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Action Footer (Ticket-Level BUMP) */}
-                  <div className="p-3 border-t border-komazi-border bg-[#111111]">
-                    <button
-                      type="button"
-                      onClick={() => handleBumpTicket(order.id, effectiveStation)}
-                      className={`w-full py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 ${
-                        status === 'READY'
-                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
-                          : status === 'IN_PROGRESS'
-                          ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
-                          : 'bg-komazi-coral hover:bg-komazi-coral-dark text-white shadow-komazi-coral/20'
-                      }`}
-                    >
-                      {status === 'READY' ? (
-                        <>
-                          <Check className="w-4 h-4 stroke-[3]" />
-                          <span>Selesai Saji (Complete)</span>
-                        </>
-                      ) : status === 'IN_PROGRESS' ? (
-                        <>
-                          <Bell className="w-4 h-4 stroke-[2.5]" />
-                          <span>Siap Saji (Ready)</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>Mulai Proses (Start)</span>
-                        </>
-                      )}
-                    </button>
-
-                    {isOrderHold && (
-                      <p className="text-[10px] text-blue-400/80 text-center font-medium mt-1.5">
-                        ⏸ Hold Bill — belum bayar kasir
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 items-start">
+            {displayedOrders.map((order) => (
+              <OrderTicket
+                key={order.id}
+                order={order}
+                station={effectiveStation}
+                currentTime={currentTime}
+                onBumpItem={handleBumpItem}
+                onBumpTicket={handleBumpTicket}
+                tvMode={true}
+              />
+            ))}
           </div>
         )}
       </main>

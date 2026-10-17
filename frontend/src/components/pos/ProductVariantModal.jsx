@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import { formatRupiah } from '../../utils/format';
+import React, { useState, useMemo } from 'react';
+import { formatRupiah, getProductInitials, getProductColor } from '../../utils/format';
 import { X, Check, Plus, MessageSquare } from 'lucide-react';
+import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 
 export default function ProductVariantModal({ product, onClose, onAddToCart }) {
+  const [imageError, setImageError] = useState(false);
   const hasVariants = product.variants && product.variants.length > 0;
   const [selectedVariant, setSelectedVariant] = useState(
     hasVariants ? product.variants[0] : null
   );
   const [selectedModifiers, setSelectedModifiers] = useState([]);
   const [note, setNote] = useState('');
+
+  const initials = useMemo(() => getProductInitials(product.name), [product.name]);
+  const colorScheme = useMemo(() => getProductColor(product.name), [product.name]);
+  const hasImage = Boolean(product.imageUrl && !imageError);
 
   const toggleModifier = (mod) => {
     if (selectedModifiers.some((m) => m.id === mod.id)) {
@@ -29,16 +35,30 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-komazi-border">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/75 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150"
+    >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
           <div className="flex items-center gap-3">
-            <img
-              src={product.imageUrl}
-              alt={product.name}
-              className="w-12 h-12 rounded-xl object-cover border border-komazi-border"
-            />
+            {hasImage ? (
+              <img
+                src={product.imageUrl}
+                alt={product.name}
+                className="w-12 h-12 rounded-xl object-cover border border-komazi-border shrink-0"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <div
+                className="w-12 h-12 rounded-xl bg-gradient-to-b from-[#FF6B5E] to-[#D9382B] flex items-center justify-center font-sans font-black text-lg text-white shrink-0 shadow-sm shadow-komazi-coral/20 select-none"
+              >
+                {initials}
+              </div>
+            )}
             <div>
               <h2 className="font-bold text-base text-komazi-text">{product.name}</h2>
               <span className="text-xs font-semibold text-komazi-coral">
@@ -56,7 +76,7 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-5">
           {/* Variant Selection */}
           {hasVariants && (
             <div>
@@ -152,13 +172,14 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
               placeholder="Contoh: Less ice 50%, gula pisah, tanpa sedotan..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
+              onFocus={scrollInputIntoViewOnFocus}
               className="w-full rounded-xl bg-komazi-surface-2 border border-komazi-border px-3.5 py-2.5 text-xs text-komazi-text placeholder-komazi-muted/60 focus:border-komazi-coral focus:outline-none"
             />
           </div>
         </form>
 
         {/* Footer / Submit */}
-        <div className="p-4 border-t border-komazi-border bg-komazi-surface flex items-center justify-between">
+        <div className="p-4 border-t border-komazi-border bg-komazi-surface flex items-center justify-between shrink-0">
           <div className="flex flex-col">
             <span className="text-[11px] text-komazi-muted">Harga Item:</span>
             <span className="text-lg font-bold font-mono text-komazi-coral tabular-nums">
@@ -177,5 +198,6 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

@@ -1,35 +1,81 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
-import PosPage from './pages/PosPage';
-import WorkspacePage from './pages/WorkspacePage';
-import OrdersPage from './pages/OrdersPage';
-import MenuPage from './pages/MenuPage';
-import StockPage from './pages/StockPage';
-import ReportsPage from './pages/ReportsPage';
-import SettingsPage from './pages/SettingsPage';
-import LoginPage from './pages/LoginPage';
-import KdsPage from './pages/KdsPage';
-import KdsStandaloneScreen from './pages/KdsStandaloneScreen';
-import CustomersPage from './pages/CustomersPage';
 import ToastContainer from './components/ui/ToastContainer';
+import PageFallbackSkeleton from './components/ui/loading/skeletons/PageFallbackSkeleton';
+import AnimatedSplashScreen from './components/common/AnimatedSplashScreen';
 import { useAuthStore } from './store/authStore';
 import { useSettingsStore } from './store/settingsStore';
 import { usePosStore } from './store/posStore';
-import { useOrdersStore } from './store/ordersStore';
-import { useStockStore } from './store/stockStore';
+import { useOrdersStore, initOrdersSocketSync } from './store/ordersStore';
 import { useWorkspaceStore } from './store/workspaceStore';
-import { usePrinterStore } from './store/printerStore';
-import { useShiftStore } from './store/shiftStore';
+import { useShiftStore, initShiftSocketSync } from './store/shiftStore';
 import { useCartStore } from './store/cartStore';
+import { useCustomerStore, initCustomersSocketSync } from './store/customerStore';
+import { NotificationService } from './services/notification.service';
+import { useNotificationStore } from './store/notificationStore';
+import { useToastStore } from './store/toastStore';
+import { usePrinterStore } from './store/printerStore';
+import { getSocket } from './services/socket';
+import { isAndroid, isNative, isInstalledApp } from './services/platform';
+
+// Code-splitting via React.lazy for dynamic asynchronous loading
+// Official docs: https://react.dev/reference/react/lazy
+const PosPage = lazy(() => import('./pages/PosPage'));
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const MenuPage = lazy(() => import('./pages/MenuPage'));
+const CategoriesPage = lazy(() => import('./pages/CategoriesPage'));
+const StockPage = lazy(() => import('./pages/StockPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const KdsPage = lazy(() => import('./pages/KdsPage'));
+const KdsStandaloneScreen = lazy(() => import('./pages/KdsStandaloneScreen'));
+const CustomersPage = lazy(() => import('./pages/CustomersPage'));
+const PrinterPage = lazy(() => import('./pages/PrinterPage'));
+const CashDrawerPage = lazy(() => import('./pages/CashDrawerPage'));
+const CashSessionPage = lazy(() => import('./pages/CashSessionPage'));
+const RefundsPage = lazy(() => import('./pages/RefundsPage'));
+const SuppliersPage = lazy(() => import('./pages/inventory/SuppliersPage'));
+const InboundStockPage = lazy(() => import('./pages/inventory/InboundStockPage'));
+const StockOpnamePage = lazy(() => import('./pages/inventory/StockOpnamePage'));
+const AssetsPage = lazy(() => import('./pages/inventory/AssetsPage'));
+const HrisPage = lazy(() => import('./pages/hris/HrisPage'));
+const ShiftHistoryPage = lazy(() => import('./pages/ShiftHistoryPage'));
+
+// Public Landing Page & Dedicated Marketing CMS Portal (Admin & Owner)
+const LandingPage = lazy(() => import('./pages/landing/LandingPage'));
+const CmsLayout = lazy(() => import('./components/cms/CmsLayout'));
+const CmsOverviewPage = lazy(() => import('./pages/cms/CmsOverviewPage'));
+const CmsHeroPage = lazy(() => import('./pages/cms/CmsHeroPage'));
+const CmsMenuSpotlightPage = lazy(() => import('./pages/cms/CmsMenuSpotlightPage'));
+const CmsPromosPage = lazy(() => import('./pages/cms/CmsPromosPage'));
+const CmsFacilitiesPage = lazy(() => import('./pages/cms/CmsFacilitiesPage'));
+const CmsTestimonialsPage = lazy(() => import('./pages/cms/CmsTestimonialsPage'));
+const CmsOutletPage = lazy(() => import('./pages/cms/CmsOutletPage'));
+const CmsSeoPage = lazy(() => import('./pages/cms/CmsSeoPage'));
 
 // Index Redirect Component
 function IndexRedirect() {
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
+  if (!isAuthenticated) {
+    return <Navigate to={isInstalledApp ? '/login' : '/'} replace />;
+  }
   if (user?.role === 'KITCHEN' || user?.role === 'BARISTA') {
     return <Navigate to="/kds-screen" replace />;
   }
   return <Navigate to="/pos" replace />;
+}
+
+// Dedicated Printer Route - Redirects Owner to Settings tab Printer
+function PrinterRoute() {
+  const { user } = useAuthStore();
+  if (user?.role === 'OWNER') {
+    return <Navigate to="/settings?tab=printer" replace />;
+  }
+  return <PrinterPage />;
 }
 
 // Protected Route Guard
@@ -51,22 +97,100 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
+// Root Route Resolver: Jika berjalan sebagai aplikasi terinstal (APK / Standalone PWA),
+// perangkat dikunci khusus POS sehingga langsung diarahkan ke POS kasir atau login.
+function RootRoute() {
+  const { user, isAuthenticated } = useAuthStore();
+  if (isInstalledApp) {
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+    if (user?.role === 'KITCHEN' || user?.role === 'BARISTA') {
+      return <Navigate to="/kds-screen" replace />;
+    }
+    return <Navigate to="/pos" replace />;
+  }
+
+  return (
+    <Suspense fallback={<PageFallbackSkeleton />}>
+      <LandingPage />
+    </Suspense>
+  );
+}
+
+// CMS Route Guard: Aplikasi terinstal dilarang mengakses CMS studio
+function CmsRouteGuard({ children }) {
+  if (isInstalledApp) {
+    return <Navigate to="/pos" replace />;
+  }
+  return children;
+}
+
 export default function App() {
+  // Splash screen HANYA muncul pada aplikasi Android (Capacitor APK), BUKAN web browser
+  const [showSplash, setShowSplash] = useState(() => {
+    const isDebugSplash = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('splash');
+    return (isAndroid && isNative) || isDebugSplash;
+  });
   const { fetchSettings } = useSettingsStore();
   const { initAuth, isAuthenticated } = useAuthStore();
+
+  // ─── Force-logout listener: user dinonaktifkan oleh Owner ───────────────
+  useEffect(() => {
+    const socket = getSocket();
+    const handleForceLogout = ({ userId, reason }) => {
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser && (!userId || currentUser.id === userId)) {
+        // Panggil logout store untuk membersihkan token & state
+        useAuthStore.getState().logout();
+        // Tampilkan pesan toast di halaman login
+        try {
+          useToastStore.getState().addToast({
+            type: 'error',
+            title: '🔒 Sesi Dinonaktifkan',
+            message: reason || 'Akun Anda telah dinonaktifkan. Silakan hubungi manager.',
+            duration: 8000,
+          });
+        } catch {}
+      }
+    };
+
+    if (socket) {
+      socket.on('user:force_logout', handleForceLogout);
+    }
+    const handleCustomForceLogout = (e) => {
+      handleForceLogout(e.detail || {});
+    };
+    window.addEventListener('auth:force_logout', handleCustomForceLogout);
+
+    return () => {
+      if (socket) socket.off('user:force_logout', handleForceLogout);
+      window.removeEventListener('auth:force_logout', handleCustomForceLogout);
+    };
+  }, []);
+  // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     // Validate stored auth token on every app load.
     initAuth();
     fetchSettings();
+    NotificationService.init();
+
+    // Verifikasi profil dan status keaktifan user di database secara proaktif
+    if (useAuthStore.getState().isAuthenticated) {
+      useAuthStore.getState().refreshProfile?.();
+    }
 
     // Auto-reconnect to last connected Bluetooth printer on app launch
     usePrinterStore.getState().autoConnectPrinter(true);
 
-    // Auto-reconnect when app is resumed from recent apps / background
+    // Auto-reconnect & sinkronisasi status akun saat aplikasi kembali aktif dari background
     const handleResume = () => {
       if (document.visibilityState === 'visible') {
         usePrinterStore.getState().autoConnectPrinter(true);
+        if (useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().refreshProfile?.();
+        }
       }
     };
 
@@ -81,15 +205,19 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      initOrdersSocketSync?.();
+      initCustomersSocketSync?.();
+      initShiftSocketSync?.();
       usePosStore.getState().fetchCategories();
       usePosStore.getState().fetchProducts();
       useOrdersStore.getState().fetchOrders().then(() => {
         useCartStore.getState().syncOpenBillsWithBackendOrders?.();
       });
-      useStockStore.getState().fetchIngredients();
+      useCustomerStore.getState().fetchCustomers?.({ silent: true });
       useWorkspaceStore.getState().fetchWorkspaceData?.();
       useShiftStore.getState().fetchActiveShift?.();
-      useShiftStore.getState().fetchShiftHistory?.();
+      useNotificationStore.getState().fetchUnreadCount?.();
+      NotificationService.syncPushTokenWithBackend?.().catch(() => {});
     }
   }, [isAuthenticated]);
 
@@ -97,29 +225,71 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Public Login Route */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <LoginPage />
+            </Suspense>
+          }
+        />
+
+        {/* Public Reset Password Route */}
+        <Route
+          path="/reset-password"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <ResetPasswordPage />
+            </Suspense>
+          }
+        />
 
         {/* Dedicated Standalone KDS Screen (No Sidebar, No Navbar - Dedicated for Kitchen/Bar Display) */}
         <Route
           path="/kds-screen"
           element={
-            <ProtectedRoute>
-              <KdsStandaloneScreen />
+            <ProtectedRoute allowedRoles={['KITCHEN', 'BARISTA', 'MANAGER', 'OWNER']}>
+              <Suspense fallback={<PageFallbackSkeleton />}>
+                <KdsStandaloneScreen />
+              </Suspense>
             </ProtectedRoute>
           }
         />
 
-        {/* Protected App Routes inside Layout */}
+        {/* Public F&B Landing Page (Bypass ke POS jika diinstal di aplikasi) */}
+        <Route path="/" element={<RootRoute />} />
+
+        {/* Marketing CMS Studio (Khusus Peran OWNER & MANAGER pada Web Browser) */}
         <Route
-          path="/"
+          path="/cms"
+          element={
+            <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
+              <CmsRouteGuard>
+                <Suspense fallback={<PageFallbackSkeleton />}>
+                  <CmsLayout />
+                </Suspense>
+              </CmsRouteGuard>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<CmsOverviewPage />} />
+          <Route path="hero" element={<CmsHeroPage />} />
+          <Route path="menu-spotlight" element={<CmsMenuSpotlightPage />} />
+          <Route path="promos" element={<CmsPromosPage />} />
+          <Route path="facilities" element={<CmsFacilitiesPage />} />
+          <Route path="testimonials" element={<CmsTestimonialsPage />} />
+          <Route path="outlet" element={<CmsOutletPage />} />
+          <Route path="seo" element={<CmsSeoPage />} />
+        </Route>
+
+        {/* Protected App Routes inside POS Layout */}
+        <Route
           element={
             <ProtectedRoute>
               <Layout />
             </ProtectedRoute>
           }
         >
-          {/* Index redirect */}
-          <Route index element={<IndexRedirect />} />
 
           {/* POS Kasir (Staff Dapur/KITCHEN DILARANG akses) */}
           <Route
@@ -134,6 +304,38 @@ export default function App() {
           {/* Workspace Module - Disabled */}
           <Route path="workspace" element={<Navigate to="/pos" replace />} />
 
+          {/* Kas Kasir (Peti Kas & Cash Drawer) */}
+          <Route
+            path="cash-drawer"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER', 'CASHIER']}>
+                <CashDrawerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="pos/cash" element={<Navigate to="/cash-drawer" replace />} />
+
+          {/* Sesi Kas Terbuka (Shift Kasir) */}
+          <Route
+            path="cash-session"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER', 'CASHIER']}>
+                <CashSessionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="pos/shift" element={<Navigate to="/cash-session" replace />} />
+
+          {/* Refund (Pengembalian Dana & Retur Transaksi) */}
+          <Route
+            path="refunds"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER', 'CASHIER']}>
+                <RefundsPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Orders History (Staff Dapur DILARANG akses) */}
           <Route
             path="orders"
@@ -144,8 +346,15 @@ export default function App() {
             }
           />
 
-          {/* Kitchen Display System (Barista & Dapur) */}
-          <Route path="kds" element={<KdsPage />} />
+          {/* Kitchen Display System (Khusus Dapur, Barista, Manager, & Owner) */}
+          <Route
+            path="kds"
+            element={
+              <ProtectedRoute allowedRoles={['KITCHEN', 'BARISTA', 'MANAGER', 'OWNER']}>
+                <KdsPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Customers & Member Loyalty (Staff Dapur DILARANG akses) */}
           <Route
@@ -167,22 +376,111 @@ export default function App() {
             }
           />
 
-          {/* Stock & Inventory (Manager+) */}
+          {/* Kategori Menu (Manager+) */}
           <Route
-            path="stock"
+            path="categories"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <CategoriesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Inventaris & Logistik (Manager+) */}
+          <Route
+            path="inventory/suppliers"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <SuppliersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="inventory/inbound"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <InboundStockPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="inventory/sources"
             element={
               <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
                 <StockPage />
               </ProtectedRoute>
             }
           />
-
-          {/* Reports & Analytics (Manager+) */}
           <Route
-            path="reports"
+            path="inventory/opname"
             element={
               <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
-                <ReportsPage />
+                <StockOpnamePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="inventory/assets"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <AssetsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Backwards compatibility untuk /stock */}
+          <Route path="stock" element={<Navigate to="/inventory/sources" replace />} />
+
+          {/* Reports & Analytics (Manager+) */}
+          <Route path="reports" element={<Navigate to="/reports/sales" replace />} />
+          <Route
+            path="reports/sales"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="SALES" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/cogs"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="COGS" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/profit-loss"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="PROFIT_LOSS" />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Riwayat Sesi Kasir */}
+          <Route
+            path="shift-history"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
+                <ShiftHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* HRIS - Human Resource Information System */}
+          <Route
+            path="hris"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER', 'CASHIER', 'BARISTA', 'KITCHEN']}>
+                <HrisPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="hris/:tab"
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER', 'CASHIER', 'BARISTA', 'KITCHEN']}>
+                <HrisPage />
               </ProtectedRoute>
             }
           />
@@ -197,16 +495,29 @@ export default function App() {
             }
           />
 
-          {/* Printer Kasir & Hardware (Redirect ke Pengaturan Usaha tab Printer) */}
+          {/* Printer Kasir & Hardware Management */}
           <Route
             path="printer"
-            element={<Navigate to="/settings?tab=printer" replace />}
+            element={
+              <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
+                <PrinterRoute />
+              </ProtectedRoute>
+            }
           />
+          <Route path="printers" element={<Navigate to="/printer" replace />} />
         </Route>
 
         {/* Catch-all */}
         <Route path="*" element={<IndexRedirect />} />
       </Routes>
+
+      {/* Splash Screen Animasi (Hanya muncul pada aplikasi Android) */}
+      {showSplash && (
+        <AnimatedSplashScreen
+          duration={1800}
+          onFinish={() => setShowSplash(false)}
+        />
+      )}
 
       {/* Global Toast Notification Container */}
       <ToastContainer />

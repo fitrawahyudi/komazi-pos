@@ -1,47 +1,86 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '../services/api';
+import { getSocket } from '../services/socket';
 
 export const useShiftStore = create(
   persist(
     (set, get) => ({
       activeShift: null,
+      registers: [],
+      selectedRegisterId: 1,
       shiftHistory: [],
       isLoading: false,
       lastSyncedAt: null,
 
       /**
+       * Set register yang dipilih oleh kasir
+       */
+      setSelectedRegisterId: (registerId) => {
+        set({ selectedRegisterId: Number(registerId) });
+        get().fetchActiveShift(registerId);
+      },
+
+      /**
+       * Ambil daftar terminal/register kasir dari backend
+       */
+      fetchRegisters: async () => {
+        try {
+          const res = await api.shifts.getRegisters();
+          if (res && res.success && Array.isArray(res.data)) {
+            set({ registers: res.data });
+            if (!get().selectedRegisterId && res.data.length > 0) {
+              set({ selectedRegisterId: res.data[0].id });
+            }
+            return res.data;
+          }
+        } catch (err) {
+          console.warn('[ShiftStore] Gagal mengambil daftar register:', err?.message);
+        }
+        return get().registers;
+      },
+
+      /**
        * Ambil shift aktif langsung dari database MySQL via backend API
        */
-      fetchActiveShift: async () => {
+      fetchActiveShift: async (targetRegisterId = null) => {
+        const regId = targetRegisterId || get().selectedRegisterId;
         try {
           set({ isLoading: true });
-          const res = await api.shifts.getCurrent();
+          const res = await api.shifts.getCurrent(regId);
 
           if (res && res.success && res.data) {
             const shiftData = res.data;
-            const existingMovements = get().activeShift?.cashMovements || [];
 
             const syncedShift = {
               id: shiftData.id,
+              registerId: shiftData.registerId || regId,
+              registerName: shiftData.registerName || 'Kasir Utama',
+              registerCode: shiftData.registerCode || 'REG-01',
               cashierId: shiftData.cashierId,
-              cashierName: shiftData.cashierName || shiftData.cashier?.name || 'Kasir',
+              cashierName: shiftData.cashierName || 'Kasir',
               openedAt: shiftData.openedAt,
               closedAt: shiftData.closedAt,
               openingCash: Number(shiftData.openingCash || 0),
               closingCash: shiftData.closingCash ? Number(shiftData.closingCash) : null,
               expectedCash: Number(shiftData.expectedCash || 0),
-              totalCashSales: Number(shiftData.totalCashSales || shiftData.cashSales || 0),
-              totalNonCashSales: Number(shiftData.totalNonCashSales || shiftData.nonCashSales || 0),
-              totalCashIn: Number(get().activeShift?.totalCashIn || 0),
-              totalCashOut: Number(get().activeShift?.totalCashOut || 0),
-              cashMovements: existingMovements,
+              totalCashSales: Number(shiftData.totalCashSales || 0),
+              totalNonCashSales: Number(shiftData.totalNonCashSales || 0),
+              totalSales: Number(shiftData.totalSales || 0),
+              totalCashIn: Number(shiftData.totalCashIn || 0),
+              totalCashOut: Number(shiftData.totalCashOut || 0),
+              totalCashDrop: Number(shiftData.totalCashDrop || 0),
+              totalCashRefund: Number(shiftData.totalCashRefund || 0),
+              paymentMethodsSummary: shiftData.paymentMethodsSummary || { CASH: 0, QRIS: 0, TRANSFER: 0 },
+              cashMovements: Array.isArray(shiftData.cashMovements) ? shiftData.cashMovements : [],
+              cashiers: Array.isArray(shiftData.cashiers) ? shiftData.cashiers : [],
               ordersCount: shiftData.ordersCount || 0,
               isClosed: false,
             };
 
             set({
               activeShift: syncedShift,
+              selectedRegisterId: syncedShift.registerId || regId,
               isLoading: false,
               lastSyncedAt: new Date().toISOString(),
             });
@@ -60,32 +99,61 @@ export const useShiftStore = create(
       /**
        * Buka shift kasir baru dan simpan ke database MySQL
        */
-      openShift: async (cashier, openingCash) => {
-        const numOpeningCash = Number(openingCash) || 0;
+      openShift: async (cashierOrPayload, openingCashVal = null) => {
+        // Mendukung format (cashier, openingCash) atau ({ openingCash, registerId })
+        let numOpeningCash = 0;
+        let registerId = get().selectedRegisterId;
+
+        if (typeof cashierOrPayload === 'object' && cashierOrPayload !== null && ('openingCash' in cashierOrPayload || 'registerId' in cashierOrPayload)) {
+          numOpeningCash = Number(cashierOrPayload.openingCash) || 0;
+          if (cashierOrPayload.registerId) registerId = Number(cashierOrPayload.registerId);
+        } else {
+          numOpeningCash = Number(openingCashVal) || 0;
+        }
+
         try {
           set({ isLoading: true });
-          const res = await api.shifts.open({ openingCash: numOpeningCash });
+          const res = await api.shifts.open({
+            openingCash: numOpeningCash,
+            registerId,
+          });
 
           if (res && res.success && res.data) {
+            const data = res.data;
             const newShift = {
-              id: res.data.id,
-              cashierId: res.data.cashierId || cashier?.id,
-              cashierName: res.data.cashierName || res.data.cashier?.name || cashier?.name || 'Kasir',
-              openedAt: res.data.openedAt || new Date().toISOString(),
+              id: data.id,
+              registerId: data.registerId || registerId,
+              registerName: data.registerName || 'Kasir Utama',
+              registerCode: data.registerCode || 'REG-01',
+              cashierId: data.cashierId,
+              cashierName: data.cashierName || 'Kasir',
+              openedAt: data.openedAt || new Date().toISOString(),
               openingCash: numOpeningCash,
+              closingCash: null,
+              expectedCash: numOpeningCash,
               totalCashSales: 0,
               totalNonCashSales: 0,
+              totalSales: 0,
               totalCashIn: 0,
               totalCashOut: 0,
+              totalCashDrop: 0,
+              totalCashRefund: 0,
+              paymentMethodsSummary: { CASH: 0, QRIS: 0, TRANSFER: 0 },
               cashMovements: [],
+              cashiers: [],
+              ordersCount: 0,
               isClosed: false,
             };
 
             set({
               activeShift: newShift,
+              selectedRegisterId: newShift.registerId,
               isLoading: false,
               lastSyncedAt: new Date().toISOString(),
             });
+
+            // Refresh registers state in background
+            get().fetchRegisters().catch(() => {});
 
             return newShift;
           } else {
@@ -100,9 +168,10 @@ export const useShiftStore = create(
       /**
        * Tutup shift kasir dan rekap selisih kas di database MySQL
        */
-      closeShift: async (closingCash, notes = '') => {
+      closeShift: async (closingCash, notes = '', shiftId = null) => {
         const shift = get().activeShift;
-        if (!shift) throw new Error('Tidak ada shift aktif yang ditemukan');
+        const targetId = shiftId || shift?.id;
+        if (!targetId) throw new Error('Tidak ada shift aktif yang ditemukan untuk ditutup');
 
         const numClosingCash = Number(closingCash) || 0;
 
@@ -111,16 +180,18 @@ export const useShiftStore = create(
           const res = await api.shifts.close({
             closingCash: numClosingCash,
             notes: notes || '',
+            shiftId: targetId,
           });
 
           if (res && res.success && res.data) {
             const closedData = res.data;
             const completedShift = {
-              ...shift,
+              ...(shift || {}),
+              ...closedData,
               closedAt: closedData.closedAt || new Date().toISOString(),
               closingCash: numClosingCash,
-              expectedCash: Number(closedData.expectedCash || shift.expectedCash || 0),
-              difference: Number(closedData.difference || (numClosingCash - (shift.expectedCash || 0))),
+              expectedCash: Number(closedData.expectedCash || shift?.expectedCash || 0),
+              difference: Number(closedData.difference || (numClosingCash - (shift?.expectedCash || 0))),
               notes,
               isClosed: true,
             };
@@ -132,8 +203,9 @@ export const useShiftStore = create(
               lastSyncedAt: new Date().toISOString(),
             }));
 
-            // Refresh riwayat shift dari DB di background
+            // Refresh riwayat shift & registers dari DB
             get().fetchShiftHistory().catch(() => {});
+            get().fetchRegisters().catch(() => {});
 
             return completedShift;
           } else {
@@ -146,11 +218,57 @@ export const useShiftStore = create(
       },
 
       /**
+       * Catat kas masuk/keluar/drop operasional kasir langsung ke database MySQL
+       */
+      addCashMovement: async (typeOrPayload, amountVal = null, reasonVal = '') => {
+        let type = 'OUT';
+        let amount = 0;
+        let reason = '';
+        let shiftId = get().activeShift?.id;
+
+        if (typeof typeOrPayload === 'object' && typeOrPayload !== null) {
+          type = typeOrPayload.type || 'OUT';
+          amount = Number(typeOrPayload.amount) || 0;
+          reason = typeOrPayload.reason || '';
+          if (typeOrPayload.shiftId) shiftId = typeOrPayload.shiftId;
+        } else {
+          type = typeOrPayload;
+          amount = Number(amountVal) || 0;
+          reason = reasonVal;
+        }
+
+        if (!shiftId) throw new Error('Tidak ada shift aktif untuk mencatat arus kas.');
+        if (amount <= 0) throw new Error('Nominal kas harus lebih dari Rp 0.');
+
+        try {
+          set({ isLoading: true });
+          const res = await api.shifts.recordMovement({
+            type,
+            amount,
+            reason: reason.trim(),
+            shiftId,
+          });
+
+          if (res && res.success && res.data) {
+            // Re-fetch active shift directly from backend to get accurate recalculated totals
+            await get().fetchActiveShift(get().selectedRegisterId);
+            set({ isLoading: false });
+            return res.data;
+          } else {
+            throw new Error(res?.message || 'Gagal mencatat arus kas');
+          }
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
+      },
+
+      /**
        * Ambil riwayat shift dari database MySQL
        */
-      fetchShiftHistory: async () => {
+      fetchShiftHistory: async (params = { limit: 50 }) => {
         try {
-          const res = await api.shifts.getHistory({ limit: 50 });
+          const res = await api.shifts.getHistory(params);
           if (res && res.success && Array.isArray(res.data)) {
             set({ shiftHistory: res.data });
             return res.data;
@@ -159,6 +277,21 @@ export const useShiftStore = create(
           console.warn('[ShiftStore] Gagal mengambil riwayat shift dari server:', err?.message);
         }
         return get().shiftHistory;
+      },
+
+      /**
+       * Ambil detail lengkap suatu shift untuk audit & Z-Report
+       */
+      fetchShiftDetail: async (id) => {
+        try {
+          const res = await api.shifts.getDetail(id);
+          if (res && res.success && res.data) {
+            return res.data;
+          }
+        } catch (err) {
+          console.warn('[ShiftStore] Gagal mengambil detail shift:', err?.message);
+        }
+        return null;
       },
 
       /**
@@ -172,13 +305,20 @@ export const useShiftStore = create(
 
         if (paymentMethod === 'CASH') {
           const newCashSales = (shift.totalCashSales || 0) + numAmount;
-          const newExpected = (shift.openingCash || 0) + newCashSales + (shift.totalCashIn || 0) - (shift.totalCashOut || 0);
+          const newExpected =
+            (shift.openingCash || 0) +
+            newCashSales +
+            (shift.totalCashIn || 0) -
+            (shift.totalCashOut || 0) -
+            (shift.totalCashDrop || 0);
 
           set({
             activeShift: {
               ...shift,
               totalCashSales: newCashSales,
+              totalSales: (shift.totalSales || 0) + numAmount,
               expectedCash: newExpected,
+              ordersCount: (shift.ordersCount || 0) + 1,
             },
           });
         } else {
@@ -186,46 +326,61 @@ export const useShiftStore = create(
             activeShift: {
               ...shift,
               totalNonCashSales: (shift.totalNonCashSales || 0) + numAmount,
+              totalSales: (shift.totalSales || 0) + numAmount,
+              ordersCount: (shift.ordersCount || 0) + 1,
             },
           });
         }
       },
-
-      /**
-       * Catat kas masuk/keluar operasional kasir
-       */
-      addCashMovement: (type, amount, reason) => {
-        const shift = get().activeShift;
-        if (!shift || shift.isClosed) return null;
-
-        const numAmount = Math.max(0, Number(amount) || 0);
-        const movement = {
-          id: Date.now(),
-          type, // 'IN' | 'OUT'
-          amount: numAmount,
-          reason: reason || (type === 'IN' ? 'Kas Masuk' : 'Kas Keluar'),
-          timestamp: new Date().toISOString(),
-        };
-
-        const totalCashIn = (shift.totalCashIn || 0) + (type === 'IN' ? numAmount : 0);
-        const totalCashOut = (shift.totalCashOut || 0) + (type === 'OUT' ? numAmount : 0);
-        const expectedCash = (shift.openingCash || 0) + (shift.totalCashSales || 0) + totalCashIn - totalCashOut;
-
-        set({
-          activeShift: {
-            ...shift,
-            totalCashIn,
-            totalCashOut,
-            expectedCash,
-            cashMovements: [movement, ...(shift.cashMovements || [])],
-          },
-        });
-
-        return movement;
-      },
     }),
     {
       name: 'komazi-shift-storage',
+      partialize: (state) => ({
+        selectedRegisterId: state.selectedRegisterId,
+      }),
     }
   )
 );
+
+// Socket.IO Real-time Synchronization Listener untuk Sesi Kasir & Register
+let isShiftSocketSyncBound = false;
+
+export function initShiftSocketSync() {
+  if (typeof window === 'undefined' || isShiftSocketSyncBound) return;
+
+  try {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on('shift:opened', (openedShift) => {
+      console.log('📡 [ShiftStore] Realtime shift:opened received:', openedShift);
+      const state = useShiftStore.getState();
+      state.fetchRegisters?.().catch(() => {});
+      if (!state.selectedRegisterId || state.selectedRegisterId === openedShift?.registerId) {
+        state.fetchActiveShift?.(openedShift?.registerId).catch(() => {});
+      }
+    });
+
+    socket.on('shift:closed', (closedShift) => {
+      console.log('📡 [ShiftStore] Realtime shift:closed received:', closedShift);
+      const state = useShiftStore.getState();
+      state.fetchRegisters?.().catch(() => {});
+      state.fetchShiftHistory?.().catch(() => {});
+      if (state.activeShift?.id === closedShift?.id || state.selectedRegisterId === closedShift?.registerId) {
+        state.fetchActiveShift?.(state.selectedRegisterId).catch(() => {});
+      }
+    });
+
+    socket.on('shift:movement_added', (movement) => {
+      console.log('📡 [ShiftStore] Realtime shift:movement_added received:', movement);
+      const state = useShiftStore.getState();
+      if (state.activeShift?.id === movement?.shiftId) {
+        state.fetchActiveShift?.(state.selectedRegisterId).catch(() => {});
+      }
+    });
+
+    isShiftSocketSyncBound = true;
+  } catch (err) {
+    console.warn('[ShiftStore] Gagal mengikat listener socket:', err);
+  }
+}

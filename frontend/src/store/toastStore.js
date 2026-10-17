@@ -33,7 +33,7 @@ export const useToastStore = create((set, get) => ({
 export const toast = {
   success: (message, title = 'Berhasil') =>
     useToastStore.getState().addToast({ type: 'success', title, message }),
-  error: (message, title = 'Peringatan / Error') =>
+  error: (message, title = 'Peringatan') =>
     useToastStore.getState().addToast({ type: 'error', title, message, duration: 4500 }),
   warning: (message, title = 'Perhatian') =>
     useToastStore.getState().addToast({ type: 'warning', title, message, duration: 4000 }),

@@ -1,16 +1,22 @@
 import React, { useState } from 'react';
+import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 import { useCartStore } from '../../store/cartStore';
 import { useOrdersStore } from '../../store/ordersStore';
 import { useShiftStore } from '../../store/shiftStore';
 import { useStockStore } from '../../store/stockStore';
 import { useCustomerStore } from '../../store/customerStore';
 import { useAuthStore } from '../../store/authStore';
+import { useHrisStore } from '../../store/hrisStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { formatRupiah } from '../../utils/format';
+import { usePrinterStore } from '../../store/printerStore';
+import { formatRupiah, formatAccountNumber } from '../../utils/format';
+import { getBankBadgeStyle } from '../settings/BankTransferSettingsCard';
 import { convertStaticToDynamicQris, generateQrDataUrl } from '../../utils/qris';
 import { api } from '../../services/api';
 import confetti from 'canvas-confetti';
 import { toast } from '../../store/toastStore';
+import LoadingButton from '../ui/loading/LoadingButton';
+import ThermalReceiptModal from './ThermalReceiptModal';
 import {
   X,
   Banknote,
@@ -26,6 +32,7 @@ import {
   Loader2,
   Radio,
   Zap,
+  Printer,
 } from 'lucide-react';
 
 function playPaymentSuccessChime() {
@@ -56,10 +63,28 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
   const { settings } = useSettingsStore();
 
   const summary = getCartSummary();
+  const isBankTransferEnabled = settings?.bankTransferEnabled !== false;
+  const bankAccounts = Array.isArray(settings?.bankAccounts) && settings.bankAccounts.length > 0
+    ? settings.bankAccounts
+    : [
+        {
+          id: 'bank-default',
+          bankName: settings?.bankName || 'BCA',
+          accountNumber: settings?.bankAccountNumber || '8291002931',
+          accountName: settings?.bankAccountName || 'PT KOMAZI KREATIF BERSAMA',
+          isDefault: true,
+        },
+      ];
+
+  const defaultBank = bankAccounts.find((b) => b.isDefault) || bankAccounts[0];
+  const [selectedBankId, setSelectedBankId] = useState(() => defaultBank?.id || 'bank-default');
+  const activeBank = bankAccounts.find((b) => b.id === selectedBankId) || defaultBank || bankAccounts[0];
+
   const [method, setMethod] = useState('CASH'); // 'CASH' | 'QRIS' | 'TRANSFER'
   const [cashTendered, setCashTendered] = useState(summary.grandTotal);
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [transferRef, setTransferRef] = useState('');
+  const [qrisRef, setQrisRef] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [qrisQrDataUrl, setQrisQrDataUrl] = useState('');
   const [isGeneratingQr, setIsGeneratingQr] = useState(false);
@@ -118,7 +143,82 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
     setTimeout(() => setCopiedAccount(false), 2000);
   };
 
+  const [isPrintingBill, setIsPrintingBill] = useState(false);
+  const [billReceiptToPreview, setBillReceiptToPreview] = useState(null);
+
+  const handlePrintBill = async () => {
+    try {
+      setIsPrintingBill(true);
+      const billOrder = {
+        id: currentHoldBillId || `BILL-${Date.now().toString().slice(-6)}`,
+        invoiceNo: sessionInvoiceNo,
+        createdAt: new Date().toISOString(),
+        status: 'OPEN',
+        cashierName: typeof user?.name === 'string' ? user.name : 'Kasir',
+        type: orderType || 'DINE_IN',
+        orderType: orderType || 'DINE_IN',
+        tableNo: orderType === 'DINE_IN' ? tableNo : null,
+        customerName: customerName || null,
+        items: items.map((i) => ({
+          name: i.name || i.productName || 'Item',
+          productName: i.name || i.productName || 'Item',
+          variantName: i.variant?.name || i.variantName || null,
+          qty: Number(i.qty) || 1,
+          unitPrice: Number(i.unitPrice) || 0,
+          price: Number(i.unitPrice) || 0,
+          lineTotal: Number(i.lineTotal) || ((Number(i.qty) || 1) * (Number(i.unitPrice) || 0)),
+          note: i.note || null,
+        })),
+        subtotal: Number(summary.subtotal) || 0,
+        discount: Number(summary.discountAmount) || 0,
+        serviceFee: Number(summary.serviceFee) || 0,
+        tax: Number(summary.tax) || 0,
+        total: Number(summary.grandTotal) || 0,
+        grandTotal: Number(summary.grandTotal) || 0,
+        paymentMethod: method,
+        payments: [],
+        showQris: method === 'QRIS' || settings?.qrisEnabled !== false,
+      };
+
+      const printerState = usePrinterStore.getState();
+      if (printerState.isConnected) {
+        toast.info('Mencetak struk tagihan (Bill) ke printer...');
+        const res = await printerState.printReceiptForOrder(billOrder, {
+          requestedBy: typeof user?.name === 'string' ? user.name : 'Kasir',
+          showQris: method === 'QRIS' || settings?.qrisEnabled !== false,
+        });
+        if (res.success) {
+          toast.success('Struk tagihan berhasil dicetak! Berikan ke pelanggan sebelum konfirmasi pembayaran.');
+        } else {
+          toast.warning('Printer offline, membuka pratinjau struk...');
+          setBillReceiptToPreview(billOrder);
+        }
+      } else {
+        setBillReceiptToPreview(billOrder);
+      }
+    } catch (err) {
+      console.error('[PaymentModal] Gagal cetak bill:', err);
+      toast.error('Gagal mencetak struk tagihan: ' + err.message);
+    } finally {
+      setIsPrintingBill(false);
+    }
+  };
+
   const handleConfirmPayment = (customReference = null) => {
+    if (!activeShift || activeShift.isClosed) {
+      toast.error('Tidak dapat memproses transaksi: Sesi kasir belum dibuka. Silakan buka sesi terlebih dahulu.');
+      return;
+    }
+
+    const myTodaySchedule = useHrisStore.getState().myTodaySchedule;
+    const myTodayAttendance = useHrisStore.getState().myTodayAttendance;
+    const isOwner = user?.role === 'OWNER';
+    const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+    if (!isOwner && !hasClockedIn) {
+      toast.error('Anda wajib melakukan presensi terlebih dahulu sebelum dapat menyelesaikan transaksi.');
+      return;
+    }
+
     setIsProcessing(true);
 
     // Pastikan customReference adalah string murni (bukan SyntheticEvent dari onClick)
@@ -181,63 +281,102 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             reference:
               safeReference ||
               (method === 'TRANSFER'
-                ? (typeof transferRef === 'string' && transferRef.trim()) || 'TRF-AUTO'
+                ? (typeof transferRef === 'string' && transferRef.trim())
+                  ? `${activeBank?.bankName || 'TRF'}: ${transferRef.trim()}`
+                  : `TRF-${activeBank?.bankName || 'BANK'}`
                 : method === 'QRIS'
-                  ? `QRIS-${sessionInvoiceNo}`
+                  ? (typeof qrisRef === 'string' && qrisRef.trim()) || `QRIS-${sessionInvoiceNo}`
                   : null),
           },
         ],
       };
 
-      // Jika pembayaran ini berasal dari hold bill yang direstore, upgrade hold order ke PAID agar tidak ada duplikasi di KDS
       let newOrder;
-      if (currentHoldBillId) {
-        const currentBackendOrderId = useCartStore.getState().currentBackendOrderId;
-        newOrder = await upgradeHoldToPaid(currentHoldBillId, orderPayload, currentBackendOrderId);
-      } else {
-        newOrder = await createOrder(orderPayload);
-      }
-
-      // 1. Record into active shift
-      recordSaleToShift(method, summary.grandTotal);
-
-      // 2. Professional Auto-Deduction of Recipe Ingredients (BOM)
       try {
-        const stockStore = useStockStore.getState();
-        if (typeof stockStore.deductStockForOrder === 'function') {
-          stockStore.deductStockForOrder(items, newOrder?.invoiceNo || sessionInvoiceNo);
-        } else if (typeof stockStore.deductIngredientsForOrder === 'function') {
-          stockStore.deductIngredientsForOrder(items, newOrder?.invoiceNo || sessionInvoiceNo);
+        const currentBackendOrderId = useCartStore.getState().currentBackendOrderId;
+        if (currentHoldBillId || currentBackendOrderId) {
+          newOrder = await upgradeHoldToPaid(currentHoldBillId, orderPayload, currentBackendOrderId);
+          useCartStore.setState({ currentHoldBillId: null, currentBackendOrderId: null });
+        } else {
+          newOrder = await createOrder(orderPayload);
         }
+
+        // 1. Record into active shift
+        recordSaleToShift(method, summary.grandTotal);
+
+        // 2. Professional Auto-Deduction of Recipe Ingredients (BOM)
+        try {
+          const stockStore = useStockStore.getState();
+          if (typeof stockStore.deductStockForOrder === 'function') {
+            stockStore.deductStockForOrder(items, newOrder?.invoiceNo || sessionInvoiceNo);
+          } else if (typeof stockStore.deductIngredientsForOrder === 'function') {
+            stockStore.deductIngredientsForOrder(items, newOrder?.invoiceNo || sessionInvoiceNo);
+          }
+        } catch (err) {
+          console.warn('Auto stock deduction notice:', err);
+        }
+
+        // 3. Customer Loyalty points accumulation & redemption
+        const activeRedeemedPoints = useCartStore.getState().redeemedPoints || 0;
+        if (selectedCustomerId) {
+          const foundCustomer = useCustomerStore.getState().customers.find(
+            (c) => c.id === selectedCustomerId
+          );
+          if (foundCustomer) {
+            if (activeRedeemedPoints > 0) {
+              useCustomerStore.getState().redeemPoints(
+                selectedCustomerId,
+                activeRedeemedPoints,
+                `Diskon poin belanja invoice #${newOrder?.invoiceNo || sessionInvoiceNo}`
+              ).catch((err) => console.warn('Redeem points error:', err));
+            }
+            useCustomerStore.getState().recordTransaction(foundCustomer.id, summary.grandTotal);
+            toast.success(`+${Math.floor(summary.grandTotal / 10000)} Poin Loyalty ditambahkan untuk ${foundCustomer.name}!`);
+          }
+        } else if (customerName) {
+          const foundCustomer = useCustomerStore.getState().customers.find(
+            (c) => c.name.toLowerCase() === customerName.toLowerCase() || c.phone === customerName
+          );
+          if (foundCustomer) {
+            if (activeRedeemedPoints > 0) {
+              useCustomerStore.getState().redeemPoints(
+                foundCustomer.id,
+                activeRedeemedPoints,
+                `Diskon poin belanja invoice #${newOrder?.invoiceNo || sessionInvoiceNo}`
+              ).catch((err) => console.warn('Redeem points error:', err));
+            }
+            useCustomerStore.getState().recordTransaction(foundCustomer.id, summary.grandTotal);
+            toast.success(`+${Math.floor(summary.grandTotal / 10000)} Poin Loyalty ditambahkan untuk ${foundCustomer.name}!`);
+          }
+        }
+
+        // 3.5 Auto-print kitchen ticket if enabled
+        try {
+          const printerState = usePrinterStore.getState();
+          if (printerState.autoPrintKitchenOnCheckout && newOrder) {
+            printerState.printKitchenTicketForOrder(newOrder, {
+              requestedBy: typeof user?.name === 'string' ? user.name : 'Kasir',
+            });
+          }
+        } catch (err) {
+          console.warn('Auto kitchen print notice:', err);
+        }
+
+        // 4. Clear the current cart & sync open bills
+        clearCart(false);
+        useCartStore.getState().syncOpenBillsWithBackendOrders?.(false);
+        setIsProcessing(false);
+
+        // 5. Open receipt modal callback
+        onSuccessOrder(newOrder);
       } catch (err) {
-        console.warn('Auto stock deduction notice:', err);
-      }
-
-      // 3. Customer Loyalty points accumulation
-      if (selectedCustomerId) {
-        const foundCustomer = useCustomerStore.getState().customers.find(
-          (c) => c.id === selectedCustomerId
-        );
-        if (foundCustomer) {
-          useCustomerStore.getState().recordTransaction(foundCustomer.id, summary.grandTotal);
-          toast.success(`+${Math.floor(summary.grandTotal / 10000)} Poin Loyalty ditambahkan untuk ${foundCustomer.name}!`);
-        }
-      } else if (customerName) {
-        const foundCustomer = useCustomerStore.getState().customers.find(
-          (c) => c.name.toLowerCase() === customerName.toLowerCase() || c.phone === customerName
-        );
-        if (foundCustomer) {
-          useCustomerStore.getState().recordTransaction(foundCustomer.id, summary.grandTotal);
-          toast.success(`+${Math.floor(summary.grandTotal / 10000)} Poin Loyalty ditambahkan untuk ${foundCustomer.name}!`);
+        setIsProcessing(false);
+        const errMsg = err?.message || 'Gagal memproses transaksi pembayaran';
+        toast.error(errMsg);
+        if (errMsg.toLowerCase().includes('sesi kasir') || errMsg.toLowerCase().includes('shift')) {
+          useShiftStore.getState().fetchActiveShift?.();
         }
       }
-
-      // 4. Clear the current cart
-      clearCart();
-      setIsProcessing(false);
-
-      // 5. Open receipt modal callback
-      onSuccessOrder(newOrder);
     }, 400);
   };
 
@@ -293,18 +432,24 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-komazi-border">
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-komazi-coral" />
-            <h2 className="font-bold text-base text-komazi-text">Pembayaran</h2>
+    <>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-200"
+      >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-komazi-coral" />
+              <h2 className="font-bold text-base text-komazi-text">Pembayaran</h2>
+            </div>
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="p-5 overflow-y-auto space-y-5">
+          {/* Content */}
+          <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 sm:space-y-5 flex-1">
           {/* Total Tagihan Box */}
           <div className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex flex-col items-center justify-center text-center">
             <span className="text-xs uppercase tracking-wider font-semibold text-komazi-muted">
@@ -331,7 +476,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-2">
               Pilih Metode Pembayaran:
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid gap-2 ${isBankTransferEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <button
                 type="button"
                 onClick={() => setMethod('CASH')}
@@ -356,17 +501,19 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                 <span>QRIS Dinamis</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setMethod('TRANSFER')}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-semibold transition-all ${method === 'TRANSFER'
-                    ? 'border-komazi-coral bg-komazi-coral/15 text-komazi-coral shadow-sm'
-                    : 'border-komazi-border bg-komazi-surface-2 text-komazi-muted hover:text-white'
-                  }`}
-              >
-                <CreditCard className="w-5 h-5 mb-1 text-komazi-teal-light" />
-                <span>Transfer Bank</span>
-              </button>
+              {isBankTransferEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setMethod('TRANSFER')}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-semibold transition-all ${method === 'TRANSFER'
+                      ? 'border-komazi-coral bg-komazi-coral/15 text-komazi-coral shadow-sm'
+                      : 'border-komazi-border bg-komazi-surface-2 text-komazi-muted hover:text-white'
+                    }`}
+                >
+                  <CreditCard className="w-5 h-5 mb-1 text-komazi-teal-light" />
+                  <span>Transfer Bank</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -410,6 +557,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                     step="1000"
                     value={cashTendered}
                     onChange={(e) => setCashTendered(Number(e.target.value))}
+                    onFocus={scrollInputIntoViewOnFocus}
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-base font-bold font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
                   />
                 </div>
@@ -476,41 +624,63 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                     )}
                   </div>
 
-                  <div className="space-y-2.5 max-w-sm w-full">
-                    {/* Live Auto-detect Indicator */}
-                    <div className="flex items-center justify-center gap-2 py-1.5 px-3 rounded-full bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-muted">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  <div className="space-y-3 max-w-sm w-full">
+                    {/* Ringkasan Nominal & Merchant */}
+                    <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-center space-y-1">
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-komazi-muted">
+                        Nominal Pembayaran (Terkunci Pas):
                       </span>
-                      <span>Mendeteksi transfer masuk otomatis (Webhook aktif)...</span>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-center space-y-0.5">
-                      <span className="text-[11px] text-komazi-muted">Nominal Pembayaran:</span>
-                      <p className="font-mono font-black text-lg text-komazi-coral">
+                      <p className="font-mono font-black text-2xl text-komazi-coral">
                         {formatRupiah(summary.grandTotal)}
                       </p>
-                      <p className="text-[10px] text-komazi-muted">
-                        {settings.qrisMerchantName || settings.storeName || 'KOMAZI COFFEE & WORKSPACE'}
+                      <p className="text-[11px] text-komazi-muted">
+                        Merchant: <span className="text-komazi-text font-bold">{settings.qrisMerchantName || settings.storeName || 'KOMAZI COFFEE & WORKSPACE'}</span>
                       </p>
                     </div>
 
-                    <p className="text-xs text-komazi-muted leading-relaxed">
-                      Arahkan pelanggan scan via ShopeePay, BCA, Livin', GoPay, atau DANA.{' '}
-                      <span className="text-komazi-text font-semibold">Nominal terkunci otomatis.</span>
-                    </p>
+                    {/* SOP Verifikasi Kasir Tanpa Gateway */}
+                    <div className="p-3 rounded-xl bg-komazi-surface border border-komazi-border/80 text-left space-y-1.5 text-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-komazi-text">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>SOP Verifikasi Kasir:</span>
+                      </div>
+                      <p className="text-[11px] text-komazi-muted leading-relaxed">
+                        1. Arahkan pelanggan scan QRIS via BCA, Livin', GoPay, ShopeePay, atau DANA.<br />
+                        2. Cek bukti transfer centang hijau / dengar speaker QRIS Soundbox.<br />
+                        3. Klik tombol <b className="text-komazi-coral">Konfirmasi QRIS Lunas</b> di bawah.
+                      </p>
+                    </div>
 
-                    {/* Quick Simulation Test Button */}
-                    <div className="pt-1 border-t border-komazi-border/50">
+                    {/* Input Opsional Nomor Referensi / RRN */}
+                    <div className="text-left space-y-1">
+                      <label className="block text-[11px] font-semibold text-komazi-muted">
+                        No. Referensi / 4 Digit RRN Bukti Bayar (Opsional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: 8821 atau RRN bukti transfer"
+                        value={qrisRef}
+                        onChange={(e) => setQrisRef(e.target.value)}
+                        onFocus={scrollInputIntoViewOnFocus}
+                        className="w-full px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
+                      />
+                    </div>
+
+                    {/* Standby Status & Quick Test */}
+                    <div className="pt-1 flex items-center justify-between text-[11px] text-komazi-muted border-t border-komazi-border/50">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Auto-detect Webhook standby</span>
+                      </div>
                       <button
                         type="button"
                         onClick={handleSimulatePayment}
                         disabled={isSimulating}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-komazi-coral/10 hover:bg-komazi-coral/20 text-komazi-coral text-[11px] font-bold border border-komazi-coral/20 transition-all active:scale-95 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 text-[11px] text-komazi-coral hover:underline font-semibold"
+                        title="Simulasikan notifikasi uang masuk"
                       >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>{isSimulating ? 'Memverifikasi...' : 'Uji Simulasi Uang Masuk (Test Webhook)'}</span>
+                        <Zap className="w-3 h-3" />
+                        <span>{isSimulating ? 'Memverifikasi...' : 'Uji Simulasi'}</span>
                       </button>
                     </div>
                   </div>
@@ -520,34 +690,113 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
           )}
 
           {/* Method Content 3: TRANSFER */}
-          {method === 'TRANSFER' && (
+          {method === 'TRANSFER' && isBankTransferEnabled && (
             <div className="space-y-3 animate-in fade-in">
-              <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-komazi-text">BCA - Rekening Operasional</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyAccount('8291002931')}
-                    className="flex items-center gap-1 text-[11px] text-komazi-teal-light font-semibold hover:underline"
-                  >
-                    {copiedAccount ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedAccount ? 'Tersalin' : 'Salin Rekening'}</span>
-                  </button>
+              {/* Bank selector pills if multiple accounts */}
+              {bankAccounts.length > 1 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-komazi-muted">
+                    Pilih Rekening Bank Tujuan:
+                  </span>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {bankAccounts.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelectedBankId(b.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 ${
+                          activeBank?.id === b.id
+                            ? 'bg-komazi-coral text-white border-komazi-coral shadow-sm'
+                            : 'bg-komazi-surface-2 text-komazi-muted border-komazi-border hover:text-komazi-text'
+                        }`}
+                      >
+                        <span>{b.bankName}</span>
+                        {b.isDefault && (
+                          <span
+                            className={`text-[9px] px-1 rounded ${
+                              activeBank?.id === b.id
+                                ? 'bg-white/20 text-white'
+                                : 'bg-komazi-surface text-komazi-muted'
+                            }`}
+                          >
+                            Utama
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <p className="font-mono font-bold text-sm text-komazi-coral">829-100-2931</p>
-                <p className="text-[11px] text-komazi-muted">a.n. PT KOMAZI KREATIF BERSAMA</p>
+              )}
+
+              {/* Selected Bank Details Card */}
+              {activeBank && (
+                <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${getBankBadgeStyle(
+                          activeBank.bankName
+                        )}`}
+                      >
+                        {activeBank.bankName}
+                      </span>
+                      <span className="text-xs font-bold text-komazi-text">Rekening Toko</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyAccount(activeBank.accountNumber)}
+                      className="flex items-center gap-1 text-[11px] text-komazi-teal-light font-semibold hover:underline"
+                    >
+                      {copiedAccount ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Tersalin</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Salin Rekening</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <p className="font-mono font-black text-lg text-komazi-coral tracking-wider">
+                    {formatAccountNumber(activeBank.accountNumber)}
+                  </p>
+
+                  <p className="text-[11px] text-komazi-muted">
+                    a.n. <span className="text-komazi-text font-bold">{activeBank.accountName}</span>
+                  </p>
+                </div>
+              )}
+
+              {/* SOP Petunjuk Kasir */}
+              <div className="p-3 rounded-xl bg-komazi-surface border border-komazi-border/80 text-left space-y-1 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-komazi-text">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>SOP Kasir:</span>
+                </div>
+                <p className="text-[11px] text-komazi-muted leading-relaxed">
+                  1. Informasikan nomor rekening bank di atas kepada pelanggan.<br />
+                  2. Cek mutasi masuk di aplikasi m-banking atau periksa bukti transfer.<br />
+                  3. Klik <b className="text-komazi-coral">Konfirmasi Pembayaran</b> untuk menyelesaikan pesanan.
+                </p>
               </div>
 
+              {/* Input Nomor Referensi Transfer */}
               <div>
                 <label className="block text-[11px] font-semibold text-komazi-muted mb-1">
-                  Nomor Referensi Transfer / 4 Digit Terakhir:
+                  Nomor Referensi Transfer / 4 Digit Terakhir (Opsional):
                 </label>
                 <input
                   type="text"
-                  placeholder="Contoh: REF-882910"
+                  placeholder="Contoh: REF-882910 atau nama pengirim"
                   value={transferRef}
                   onChange={(e) => setTransferRef(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                  onFocus={scrollInputIntoViewOnFocus}
+                  className="w-full px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -555,7 +804,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         </div>
 
         {/* Footer */}
-        <div className="p-3.5 sm:p-4 border-t border-komazi-border bg-komazi-surface flex items-center justify-between gap-2">
+        <div className="p-3.5 sm:p-4 border-t border-komazi-border bg-komazi-surface flex flex-wrap items-center justify-between gap-2 shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -564,17 +813,44 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             Batal
           </button>
 
-          <button
-            type="button"
-            disabled={method === 'CASH' && !isCashSufficient}
-            onClick={() => handleConfirmPayment()}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs sm:text-sm shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
-          >
-            <CheckCircle className="w-4 h-4 stroke-[2.5]" />
-            <span>{isProcessing ? 'Memproses...' : 'Konfirmasi'}</span>
-          </button>
+          <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
+            <button
+              type="button"
+              disabled={isPrintingBill || isProcessing}
+              onClick={handlePrintBill}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[44px] rounded-xl border border-komazi-border hover:border-komazi-teal hover:bg-komazi-teal/15 text-komazi-teal-light text-xs font-bold transition-all active:scale-95 shadow-sm"
+              title="Cetak struk tagihan (Bill) dahulu sebelum konfirmasi pembayaran"
+            >
+              <Printer className="w-4 h-4 text-komazi-teal" />
+              <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span>
+            </button>
+
+            <LoadingButton
+              type="button"
+              disabled={method === 'CASH' && !isCashSufficient}
+              isLoading={isProcessing}
+              loadingText="Memproses..."
+              variant="primary"
+              size="md"
+              icon={CheckCircle}
+              onClick={() => handleConfirmPayment()}
+              className="min-h-[44px] text-xs sm:text-sm font-bold shadow-md"
+            >
+              {method === 'QRIS' ? 'Konfirmasi QRIS Lunas' : 'Konfirmasi Pembayaran'}
+            </LoadingButton>
+          </div>
         </div>
       </div>
     </div>
+  </div>
+
+    {/* Pratinjau / Cetak Struk Tagihan Sementara jika printer belum terhubung */}
+    {billReceiptToPreview && (
+      <ThermalReceiptModal
+        order={billReceiptToPreview}
+        onClose={() => setBillReceiptToPreview(null)}
+      />
+    )}
+  </>
   );
 }

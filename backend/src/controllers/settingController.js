@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { successResponse, errorResponse } from '../utils/response.js';
+import { getSettingsMap, invalidateSettingsCache } from '../services/settingsCache.service.js';
 
 // Kunci sensitif / API keys yang tidak boleh disimpan di tabel Setting
 const DISALLOWED_SETTING_KEYS = [
@@ -31,21 +32,19 @@ function sanitizeSettingsMap(map) {
 
 export async function getSettings(req, res) {
   try {
-    const settings = await prisma.setting.findMany();
-    const map = settings.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {});
-
-    // Default supervisorPin ke '1234' jika belum diatur
-    if (!map.supervisorPin) {
-      map.supervisorPin = '1234';
-    }
+    const cached = await getSettingsMap();
+    const map = { ...cached };
 
     // Mask PIN jika role bukan OWNER atau MANAGER
     const isPrivileged = ['OWNER', 'MANAGER'].includes(req.user?.role);
-    if (!isPrivileged) {
+    if (!isPrivileged && map.supervisorPin) {
       map.supervisorPin = '••••';
+    }
+
+    // KDS / BDS Display API Key untuk integrasi perangkat dapur
+    map.kdsApiKey = process.env.KDS_API_KEY || map.kdsApiKey || 'komazi_kds_live_secure_token_key_2026';
+    if (!isPrivileged) {
+      map.kdsApiKey = '••••••••';
     }
 
     const sanitized = sanitizeSettingsMap(map);
@@ -63,9 +62,17 @@ export async function verifySupervisorPin(req, res) {
     }
 
     const pinSetting = await prisma.setting.findUnique({ where: { key: 'supervisorPin' } });
-    const validPin = pinSetting?.value || '1234';
+    const validPin = pinSetting?.value ? String(pinSetting.value).trim() : null;
 
-    if (String(pin).trim() !== String(validPin).trim()) {
+    if (!validPin) {
+      return errorResponse(
+        res,
+        'PIN Supervisor belum diatur. Silakan minta Owner/Manager untuk mengatur PIN di Pengaturan.',
+        400
+      );
+    }
+
+    if (String(pin).trim() !== validPin) {
       return errorResponse(res, 'PIN Otorisasi Manager/Supervisor salah', 401);
     }
 
@@ -92,22 +99,37 @@ export async function updateSettings(req, res) {
     }).catch(() => {});
 
     if (Object.keys(updates).length > 0) {
+      if (updates.headerText !== undefined && updates.receiptHeader === undefined) {
+        updates.receiptHeader = updates.headerText;
+      } else if (updates.receiptHeader !== undefined && updates.headerText === undefined) {
+        updates.headerText = updates.receiptHeader;
+      }
+
+      if (updates.footerText !== undefined && updates.receiptFooter === undefined) {
+        updates.receiptFooter = updates.footerText;
+      } else if (updates.receiptFooter !== undefined && updates.footerText === undefined) {
+        updates.footerText = updates.receiptFooter;
+      }
+
       await prisma.$transaction(
-        Object.entries(updates).map(([key, value]) =>
-          prisma.setting.upsert({
+        Object.entries(updates).map(([key, value]) => {
+          const stringified =
+            typeof value === 'object' && value !== null
+              ? JSON.stringify(value)
+              : String(value ?? '');
+          return prisma.setting.upsert({
             where: { key },
-            update: { value: String(value) },
-            create: { key, value: String(value) },
-          })
-        )
+            update: { value: stringified },
+            create: { key, value: stringified },
+          });
+        })
       );
+      invalidateSettingsCache();
     }
 
-    const all = await prisma.setting.findMany();
-    const map = all.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {});
+    invalidateSettingsCache();
+    const cached = await getSettingsMap();
+    const map = { ...cached };
 
     const sanitized = sanitizeSettingsMap(map);
     return successResponse(res, sanitized, 'Pengaturan berhasil diperbarui');

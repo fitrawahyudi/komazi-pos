@@ -35,6 +35,8 @@ export const usePosStore = create(
             const formatted = res.data.map((p) => ({
               ...p,
               price: Number(p.price) || 0,
+              minPrice: Number(p.minPrice) || 0,
+              isDynamicPrice: Boolean(p.isDynamicPrice),
               categoryName: p.category?.name || '',
               variants: (p.variants || []).map((v) => ({
                 ...v,
@@ -78,6 +80,8 @@ export const usePosStore = create(
             const formatted = {
               ...res.data,
               price: Number(res.data.price) || 0,
+              minPrice: Number(res.data.minPrice) || 0,
+              isDynamicPrice: Boolean(res.data.isDynamicPrice),
               categoryName: res.data.category?.name || '',
               variants: (res.data.variants || []).map((v) => ({
                 ...v,
@@ -102,6 +106,8 @@ export const usePosStore = create(
             const formatted = {
               ...res.data,
               price: Number(res.data.price) || 0,
+              minPrice: Number(res.data.minPrice) || 0,
+              isDynamicPrice: Boolean(res.data.isDynamicPrice),
               categoryName: res.data.category?.name || '',
               variants: (res.data.variants || []).map((v) => ({
                 ...v,
@@ -121,14 +127,17 @@ export const usePosStore = create(
 
       deleteProduct: async (id) => {
         try {
-          await api.products.delete(id);
-          set((state) => ({
-            products: state.products.filter((p) => p.id !== id),
-          }));
-          return true;
+          const res = await api.products.delete(id);
+          if (res && res.success) {
+            set((state) => ({
+              products: state.products.filter((p) => p.id !== id),
+            }));
+            return { success: true, message: res.message || 'Produk berhasil dihapus' };
+          }
+          return { success: false, message: res?.message || 'Gagal menghapus produk' };
         } catch (err) {
           console.error('[PosStore] Error deleting product:', err);
-          return false;
+          return { success: false, message: err.message || 'Gagal menghapus produk' };
         }
       },
 
@@ -161,14 +170,49 @@ export const usePosStore = create(
       },
 
       bulkDeleteProducts: async (ids) => {
-        set((state) => ({
-          products: state.products.filter((p) => !ids.includes(p.id)),
-        }));
-
-        for (const id of ids) {
-          try {
-            await api.products.delete(id);
-          } catch {}
+        if (!ids || ids.length === 0) return { success: true, count: 0 };
+        try {
+          const res = await api.products.bulkDelete(ids);
+          if (res && res.success) {
+            set((state) => ({
+              products: state.products.filter((p) => !ids.includes(p.id)),
+            }));
+            return {
+              success: true,
+              count: res.data?.total || ids.length,
+              message: res.message || `${ids.length} menu berhasil dihapus`,
+            };
+          }
+          // Fallback sequential
+          let deletedCount = 0;
+          const failedIds = [];
+          for (const id of ids) {
+            try {
+              const r = await api.products.delete(id);
+              if (r && r.success) {
+                deletedCount++;
+              } else {
+                failedIds.push(id);
+              }
+            } catch {
+              failedIds.push(id);
+            }
+          }
+          const successIds = ids.filter((id) => !failedIds.includes(id));
+          if (successIds.length > 0) {
+            set((state) => ({
+              products: state.products.filter((p) => !successIds.includes(p.id)),
+            }));
+          }
+          return {
+            success: successIds.length > 0,
+            count: successIds.length,
+            failedCount: failedIds.length,
+            message: `${successIds.length} menu berhasil dihapus`,
+          };
+        } catch (err) {
+          console.error('[PosStore] Error bulk deleting products:', err);
+          return { success: false, message: err.message || 'Gagal menghapus menu terpilih' };
         }
       },
 

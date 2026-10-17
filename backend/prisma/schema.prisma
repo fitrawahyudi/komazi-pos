@@ -88,6 +88,12 @@ enum StockMovementType {
   SALE
 }
 
+enum CashMovementType {
+  CASH_IN
+  CASH_OUT
+  CASH_DROP
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   name      String
@@ -104,12 +110,38 @@ model User {
   telegramUsername String?
   telegramLinkedAt DateTime?
 
-  orders             Order[]
-  shifts             Shift[]
-  auditLogs          AuditLog[]
-  linkCodes          TelegramLinkCode[]
-  approvalsRequested ApprovalRequest[]  @relation("Requester")
-  approvalsDecided   ApprovalRequest[]  @relation("Decider")
+  department         String?   @default("Operasional")
+  jobTitle           String?
+  employmentType     String?   @default("FULL_TIME")
+  joinDate           String?
+  baseSalary         Decimal   @default(0) @db.Decimal(12, 2)
+  dailyAllowance     Decimal   @default(0) @db.Decimal(12, 2)
+  hourlyOvertimeRate Decimal   @default(0) @db.Decimal(12, 2)
+
+  orders                 Order[]
+  shifts                 Shift[]
+  shiftsClosed           Shift[]                      @relation("ShiftClosedBy")
+  cashMovements          CashMovement[]
+  auditLogs              AuditLog[]
+  linkCodes              TelegramLinkCode[]
+  approvalsRequested     ApprovalRequest[]            @relation("Requester")
+  approvalsDecided       ApprovalRequest[]            @relation("Decider")
+  attendances            StaffAttendance[]
+  schedules              StaffSchedule[]
+  leaves                 StaffLeave[]
+  approvedLeaves         StaffLeave[]                 @relation("LeaveApprover")
+  attendanceCorrections  StaffAttendanceCorrection[]
+  reviewedCorrections    StaffAttendanceCorrection[]  @relation("CorrectionReviewer")
+  overtimes              StaffOvertime[]
+  approvedOvertimes      StaffOvertime[]              @relation("OvertimeApprover")
+  createdPayrollPeriods  PayrollPeriod[]              @relation("PayrollCreator")
+  payslips               StaffPayslip[]
+  hrisAuditLogs          HrisAuditLog[]
+  tokenVersion           Int                          @default(1)
+  passwordResetTokens    PasswordResetToken[]
+  createdResetTokens     PasswordResetToken[]         @relation("ResetTokenCreator")
+  deviceTokens           DeviceToken[]
+  notifications          Notification[]
 }
 
 model Station {
@@ -121,15 +153,17 @@ model Station {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  products   Product[]
-  orderItems OrderItem[]
+  products      Product[]
+  orderItems    OrderItem[]
+  kitchenRoutes KitchenPrinterRoute[]
 }
 
 model Category {
   id        Int       @id @default(autoincrement())
   name      String    @unique
   sortOrder Int       @default(0)
-  products  Product[]
+  products      Product[]
+  kitchenRoutes KitchenPrinterRoute[]
 }
 
 model Product {
@@ -142,6 +176,8 @@ model Product {
   imageUrl    String?  @db.Text
   description String?  @db.Text
   modifiers   Json?
+  isDynamicPrice Boolean  @default(false)
+  minPrice       Decimal? @default(0) @db.Decimal(12, 2)
   isActive    Boolean  @default(true)
   isSoldOut   Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -152,6 +188,7 @@ model Product {
   variants    ProductVariant[]
   orderItems  OrderItem[]
   recipeItems ProductRecipeItem[]
+  cmsSpotlights CmsMenuSpotlight[]
 
   @@index([categoryId])
   @@index([stationId])
@@ -172,6 +209,7 @@ model Order {
   invoiceNo    String        @unique
   cashierId    Int
   shiftId      Int?
+  customerId   Int?
   type         OrderType     @default(DINE_IN)
   tableNo      String?
   customerName String?
@@ -189,12 +227,15 @@ model Order {
 
   cashier    User              @relation(fields: [cashierId], references: [id])
   shift      Shift?            @relation(fields: [shiftId], references: [id])
+  customer   Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items      OrderItem[]
   payments   Payment[]
   workspace  WorkspaceSession[]
+  printJobs  PrintJob[]
 
   @@index([createdAt])
   @@index([status])
+  @@index([customerId])
 }
 
 model OrderItem {
@@ -236,17 +277,54 @@ model Payment {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-model Shift {
-  id           Int       @id @default(autoincrement())
-  cashierId    Int
-  openingCash  Decimal   @db.Decimal(12, 2)
-  closingCash  Decimal?  @db.Decimal(12, 2)
-  expectedCash Decimal?  @db.Decimal(12, 2)
-  openedAt     DateTime  @default(now())
-  closedAt     DateTime?
+model Register {
+  id        Int      @id @default(autoincrement())
+  name      String   // e.g. "Kasir Utama (POS 1)"
+  code      String   @unique // e.g. "REG-01"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  cashier User    @relation(fields: [cashierId], references: [id])
-  orders  Order[]
+  shifts    Shift[]
+}
+
+model Shift {
+  id             Int            @id @default(autoincrement())
+  registerId     Int?
+  cashierId      Int
+  closedByUserId Int?
+  openingCash    Decimal        @db.Decimal(12, 2)
+  closingCash    Decimal?       @db.Decimal(12, 2)
+  expectedCash   Decimal?       @db.Decimal(12, 2)
+  notes          String?        @db.Text
+  openedAt       DateTime       @default(now())
+  closedAt       DateTime?
+
+  register      Register?      @relation(fields: [registerId], references: [id])
+  cashier       User           @relation(fields: [cashierId], references: [id])
+  closedByUser  User?          @relation("ShiftClosedBy", fields: [closedByUserId], references: [id])
+  orders        Order[]
+  cashMovements CashMovement[]
+
+  @@index([registerId])
+  @@index([cashierId])
+  @@index([closedAt])
+}
+
+model CashMovement {
+  id        Int              @id @default(autoincrement())
+  shiftId   Int
+  userId    Int
+  type      CashMovementType
+  amount    Decimal          @db.Decimal(12, 2)
+  reason    String
+  createdAt DateTime         @default(now())
+
+  shift     Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id])
+
+  @@index([shiftId])
+  @@index([userId])
 }
 
 model WorkspaceArea {
@@ -274,6 +352,7 @@ model WorkspaceSession {
   areaId       Int
   packageId    Int
   orderId      Int?
+  customerId   Int?
   customerName String
   phone        String?
   checkInAt    DateTime      @default(now())
@@ -281,18 +360,23 @@ model WorkspaceSession {
   status       SessionStatus @default(ACTIVE)
   charge       Decimal?      @db.Decimal(12, 2)
 
-  area    WorkspaceArea    @relation(fields: [areaId], references: [id])
-  package WorkspacePackage @relation(fields: [packageId], references: [id])
-  order   Order?           @relation(fields: [orderId], references: [id])
+  area     WorkspaceArea    @relation(fields: [areaId], references: [id])
+  package  WorkspacePackage @relation(fields: [packageId], references: [id])
+  order    Order?           @relation(fields: [orderId], references: [id])
+  customer Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
 }
 
 model Ingredient {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
-  unit        String
-  stock       Decimal  @default(0) @db.Decimal(12, 2)
-  minStock    Decimal  @default(0) @db.Decimal(12, 2)
-  costPerUnit Decimal  @default(0) @db.Decimal(12, 4)
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  unit          String
+  stock         Decimal  @default(0) @db.Decimal(12, 2)
+  minStock      Decimal  @default(0) @db.Decimal(12, 2)
+  costPerUnit   Decimal  @default(0) @db.Decimal(12, 4)
+  supplierName  String?
+  supplierPhone String?
 
   movements   StockMovement[]
   recipeItems ProductRecipeItem[]
@@ -306,9 +390,15 @@ model StockMovement {
   unitCost     Decimal?          @db.Decimal(12, 4)
   totalCost    Decimal?          @db.Decimal(12, 2)
   note         String?
+  recordedBy   String?
   createdAt    DateTime          @default(now())
 
   ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@index([ingredientId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([type, createdAt])
 }
 
 model ProductRecipeItem {
@@ -354,6 +444,24 @@ model TelegramLinkCode {
   @@index([userId])
 }
 
+model PasswordResetToken {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  createdById Int
+  tokenHash   String    @unique @db.VarChar(128)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("ResetTokenCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([createdById])
+}
+
 model ApprovalRequest {
   id          Int            @id @default(autoincrement())
   type        ApprovalType
@@ -373,5 +481,479 @@ model ApprovalRequest {
   @@index([orderId])
   @@index([requesterId])
   @@index([deciderId])
+}
+
+model Customer {
+  id         Int      @id @default(autoincrement())
+  name       String
+  phone      String   @unique
+  email      String?
+  notes      String?  @db.Text
+  points     Int      @default(10)
+  tier       String   @default("SILVER") // SILVER, GOLD, PLATINUM
+  totalSpent Decimal  @default(0) @db.Decimal(12, 2)
+  visitCount Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  orders            Order[]
+  workspaceSessions WorkspaceSession[]
+
+  @@index([phone])
+  @@index([name])
+}
+
+model PrinterProfile {
+  id                Int       @id @default(autoincrement())
+  name              String
+  role              String    @default("RECEIPT") // RECEIPT, KITCHEN, BOTH
+  connectionType    String    @default("BLUETOOTH_CLASSIC") // BLUETOOTH_CLASSIC, BLE, USB, NETWORK
+  deviceIdentifier  String?
+  networkHost       String?
+  networkPort       Int?      @default(9100)
+  paperWidthMm      Int       @default(58) // 58 or 80
+  isDefaultReceipt  Boolean   @default(false)
+  isDefaultKitchen  Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  copies            Int       @default(1)
+  autoCut           Boolean   @default(true)
+  openCashDrawer    Boolean   @default(false)
+  buzzer            Boolean   @default(false)
+  capabilitiesJson  Json?
+  settingsJson      Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  printJobs         PrintJob[]
+  kitchenRoutes     KitchenPrinterRoute[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model PrintJob {
+  id                Int             @id @default(autoincrement())
+  printerProfileId  Int?
+  orderId           Int?
+  documentType      String          @default("RECEIPT") // RECEIPT, KITCHEN_TICKET, TEST
+  status            String          @default("QUEUED") // QUEUED, PRINTING, PRINTED, FAILED, CANCELLED
+  attemptCount      Int             @default(1)
+  idempotencyKey    String?
+  errorCode         String?
+  errorMessage      String?
+  requestedBy       String?
+  payloadSnapshot   Json?
+  createdAt         DateTime        @default(now())
+  printedAt         DateTime?
+
+  printerProfile    PrinterProfile? @relation(fields: [printerProfileId], references: [id], onDelete: SetNull)
+  order             Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([orderId])
+  @@index([printerProfileId])
+  @@index([createdAt])
+}
+
+model KitchenPrinterRoute {
+  id                Int            @id @default(autoincrement())
+  printerProfileId  Int
+  stationId         Int?
+  categoryId        Int?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  printerProfile    PrinterProfile @relation(fields: [printerProfileId], references: [id], onDelete: Cascade)
+  station           Station?       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  category          Category?      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([printerProfileId])
+  @@index([stationId])
+  @@index([categoryId])
+}
+
+model StaffAttendance {
+  id            Int                         @id @default(autoincrement())
+  userId        Int
+  date          String                      // YYYY-MM-DD
+  clockIn       DateTime                    @default(now())
+  clockOut      DateTime?
+  workMinutes   Int?                        @default(0)
+  lateMinutes   Int?                        @default(0)
+  status        String                      @default("PRESENT") // PRESENT, LATE, OVERTIME, EARLY_LEAVE, ABSENT
+  notes         String?                     @db.Text
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  user          User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  corrections   StaffAttendanceCorrection[]
+
+  @@index([userId])
+  @@index([date])
+}
+
+model StaffAttendanceCorrection {
+  id                Int              @id @default(autoincrement())
+  attendanceId      Int?
+  userId            Int
+  date              String           // YYYY-MM-DD
+  requestedClockIn  DateTime?
+  requestedClockOut DateTime?
+  reason            String
+  status            String           @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedById      Int?
+  reviewedAt        DateTime?
+  reviewNotes       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance        StaffAttendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  reviewedBy        User?            @relation("CorrectionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([date])
+}
+
+model StaffSchedule {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  date          String    // YYYY-MM-DD
+  shiftName     String    // PAGI, SIANG, MALAM, FULL_DAY
+  startTime     String    // 08:00
+  endTime       String    // 16:00
+  status        String    @default("PUBLISHED") // DRAFT, PUBLISHED
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+}
+
+model StaffLeave {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  type          String    // ANNUAL, SICK, UNPAID, OTHER
+  startDate     String    // YYYY-MM-DD
+  endDate       String    // YYYY-MM-DD
+  days          Int       @default(1)
+  reason        String
+  status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedById  Int?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy    User?     @relation("LeaveApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model StaffOvertime {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  date          String    // YYYY-MM-DD
+  durationHours Decimal   @db.Decimal(4, 1)
+  reason        String
+  status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedById  Int?
+  approvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy    User?     @relation("OvertimeApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([date])
+}
+
+model PayrollPeriod {
+  id          Int            @id @default(autoincrement())
+  name        String         // e.g. "Oktober 2026"
+  startDate   String         // YYYY-MM-DD
+  endDate     String         // YYYY-MM-DD
+  status      String         @default("DRAFT") // DRAFT, CALCULATED, FINALIZED, PUBLISHED
+  totalPayout Decimal        @default(0) @db.Decimal(14, 2)
+  createdById Int
+  finalizedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  createdBy   User           @relation("PayrollCreator", fields: [createdById], references: [id])
+  payslips    StaffPayslip[]
+
+  @@index([startDate, endDate])
+  @@index([status])
+}
+
+model StaffPayslip {
+  id            Int           @id @default(autoincrement())
+  periodId      Int
+  userId        Int
+  baseSalary    Decimal       @default(0) @db.Decimal(12, 2)
+  allowances    Decimal       @default(0) @db.Decimal(12, 2)
+  overtimePay   Decimal       @default(0) @db.Decimal(12, 2)
+  bonus         Decimal       @default(0) @db.Decimal(12, 2)
+  deductions    Decimal       @default(0) @db.Decimal(12, 2)
+  netSalary     Decimal       @default(0) @db.Decimal(12, 2)
+  presentDays   Int           @default(0)
+  overtimeHours Decimal       @default(0) @db.Decimal(5, 1)
+  lateMinutes   Int           @default(0)
+  status        String        @default("DRAFT") // DRAFT, PUBLISHED
+  paymentStatus String        @default("UNPAID") // UNPAID, PAID
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  period        PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, userId])
+  @@index([periodId])
+  @@index([userId])
+}
+
+model HrisAuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  action     String   // e.g. STAFF_CREATE, ATTENDANCE_CORRECT, LEAVE_APPROVE, PAYROLL_FINALIZE
+  entityType String   // STAFF, ATTENDANCE, LEAVE, OVERTIME, PAYROLL
+  entityId   Int?
+  details    String?  @db.Text
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+}
+
+model DeviceToken {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  token       String    @unique @db.VarChar(512)
+  platform    String    @default("android") // "android" | "web" | "ios"
+  deviceModel String?
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([token])
+}
+
+model Notification {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  category    String    @default("GENERAL") // "ORDERS" | "ALERTS" | "OPERATIONAL" | "HRIS" | "GENERAL"
+  event       String    // "NEW_ORDER" | "ORDER_PAID" | "ORDER_READY" | "ORDER_VOIDED" | "REFUND_REQUEST" | "LOW_STOCK" | "SHIFT_CLOSED"
+  title       String
+  body        String    @db.Text
+  data        Json?     // payload data (orderId, invoiceNo, tableNo, amount, url, etc.)
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  pushStatus  String    @default("PENDING") // "SENT" | "FAILED" | "SKIPPED"
+  pushError   String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([category])
+  @@index([event])
+}
+
+model ScheduledJob {
+  id                 Int           @id @default(autoincrement())
+  name               String
+  jobType            String        // "REPORT" | "BACKUP" | "MONITORING" | "REMINDER" | "AI_TASK"
+  description        String?
+  scheduleType       String        @default("cron") // "once" | "interval" | "cron"
+  scheduleExpression String        // e.g. "0 22 * * *" atau ISO string jika once
+  timezone           String        @default("Asia/Jakarta")
+  executor           String        @default("app") // "app" | "openclaw"
+  payload            Json?
+  createdById        Int?
+  updatedById        Int?
+  ownerScope         String?       @default("ALL") // "ALL" | "OWNER" | "MANAGER" | "USER"
+  enabled            Boolean       @default(true)
+  nextRunAt          DateTime?
+  lastRunAt          DateTime?
+  retryLimit         Int           @default(3)
+  timeoutSeconds     Int           @default(60)
+  misfirePolicy      String        @default("run_once") // "run_once" | "skip" | "catch_up_limited"
+  externalJobId      String?
+  syncStatus         String?       @default("SYNCED") // "SYNCED" | "PENDING" | "FAILED"
+  version            Int           @default(1)
+  deletedAt          DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  runs               JobRun[]
+  auditLogs          JobAuditLog[]
+
+  @@index([enabled, nextRunAt])
+  @@index([jobType, enabled])
+  @@index([deletedAt])
+}
+
+model JobRun {
+  id                   Int          @id @default(autoincrement())
+  jobId                Int
+  scheduledFor         DateTime
+  startedAt            DateTime     @default(now())
+  finishedAt           DateTime?
+  status               String       @default("queued") // "queued" | "running" | "succeeded" | "failed" | "retrying" | "skipped" | "cancelled"
+  attempt              Int          @default(1)
+  idempotencyKey       String       @unique
+  workerId             String?
+  leaseExpiresAt       DateTime?
+  resultSummary        String?      @db.Text
+  errorCode            String?
+  errorMessageRedacted String?      @db.Text
+  notificationStatus   String?      @default("NONE") // "NONE" | "SENT" | "FAILED"
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  job                  ScheduledJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, startedAt])
+  @@index([status, leaseExpiresAt])
+}
+
+model JobAuditLog {
+  id          Int           @id @default(autoincrement())
+  jobId       Int?
+  action      String        // "CREATE" | "UPDATE" | "PAUSE" | "RESUME" | "CANCEL" | "MANUAL_RUN" | "DELETE"
+  actorType   String        // "USER" | "OPENCLAW" | "SYSTEM"
+  actorId     String?
+  actorName   String?
+  details     Json?
+  ipAddress   String?
+  createdAt   DateTime      @default(now())
+
+  job         ScheduledJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, createdAt])
+  @@index([actorType, actorId])
+  @@index([createdAt])
+}
+
+// ==========================================
+// CMS (Content Management System) for Landing Page
+// ==========================================
+
+// 1. Konfigurasi Global Landing Page & Brand Identity
+model CmsLandingConfig {
+  id               Int      @id @default(autoincrement())
+  brandName        String   @default("Komazi Coffee")
+  brandTagline     String   @default("Artisan Coffee Roastery, Comfort Food & Relaxing Space")
+  heroHeadline     String   @default("Kopi Pilihan & Suasana Hangat di Pusat Kota")
+  heroSubheadline  String   @db.Text
+  heroImageUrl     String?  @db.Text
+  heroCtaText      String   @default("Lihat Menu Kami")
+  heroCtaLink      String   @default("#menu")
+  secondaryCtaText String   @default("Kunjungi Kedai / Kontak")
+  secondaryCtaLink String   @default("#location")
+  aboutTitle       String   @default("Tentang Komazi")
+  aboutStory       String   @db.Text
+  aboutImageUrl    String?  @db.Text
+  metaTitle        String   @default("Komazi Coffee — Kopi Pilihan & Cita Rasa Otentik Medan")
+  metaDescription  String   @db.Text
+  isLandingPageActive Boolean @default(true)
+  updatedAt        DateTime @updatedAt
+}
+
+// 2. Menu Unggulan yang Disorot di Halaman Depan
+model CmsMenuSpotlight {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customBadge String?  // "Signature", "Best Seller", "Chef's Pick", "New"
+  sortOrder   Int      @default(0)
+  isFeatured  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([productId])
+}
+
+// 3. Banner Promosi & Pengumuman Event
+model CmsPromo {
+  id          Int       @id @default(autoincrement())
+  title       String
+  subtitle    String?
+  bannerUrl   String?   @db.Text
+  badgeText   String?   // "Promo Terbatas", "Weekend Special", "Live Music"
+  description String?   @db.Text
+  actionText  String?   @default("Klaim Promo via WhatsApp")
+  actionLink  String?   @db.Text
+  validUntil  DateTime?
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// 4. Fasilitas Kedai & Kenyamanan Pengunjung (F&B Café Amenities)
+model CmsFacility {
+  id          Int      @id @default(autoincrement())
+  title       String   // "Ultra High-Speed WiFi (100 Mbps)", "Stopkontak di Setiap Meja", "AC Sejuk & Nyaman", "Musholla"
+  description String   @db.Text
+  iconName    String   @default("Wifi") // Nama ikon Lucide: Wifi, Zap, Wind, Armchair, Coffee, Shield
+  imageUrl    String?  @db.Text
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 5. Ulasan & Testimoni Pelanggan
+model CmsTestimonial {
+  id           Int      @id @default(autoincrement())
+  customerName String
+  customerRole String?  // "Coffee Enthusiast", "Regular Customer", "Food Reviewer"
+  avatarUrl    String?  @db.Text
+  rating       Int      @default(5) // 1-5 bintang
+  reviewText   String   @db.Text
+  isFeatured   Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// 6. Jam Operasional, Kontak, dan Lokasi Kedai
+model CmsOutletInfo {
+  id              Int      @id @default(autoincrement())
+  outletName      String   @default("Komazi Coffee - Medan")
+  address         String   @db.Text
+  city            String   @default("Medan")
+  weekdayHours    String   @default("Senin - Jumat: 08:00 - 23:00 WIB")
+  weekendHours    String   @default("Sabtu - Minggu: 07:00 - 00:00 WIB")
+  phone           String   @default("081298765432")
+  whatsappNumber  String   @default("6281298765432")
+  whatsappMessage String   @default("Halo Komazi Coffee, saya ingin bertanya tentang menu atau reservasi meja.")
+  googleMapsUrl   String   @db.Text
+  googleMapsEmbed String?  @db.Text
+  instagramUrl    String?  @default("https://instagram.com/komazi.coffee")
+  tiktokUrl       String?  @default("https://tiktok.com/@komazi.coffee")
+  updatedAt       DateTime @updatedAt
 }
 

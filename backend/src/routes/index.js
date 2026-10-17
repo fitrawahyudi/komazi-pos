@@ -17,14 +17,38 @@ import kdsRoutes from './kdsRoutes.js';
 import bdsRoutes from './bdsRoutes.js';
 import stationRoutes from './stationRoutes.js';
 import telegramRoutes from './telegramRoutes.js';
+import customerRoutes from './customerRoutes.js';
+import approvalRoutes from './approvalRoutes.js';
+import hrisRoutes from './hrisRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
+import printerRoutes, {
+  printerSettingsRouter,
+  printJobsRouter,
+  kitchenRoutesRouter,
+} from './printerRoutes.js';
+import publicRoutes from './publicRoutes.js';
+import cmsRoutes from './cmsRoutes.js';
 
 const router = Router();
 
+// Public & Marketing CMS Endpoints
+router.use('/public', publicRoutes);
+router.use('/cms', cmsRoutes);
+
+router.use('/hris', hrisRoutes);
+router.use('/approvals', approvalRoutes);
+router.use('/notifications', notificationRoutes);
+
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
+router.use('/customers', customerRoutes);
+router.use('/printers', printerRoutes);
+router.use('/printer-settings', printerSettingsRouter);
+router.use('/print-jobs', printJobsRouter);
+router.use('/kitchen-printer-routes', kitchenRoutesRouter);
 router.use('/categories', categoryRoutes);
-router.use('/products', productRoutes);
 router.use('/products', recipeRoutes);
+router.use('/products', productRoutes);
 router.use('/orders', orderRoutes);
 router.use('/kds', kdsRoutes);
 router.use('/bds', bdsRoutes);

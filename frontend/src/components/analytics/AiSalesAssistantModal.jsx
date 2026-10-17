@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAiAnalyticsStore } from '../../store/aiAnalyticsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useUiStore } from '../../store/uiStore';
 import {
   Sparkles,
   X,
@@ -9,6 +11,7 @@ import {
   Bot,
   User,
   Coffee,
+  ArrowRight,
 } from 'lucide-react';
 
 export default function AiSalesAssistantModal() {
@@ -26,6 +29,25 @@ export default function AiSalesAssistantModal() {
 
   const [inputQuery, setInputQuery] = useState('');
   const chatBottomRef = useRef(null);
+  const navigate = useNavigate();
+
+  const handleActionHint = (hint) => {
+    if (!hint) return;
+    closeAssistant();
+
+    if (hint.targetModal === 'PRINTER_MODAL') {
+      try {
+        useUiStore.getState().openBluetoothModal();
+      } catch {
+        navigate('/printer');
+      }
+      return;
+    }
+
+    if (hint.route) {
+      navigate(hint.route);
+    }
+  };
 
   useEffect(() => {
     if (isAssistantOpen) {
@@ -107,30 +129,7 @@ export default function AiSalesAssistantModal() {
                 <h3 className="text-base font-bold text-komazi-text">
                   Komazi AI
                 </h3>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <Sparkles className="w-3 h-3 text-emerald-400" />
-                  {role === 'OWNER'
-                    ? 'Mode: Owner (Akses Penuh)'
-                    : role === 'MANAGER'
-                    ? 'Mode: Manager (Operasional)'
-                    : role === 'BARISTA'
-                    ? 'Mode: Barista (Bar Minuman)'
-                    : role === 'KITCHEN'
-                    ? 'Mode: Dapur (Menu Makanan)'
-                    : 'Mode: Kasir (POS & Meja)'}
-                </span>
               </div>
-              <p className="text-xs text-komazi-muted">
-                {role === 'OWNER'
-                  ? 'Analisis komprehensif omset, HPP bahan baku, dan performa kedai'
-                  : role === 'MANAGER'
-                  ? 'Operasional harian, peringatan bahan baku, dan supervisi shift'
-                  : role === 'BARISTA'
-                  ? 'Stok bahan baku bar minuman, takaran resep, dan persiapan batch'
-                  : role === 'KITCHEN'
-                  ? 'Stok bahan makanan, porsi pastry, dan persiapan menu dapur'
-                  : 'Rekomendasi menu terlaris, bahan habis, dan rekap shift kasir'}
-              </p>
             </div>
           </div>
 
@@ -178,7 +177,32 @@ export default function AiSalesAssistantModal() {
                     {isUser ? (
                       <p className="text-sm font-medium">{msg.text}</p>
                     ) : (
-                      renderFormattedText(msg.text)
+                      <>
+                        {/* Domain Intent Badge */}
+                        {msg.intentMeta?.badge && (
+                          <div className="mb-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-komazi-primary/15 text-komazi-primary border border-komazi-primary/30">
+                              {msg.intentMeta.badge}
+                            </span>
+                          </div>
+                        )}
+
+                        {renderFormattedText(msg.text)}
+
+                        {/* Interactive Action Hint Button */}
+                        {msg.actionHint && (
+                          <div className="mt-3 pt-2.5 border-t border-komazi-border/50">
+                            <button
+                              type="button"
+                              onClick={() => handleActionHint(msg.actionHint)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-komazi-primary/20 hover:bg-komazi-primary/30 text-komazi-primary border border-komazi-primary/40 transition-all shadow-xs cursor-pointer group"
+                            >
+                              <span>{msg.actionHint.label || 'Buka Menu Terkait'}</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {/* Metadata Footer: Komazi AI & Timestamp */}
@@ -234,7 +258,7 @@ export default function AiSalesAssistantModal() {
                 <span className="w-2 h-2 rounded-full bg-komazi-primary animate-bounce [animation-delay:-0.3s]" />
                 <span className="w-2 h-2 rounded-full bg-komazi-primary animate-bounce [animation-delay:-0.15s]" />
                 <span className="w-2 h-2 rounded-full bg-komazi-primary animate-bounce" />
-                <span className="ml-1 text-xs">Menganalisis data penjualan dengan Komazi AI...</span>
+                <span className="ml-1 text-xs">Komazi AI sedang menulis...</span>
               </div>
             </div>
           )}
@@ -249,7 +273,7 @@ export default function AiSalesAssistantModal() {
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="Ketik pertanyaan (cth: Menu apa yang paling laku hari ini?)..."
+              placeholder="Tanya Komazi AI"
               disabled={isLoading}
               className="flex-1 bg-komazi-surface border border-komazi-border rounded-xl px-4 py-2.5 text-sm text-komazi-text placeholder-komazi-muted focus:outline-none focus:border-komazi-primary focus:ring-1 focus:ring-komazi-primary transition-all"
             />
@@ -259,7 +283,6 @@ export default function AiSalesAssistantModal() {
               className="px-4 py-2.5 bg-komazi-primary hover:bg-komazi-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center gap-1.5 font-medium text-sm transition-all shadow-md shrink-0"
             >
               <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">Kirim</span>
             </button>
           </form>
         </div>

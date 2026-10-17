@@ -78,7 +78,7 @@ export const useStockStore = create(
             set((state) => ({
               ingredients: state.ingredients.filter((ing) => ing.id !== id),
             }));
-            return { success: true };
+            return { success: true, message: res.message || 'Bahan baku berhasil dihapus' };
           }
           return { success: false, message: res?.message || 'Gagal menghapus bahan baku' };
         } catch (err) {
@@ -88,14 +88,50 @@ export const useStockStore = create(
       },
 
       bulkDeleteIngredients: async (ids) => {
-        for (const id of ids) {
-          try {
-            await api.stock.delete(id);
-          } catch {}
+        if (!ids || ids.length === 0) return { success: true, count: 0 };
+        try {
+          const res = await api.stock.bulkDelete(ids);
+          if (res && res.success) {
+            set((state) => ({
+              ingredients: state.ingredients.filter((ing) => !ids.includes(ing.id)),
+            }));
+            return {
+              success: true,
+              count: res.data?.count || ids.length,
+              message: res.message || `${ids.length} bahan baku berhasil dihapus`,
+            };
+          }
+          // Fallback sequential
+          let deletedCount = 0;
+          const failedIds = [];
+          for (const id of ids) {
+            try {
+              const r = await api.stock.delete(id);
+              if (r && r.success) {
+                deletedCount++;
+              } else {
+                failedIds.push(id);
+              }
+            } catch {
+              failedIds.push(id);
+            }
+          }
+          const successIds = ids.filter((id) => !failedIds.includes(id));
+          if (successIds.length > 0) {
+            set((state) => ({
+              ingredients: state.ingredients.filter((ing) => !successIds.includes(ing.id)),
+            }));
+          }
+          return {
+            success: successIds.length > 0,
+            count: successIds.length,
+            failedCount: failedIds.length,
+            message: `${successIds.length} bahan baku berhasil dihapus`,
+          };
+        } catch (err) {
+          console.error('[StockStore] Error bulk deleting ingredients:', err);
+          return { success: false, message: err.message || 'Gagal menghapus bahan baku terpilih' };
         }
-        set((state) => ({
-          ingredients: state.ingredients.filter((ing) => !ids.includes(ing.id)),
-        }));
       },
 
       bulkUpdateMinStock: async (ids, minStock) => {
@@ -113,14 +149,57 @@ export const useStockStore = create(
         }
       },
 
-      recordMovement: async (ingredientId, type, qty, note = '') => {
+      recordMovement: async (ingredientId, type, qty, note = '', unitCost = null, recordedBy = '') => {
         const numericQty = Number(qty);
-        if (isNaN(numericQty) || numericQty === 0) return;
+        if (isNaN(numericQty)) return;
+        if (type !== 'ADJUSTMENT' && numericQty === 0) return;
+        if (type === 'ADJUSTMENT' && numericQty < 0) return;
+
+        // Optimistic local state update
+        const currentIng = get().ingredients.find((i) => i.id === ingredientId);
+        if (currentIng) {
+          let newStock = Number(currentIng.stock) || 0;
+          let delta = 0;
+          if (type === 'PURCHASE') {
+            delta = Math.abs(numericQty);
+            newStock += delta;
+          } else if (type === 'WASTE' || type === 'SALE') {
+            delta = -Math.abs(numericQty);
+            newStock = Math.max(0, newStock + delta);
+          } else if (type === 'ADJUSTMENT') {
+            delta = numericQty - newStock;
+            newStock = Math.max(0, numericQty);
+          }
+
+          set((state) => ({
+            ingredients: state.ingredients.map((ing) =>
+              ing.id === ingredientId ? { ...ing, stock: newStock } : ing
+            ),
+            movements: [
+              {
+                id: Date.now() + Math.random(),
+                ingredientId,
+                ingredientName: currentIng.name,
+                type,
+                qty: delta,
+                note,
+                recordedBy: recordedBy || 'Staff',
+                createdAt: new Date().toISOString(),
+              },
+              ...state.movements,
+            ],
+          }));
+        }
 
         try {
-          const res = await api.stock.recordMovement(ingredientId, { type, qty: numericQty, note });
+          const res = await api.stock.recordMovement(ingredientId, {
+            type,
+            qty: numericQty,
+            note,
+            unitCost,
+            recordedBy,
+          });
           if (res && res.success) {
-            // Refresh ingredients to get exact stock from DB
             get().fetchIngredients();
             return res.data;
           }
@@ -129,15 +208,65 @@ export const useStockStore = create(
         }
       },
 
-      bulkRecordMovement: async (ids, type, qty, note = '') => {
-        const state = get();
+      recordWaste: async (ingredientId, qty, reason = 'Waste / Kalibrasi', recordedBy = 'Staff') => {
         const numericQty = Number(qty);
-        if (isNaN(numericQty) || numericQty === 0) return;
+        if (isNaN(numericQty) || numericQty <= 0) return null;
+
+        try {
+          const res = await api.stock.recordWaste(ingredientId, {
+            qty: numericQty,
+            reason,
+            recordedBy,
+          });
+          if (res && res.success) {
+            get().fetchIngredients();
+            return res.data;
+          }
+        } catch (err) {
+          console.error('[StockStore] Error recording waste:', err);
+        }
+        return null;
+      },
+
+      bulkRecordMovement: async (ids, type, qty, note = '') => {
+        const numericQty = Number(qty);
+        if (isNaN(numericQty)) return;
+        if (type !== 'ADJUSTMENT' && numericQty === 0) return;
+        if (type === 'ADJUSTMENT' && numericQty < 0) return;
 
         for (const id of ids) {
           try {
             await api.stock.recordMovement(id, { type, qty: numericQty, note });
-          } catch {}
+          } catch (err) {
+            console.error('[StockStore] Error bulk movement for id', id, err);
+          }
+        }
+
+        get().fetchIngredients();
+      },
+
+      bulkAdjustStock: async (adjustments = []) => {
+        // adjustments: array of { ingredientId, physicalStock, note }
+        for (const adj of adjustments) {
+          const numericQty = Number(adj.physicalStock);
+          if (isNaN(numericQty) || numericQty < 0) continue;
+
+          // Optimistically update
+          set((state) => ({
+            ingredients: state.ingredients.map((ing) =>
+              ing.id === adj.ingredientId ? { ...ing, stock: numericQty } : ing
+            ),
+          }));
+
+          try {
+            await api.stock.recordMovement(adj.ingredientId, {
+              type: 'ADJUSTMENT',
+              qty: numericQty,
+              note: adj.note || 'Stok Opname Penyesuaian Fisik',
+            });
+          } catch (err) {
+            console.error('[StockStore] Error adjusting stock for', adj.ingredientId, err);
+          }
         }
 
         get().fetchIngredients();

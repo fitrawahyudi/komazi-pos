@@ -1,5 +1,6 @@
 import cloudinary, { isCloudinaryConfigured } from '../config/cloudinary.js';
 import { successResponse, errorResponse } from '../utils/response.js';
+import { isSafeExternalUrl } from '../utils/security.js';
 
 /**
  * Handle all photo uploads strictly to Cloudinary with automatic optimization
@@ -56,7 +57,25 @@ export async function uploadImage(req, res) {
 
     // 2. Upload via Base64 data URL or external URL in request body
     const base64OrUrl = req.body?.image || req.body?.file || req.body?.dataUrl || req.body?.url;
-    if (base64OrUrl) {
+    if (base64OrUrl && typeof base64OrUrl === 'string') {
+      const isDataUrl = base64OrUrl.startsWith('data:image/');
+      
+      // Jika data URL, tolak SVG untuk mencegah Stored XSS
+      if (isDataUrl) {
+        if (base64OrUrl.startsWith('data:image/svg')) {
+          return errorResponse(res, 'Format gambar SVG tidak diizinkan untuk alasan keamanan', 400);
+        }
+      } else {
+        // Jika URL eksternal, validasi terhadap SSRF (tolak localhost, internal network, cloud metadata)
+        if (!isSafeExternalUrl(base64OrUrl)) {
+          return errorResponse(
+            res,
+            'URL sumber gambar tidak valid atau mengarah ke alamat jaringan internal yang dilarang (SSRF Protection)',
+            400
+          );
+        }
+      }
+
       const result = await cloudinary.uploader.upload(base64OrUrl, {
         folder: 'komazi-pos',
         resource_type: 'image',

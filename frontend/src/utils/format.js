@@ -39,20 +39,22 @@ export function formatDateTime(dateInput) {
 export function formatTime(dateInput) {
   if (!dateInput) return '-';
   const date = new Date(dateInput);
-  return new Intl.DateTimeFormat('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  if (isNaN(date.getTime())) return '-';
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 /**
  * Format minutes or milliseconds into human readable: 2j 15m
  */
 export function formatDuration(totalMinutes) {
-  if (totalMinutes < 0) return '0m';
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = Math.floor(totalMinutes % 60);
+  const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
+  if (mins === 0) return '0m';
+  const hours = Math.floor(mins / 60);
+  const minutes = mins % 60;
   if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}j`;
   return `${hours}j ${minutes}m`;
 }
 
@@ -92,12 +94,16 @@ export function isDrinkItem(item) {
   return (
     cat.includes('kopi') ||
     cat.includes('coffee') ||
+    cat.includes('non-coffee') ||
     cat.includes('drink') ||
     cat.includes('beverage') ||
     cat.includes('minuman') ||
     cat.includes('bar') ||
     cat.includes('barista') ||
     cat.includes('non-kopi') ||
+    cat.includes('tea') ||
+    cat.includes('teh') ||
+    cat.includes('mocktail') ||
     name.includes('latte') ||
     name.includes('espresso') ||
     name.includes('cappuccino') ||
@@ -126,7 +132,46 @@ export function isDrinkItem(item) {
     name.includes('red velvet') ||
     name.includes('boba') ||
     name.includes('cincau') ||
-    name.includes('aren')
+    name.includes('aren') ||
+    name.includes('sanger')
   );
+}
+
+/**
+ * Format bank account number with readable grouping (e.g. 829-100-2931)
+ */
+export function formatAccountNumber(accNo = '') {
+  const clean = String(accNo || '').replace(/\D/g, '');
+  if (!clean) return String(accNo || '');
+  if (clean.length === 10) {
+    return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6)}`;
+  }
+  if (clean.length > 8) {
+    return clean.match(/.{1,4}/g)?.join('-') || clean;
+  }
+  return clean;
+}
+
+/**
+ * Ekstrak inisial nama produk (1 huruf kapital) untuk produk yang belum memiliki gambar
+ * Contoh: "Seasalt Crumble" -> "S", "Americano" -> "A", "Nasi Goreng" -> "N"
+ */
+export function getProductInitials(name = '') {
+  if (!name || typeof name !== 'string') return 'P';
+  const clean = name.trim().replace(/[^a-zA-Z0-9]/g, '');
+  if (!clean) return 'P';
+  return clean[0].toUpperCase();
+}
+
+/**
+ * Palet warna gradien coral Komazi resmi terkurasi persis sesuai tema aplikasi
+ */
+export function getProductColor(name = '') {
+  return {
+    bg: 'from-[#FF6B5E] to-[#D9382B]',
+    text: 'text-white',
+    border: 'border-transparent',
+    badge: 'bg-gradient-to-b from-[#FF6B5E] to-[#D9382B] text-white',
+  };
 }
 

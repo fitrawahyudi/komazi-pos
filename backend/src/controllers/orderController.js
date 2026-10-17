@@ -2,31 +2,126 @@ import prisma from '../config/db.js';
 import { generateInvoiceNo } from '../utils/invoice.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { calculateProductCogs } from '../services/cogsService.js';
-import { emitToStation, emitOrderEvent } from '../config/socket.js';
+import { emitToStation, emitOrderEvent, emitCustomerEvent } from '../config/socket.js';
 import { notifyNewOrder, notifyPaidTransaction } from '../services/telegramService.js';
+import { isDrinkItemHelper } from '../services/kdsService.js';
+import { deltaInventoryService } from '../services/deltaInventoryService.js';
+import { approvalService } from '../services/approval.service.js';
+import { dispatchNotification } from '../services/notification.service.js';
+import { checkStaffShiftEligibility } from '../services/scheduleGuard.service.js';
+import { getSettingsMap } from '../services/settingsCache.service.js';
+import logger from '../utils/logger.js';
+
+// Cached default station lookup
+let defaultBarStationId = null;
+let defaultKitchenStationId = null;
+let stationsCachedAt = 0;
+
+async function getDefaultStationId(isDrink) {
+  const now = Date.now();
+  if (now - stationsCachedAt > 60000 || !defaultBarStationId || !defaultKitchenStationId) {
+    const [bar, kitchen] = await Promise.all([
+      prisma.station.findFirst({ where: { OR: [{ code: 'BAR_MAIN' }, { type: 'BAR' }] } }),
+      prisma.station.findFirst({ where: { OR: [{ code: 'KITCHEN_MAIN' }, { type: 'KITCHEN' }] } }),
+    ]);
+    defaultBarStationId = bar?.id || null;
+    defaultKitchenStationId = kitchen?.id || null;
+    stationsCachedAt = now;
+  }
+  return isDrink ? defaultBarStationId : defaultKitchenStationId;
+}
 
 // Helper: dapatkan station id untuk produk jika belum di-set
 async function resolveStationId(product) {
-  if (product?.stationId) return product.stationId;
-  const catName = (product?.category?.name || '').toLowerCase();
-  const isDrink =
-    catName.includes('kopi') ||
-    catName.includes('drink') ||
-    catName.includes('beverage') ||
-    catName.includes('minuman') ||
-    catName.includes('bar');
-  const targetCode = isDrink ? 'BAR_MAIN' : 'KITCHEN_MAIN';
-  const targetType = isDrink ? 'BAR' : 'KITCHEN';
-  const station = await prisma.station.findFirst({
-    where: { OR: [{ code: targetCode }, { type: targetType }] },
+  const isDrink = isDrinkItemHelper(product);
+
+  if (product?.stationId) {
+    if (product.station?.type) {
+      if (isDrink && product.station.type === 'KITCHEN') {
+        return await getDefaultStationId(true);
+      }
+      return product.stationId;
+    } else {
+      const existingStation = await prisma.station.findUnique({ where: { id: product.stationId } });
+      if (existingStation) {
+        if (isDrink && existingStation.type === 'KITCHEN') {
+          return await getDefaultStationId(true);
+        }
+        return existingStation.id;
+      }
+    }
+  }
+
+  return await getDefaultStationId(isDrink);
+}
+
+/**
+ * Batched order items preparer: eliminates N+1 queries by batch fetching products and caching station/COGS lookups
+ */
+async function prepareOrderItems(items = [], orderId = null) {
+  const productIds = [...new Set(items.map((i) => i.productId).filter(Boolean))];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    include: { category: true, station: true },
   });
-  return station?.id || null;
+  const productMap = new Map(products.map((p) => [p.id, p]));
+
+  let itemsSubtotal = 0;
+  const orderItemsData = [];
+  const cogsCache = new Map();
+
+  for (const item of items) {
+    const lineTotal = item.qty * item.unitPrice - (item.discount || 0);
+    itemsSubtotal += lineTotal;
+
+    const product = productMap.get(item.productId);
+    const stationId = await resolveStationId(product);
+
+    const cogsKey = `${item.productId}_${item.variantName || ''}`;
+    let unitCost = 0;
+    if (cogsCache.has(cogsKey)) {
+      unitCost = cogsCache.get(cogsKey);
+    } else {
+      try {
+        unitCost = await calculateProductCogs(item.productId, item.variantName || null);
+        cogsCache.set(cogsKey, unitCost);
+      } catch (e) {
+        unitCost = 0;
+      }
+    }
+    const lineCost = Math.round(unitCost * item.qty * 100) / 100;
+
+    const itemRecord = {
+      productId: item.productId,
+      stationId,
+      status: 'PENDING',
+      productName: product ? product.name : 'Item',
+      variantName: item.variantName || null,
+      qty: item.qty,
+      unitPrice: item.unitPrice,
+      unitCost,
+      discount: item.discount || 0,
+      note: item.note || null,
+      lineTotal,
+      lineCost,
+    };
+
+    if (orderId) {
+      itemRecord.orderId = orderId;
+    }
+
+    orderItemsData.push(itemRecord);
+  }
+
+  return { itemsSubtotal, orderItemsData };
 }
 
 // Helper: format order items with categoryName and sanitize cost fields for non-privileged roles
 function formatOrderForResponse(order, canViewCost) {
   if (!order) return order;
   const sanitized = { ...order };
+  // Ensure cashierName is explicitly set for frontend displays, receipt print, and owner/manager audits
+  sanitized.cashierName = order.cashierName || order.cashier?.name || order.shift?.cashier?.name || null;
   if (sanitized.items) {
     sanitized.items = sanitized.items.map((item) => {
       const categoryName = item.product?.category?.name || item.categoryName || null;
@@ -86,7 +181,13 @@ export async function getAllOrders(req, res) {
           },
           payments: true,
           cashier: { select: { id: true, name: true, username: true } },
+          shift: {
+            include: {
+              cashier: { select: { id: true, name: true, username: true } },
+            },
+          },
           workspace: true,
+          customer: { select: { id: true, name: true, phone: true, tier: true, points: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -132,6 +233,12 @@ export async function getOrderById(req, res) {
         },
         payments: true,
         cashier: { select: { id: true, name: true, username: true } },
+        shift: {
+          include: {
+            cashier: { select: { id: true, name: true, username: true } },
+          },
+        },
+        customer: { select: { id: true, name: true, phone: true, tier: true, points: true } },
         workspace: {
           include: {
             area: true,
@@ -161,6 +268,7 @@ export async function createOrder(req, res) {
       type,
       tableNo,
       customerName,
+      customerId,
       shiftId,
       items,
       discount = 0,
@@ -168,12 +276,38 @@ export async function createOrder(req, res) {
       workspaceSessionId,
     } = req.body;
 
-    // Fetch tax & service fee from settings
-    const settings = await prisma.setting.findMany();
-    const settingsMap = settings.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {});
+    // Validasi jadwal kerja & presensi staf: Staf wajib presensi sebelum bertransaksi
+    const eligibility = await checkStaffShiftEligibility(cashierId, req.user.role);
+    if (!eligibility.eligible) {
+      return errorResponse(res, eligibility.message, 403);
+    }
+
+    // 0. Wajib ada sesi kasir (shift) aktif sebelum pesanan dapat dibuat
+    let activeShift = null;
+    if (shiftId) {
+      activeShift = await prisma.shift.findFirst({
+        where: { id: parseInt(shiftId), closedAt: null },
+        select: { id: true },
+      });
+    }
+    if (!activeShift) {
+      activeShift = await prisma.shift.findFirst({
+        where: { closedAt: null },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
+    }
+
+    if (!activeShift) {
+      return errorResponse(
+        res,
+        'Tidak dapat membuat pesanan: Sesi kasir (shift) belum dibuka atau sudah ditutup. Silakan buka sesi kasir terlebih dahulu.',
+        400
+      );
+    }
+
+    // Fetch tax & service fee from settings cache
+    const settingsMap = await getSettingsMap();
 
     const taxEnabled = settingsMap['taxEnabled'] === 'true' || settingsMap['taxEnabled'] === true;
     const taxPercentage = taxEnabled ? parseFloat(settingsMap['taxPercentage'] || '10') : 0;
@@ -181,46 +315,8 @@ export async function createOrder(req, res) {
     const serviceFeePercentage = serviceFeeEnabled ? parseFloat(settingsMap['serviceFeePercentage'] || '5') : 0;
     const roundingEnabled = settingsMap['roundingEnabled'] === 'true' || settingsMap['roundingEnabled'] === true;
 
-    // Calculate item subtotal
-    let itemsSubtotal = 0;
-    const orderItemsData = [];
-
-    for (const item of items) {
-      const lineTotal = item.qty * item.unitPrice - (item.discount || 0);
-      itemsSubtotal += lineTotal;
-
-      const product = await prisma.product.findUnique({
-        where: { id: item.productId },
-        include: { category: true, station: true },
-      });
-
-      const stationId = await resolveStationId(product);
-
-      // Calculate HPP snapshot for this item
-      let unitCost = 0;
-      try {
-        unitCost = await calculateProductCogs(item.productId, item.variantName || null);
-      } catch (e) {
-        // If recipe not set, HPP defaults to 0
-        unitCost = 0;
-      }
-      const lineCost = Math.round(unitCost * item.qty * 100) / 100;
-
-      orderItemsData.push({
-        productId: item.productId,
-        stationId,
-        status: 'PENDING',
-        productName: product ? product.name : 'Item',
-        variantName: item.variantName || null,
-        qty: item.qty,
-        unitPrice: item.unitPrice,
-        unitCost,
-        discount: item.discount || 0,
-        note: item.note || null,
-        lineTotal,
-        lineCost,
-      });
-    }
+    // Batched preparation of items and subtotal (eliminates N+1 queries)
+    const { itemsSubtotal, orderItemsData } = await prepareOrderItems(items);
 
     // Include workspace charge if any
     let workspaceCharge = 0;
@@ -249,100 +345,179 @@ export async function createOrder(req, res) {
       total = Math.ceil(total / 100) * 100;
     }
 
-    const invoiceNo = await generateInvoiceNo();
     const isPaid = payments && payments.length > 0;
+    let updatedCustForEmit = null;
 
-    // Execute Prisma Transaction
-    const newOrder = await prisma.$transaction(async (tx) => {
-      // Auto-resolve shiftId dari shift yang sedang aktif jika tidak dikirimkan
-      let resolvedShiftId = shiftId ? parseInt(shiftId) : null;
-      if (!resolvedShiftId) {
-        const activeShift = await tx.shift.findFirst({
-          where: { closedAt: null },
-          orderBy: { openedAt: 'desc' },
-          select: { id: true },
-        });
-        if (activeShift) {
-          resolvedShiftId = activeShift.id;
-        }
-      }
+    // Execute Prisma Transaction with retry for rare invoiceNo collision under high concurrency
+    let newOrder = null;
+    let lastError = null;
 
-      const order = await tx.order.create({
-        data: {
-          invoiceNo,
-          cashierId,
-          shiftId: resolvedShiftId,
-          type: type || 'DINE_IN',
-          tableNo: type === 'DINE_IN' ? tableNo : null,
-          customerName: customerName || null,
-          status: isPaid ? 'PAID' : 'OPEN',
-          kitchenStatus: 'PENDING',
-          barStatus: 'PENDING',
-          subtotal,
-          discount,
-          serviceFee,
-          tax,
-          total,
-          paidAt: isPaid ? new Date() : null,
-          items: {
-            create: orderItemsData,
-          },
-          payments: isPaid ? {
-            create: payments.map((p) => ({
-              method: p.method,
-              amount: p.amount,
-              reference: p.reference || null,
-            })),
-          } : undefined,
-        },
-        include: {
-          items: {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const invoiceNo = await generateInvoiceNo(null, attempt);
+
+        newOrder = await prisma.$transaction(async (tx) => {
+          const resolvedShiftId = activeShift.id;
+
+          const order = await tx.order.create({
+            data: {
+              invoiceNo,
+              cashierId,
+              shiftId: resolvedShiftId,
+              type: type || 'DINE_IN',
+              tableNo: type === 'DINE_IN' ? tableNo : null,
+              customerName: customerName || null,
+              customerId: customerId ? parseInt(customerId) : null,
+              status: isPaid ? 'PAID' : 'OPEN',
+              kitchenStatus: 'PENDING',
+              barStatus: 'PENDING',
+              subtotal,
+              discount,
+              serviceFee,
+              tax,
+              total,
+              paidAt: isPaid ? new Date() : null,
+              items: {
+                create: orderItemsData,
+              },
+              payments: isPaid ? {
+                create: payments.map((p) => ({
+                  method: p.method,
+                  amount: p.amount,
+                  reference: p.reference || null,
+                })),
+              } : undefined,
+            },
             include: {
-              station: true,
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  categoryId: true,
-                  stationId: true,
-                  category: { select: { id: true, name: true } },
+              items: {
+                include: {
+                  station: true,
+                  product: {
+                    select: {
+                      id: true,
+                      name: true,
+                      categoryId: true,
+                      stationId: true,
+                      category: { select: { id: true, name: true } },
+                    },
+                  },
                 },
               },
+              payments: true,
+              cashier: { select: { id: true, name: true, username: true } },
+              customer: { select: { id: true, name: true, phone: true, tier: true, points: true } },
             },
-          },
-          payments: true,
-          cashier: { select: { id: true, name: true, username: true } },
-        },
-      });
+          });
 
-      // If workspace session attached, link and complete it
-      if (workspaceSessionId) {
-        await tx.workspaceSession.update({
-          where: { id: workspaceSessionId },
-          data: {
-            orderId: order.id,
-            status: 'COMPLETED',
-            checkOutAt: new Date(),
-            ...(workspaceCharge > 0 ? { charge: workspaceCharge } : {}),
-          },
+          // Update customer loyalty points jika order langsung PAID
+          if (customerId && isPaid) {
+            const targetCustId = parseInt(customerId);
+            const paidSpent = parseFloat(total) || 0;
+            const pointsEarned = Math.floor(paidSpent / 10000);
+            const currentCust = await tx.customer.findUnique({ where: { id: targetCustId } });
+            if (currentCust) {
+              const newPoints = currentCust.points + pointsEarned;
+              const newSpent = parseFloat(currentCust.totalSpent) + paidSpent;
+              const newVisits = currentCust.visitCount + 1;
+              let newTier = 'SILVER';
+              if (newPoints >= 500) newTier = 'PLATINUM';
+              else if (newPoints >= 200) newTier = 'GOLD';
+
+              updatedCustForEmit = await tx.customer.update({
+                where: { id: targetCustId },
+                data: {
+                  points: newPoints,
+                  totalSpent: newSpent,
+                  visitCount: newVisits,
+                  tier: newTier,
+                },
+              });
+            }
+          }
+
+          // If workspace session attached, link and complete it
+          if (workspaceSessionId) {
+            await tx.workspaceSession.update({
+              where: { id: workspaceSessionId },
+              data: {
+                orderId: order.id,
+                status: 'COMPLETED',
+                checkOutAt: new Date(),
+                ...(workspaceCharge > 0 ? { charge: workspaceCharge } : {}),
+              },
+            });
+          }
+
+          // Immediate BOM Deduction: Potong stok bahan baku seketika (baik status OPEN / Hold Bill maupun PAID)
+          await deltaInventoryService.deductNewOrderStock(
+            tx,
+            order.id,
+            order.invoiceNo,
+            items
+          );
+
+          return order;
         });
-      }
 
-      return order;
-    });
+        if (newOrder) break;
+      } catch (err) {
+        lastError = err;
+        // Jika collision invoiceNo, ulangi ke attempt berikutnya
+        if (err.code === 'P2002' && (err.meta?.target?.includes?.('invoiceNo') || err.message?.includes?.('invoiceNo'))) {
+          logger.warn(`Invoice number collision detected, retrying (attempt ${attempt + 1})...`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!newOrder) {
+      throw lastError || new Error('Gagal membuat pesanan setelah beberapa percobaan');
+    }
 
     const canView = canViewCostData(req.user?.role);
     const outputOrder = formatOrderForResponse(newOrder, canView);
 
+    const hasKitchen = (outputOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
+    const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
+
     // Realtime notification via Socket.IO
     try {
-      const hasKitchen = (outputOrder.items || []).some((i) => i.station?.type === 'KITCHEN');
-      const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR');
       if (hasKitchen) emitToStation('KITCHEN_MAIN', 'order:new', outputOrder);
       if (hasBar) emitToStation('BAR_MAIN', 'order:new', outputOrder);
       emitOrderEvent('order:new', outputOrder);
+
+      if (updatedCustForEmit) {
+        emitCustomerEvent('customer:updated', updatedCustForEmit);
+        emitCustomerEvent('customers:changed', { action: 'ORDER_PAID', customerId: updatedCustForEmit.id });
+      }
+
+      logger.order.info(`Order created | orderId=${outputOrder.invoiceNo}`, {
+        orderId: outputOrder.invoiceNo,
+        total: outputOrder.total,
+        status: outputOrder.status,
+      });
+
+      if (hasKitchen) {
+        logger.kds.info(`Order dispatched to kitchen | orderId=${outputOrder.invoiceNo}`, {
+          orderId: outputOrder.invoiceNo,
+        });
+      }
+
+      if (hasBar) {
+        logger.bds.info(`Order dispatched to bar | orderId=${outputOrder.invoiceNo}`, {
+          orderId: outputOrder.invoiceNo,
+        });
+      }
+
+      if (outputOrder.status === 'PAID') {
+        logger.payment.success(`Payment confirmed | orderId=${outputOrder.invoiceNo} amount=${outputOrder.total}`, {
+          orderId: outputOrder.invoiceNo,
+          amount: outputOrder.total,
+        });
+      }
     } catch (e) {
-      console.warn('[Socket.IO] Emit order:new notice:', e);
+      logger.warn(`[Socket.IO] Emit order:new notice: ${e.message}`);
     }
 
     // Notifikasi Telegram jika pesanan berstatus PAID
@@ -350,9 +525,29 @@ export async function createOrder(req, res) {
       notifyPaidTransaction(outputOrder).catch(() => {});
     }
 
+    // Role-based Android Push & In-App Notification (NEW_ORDER)
+    dispatchNotification({
+      event: 'NEW_ORDER',
+      category: 'ORDERS',
+      title: `🔔 Pesanan Baru: #${outputOrder.invoiceNo}`,
+      body: `${outputOrder.items?.length || 1} item ${outputOrder.tableNo ? `(Meja ${outputOrder.tableNo})` : '(Take Away)'}`,
+      data: {
+        orderId: outputOrder.id,
+        invoiceNo: outputOrder.invoiceNo,
+        tableNo: outputOrder.tableNo || '',
+        url: '/orders',
+      },
+      context: {
+        hasKitchen,
+        hasBar,
+        initiatorId: req.user?.id,
+        excludeInitiator: true,
+      },
+    }).catch(() => {});
+
     return successResponse(res, outputOrder, 'Pesanan berhasil dibuat', 201);
   } catch (err) {
-    return errorResponse(res, err.message, 500);
+    return errorResponse(res, err.message, err.statusCode || 500);
   }
 }
 
@@ -369,17 +564,22 @@ export async function updateOrder(req, res) {
       workspaceSessionId,
     } = req.body;
 
-    const existingOrder = await prisma.order.findUnique({ where: { id } });
+    // Validasi jadwal kerja & presensi staf: Staf wajib presensi sebelum bertransaksi
+    const eligibility = await checkStaffShiftEligibility(req.user.id, req.user.role);
+    if (!eligibility.eligible) {
+      return errorResponse(res, eligibility.message, 403);
+    }
+
+    const existingOrder = await prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
     if (!existingOrder) return errorResponse(res, 'Pesanan tidak ditemukan', 404);
     if (existingOrder.status !== 'OPEN') {
       return errorResponse(res, 'Hanya pesanan yang belum dibayar (OPEN/HOLD) yang dapat diperbarui', 400);
     }
 
-    const settings = await prisma.setting.findMany();
-    const settingsMap = settings.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {});
+    const settingsMap = await getSettingsMap();
 
     const taxEnabled = settingsMap['taxEnabled'] === 'true' || settingsMap['taxEnabled'] === true;
     const taxPercentage = taxEnabled ? parseFloat(settingsMap['taxPercentage'] || '10') : 0;
@@ -387,44 +587,8 @@ export async function updateOrder(req, res) {
     const serviceFeePercentage = serviceFeeEnabled ? parseFloat(settingsMap['serviceFeePercentage'] || '5') : 0;
     const roundingEnabled = settingsMap['roundingEnabled'] === 'true' || settingsMap['roundingEnabled'] === true;
 
-    let itemsSubtotal = 0;
-    const orderItemsData = [];
-
-    for (const item of items) {
-      const lineTotal = item.qty * item.unitPrice - (item.discount || 0);
-      itemsSubtotal += lineTotal;
-
-      const product = await prisma.product.findUnique({
-        where: { id: item.productId },
-        include: { category: true, station: true },
-      });
-
-      const stationId = await resolveStationId(product);
-
-      let unitCost = 0;
-      try {
-        unitCost = await calculateProductCogs(item.productId, item.variantName || null);
-      } catch (e) {
-        unitCost = 0;
-      }
-      const lineCost = Math.round(unitCost * item.qty * 100) / 100;
-
-      orderItemsData.push({
-        orderId: id,
-        productId: item.productId,
-        stationId,
-        status: 'PENDING',
-        productName: product ? product.name : 'Item',
-        variantName: item.variantName || null,
-        qty: item.qty,
-        unitPrice: item.unitPrice,
-        unitCost,
-        discount: item.discount || 0,
-        note: item.note || null,
-        lineTotal,
-        lineCost,
-      });
-    }
+    // Batched preparation of items and subtotal (eliminates N+1 queries)
+    const { itemsSubtotal, orderItemsData } = await prepareOrderItems(items, id);
 
     let workspaceCharge = 0;
     if (workspaceSessionId) {
@@ -447,9 +611,64 @@ export async function updateOrder(req, res) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.orderItem.deleteMany({ where: { orderId: id } });
-      await tx.orderItem.createMany({ data: orderItemsData });
+      // 1. Eksekusi mutasi delta inventori bahan baku (BOM)
+      await deltaInventoryService.processOrderDelta(
+        tx,
+        id,
+        existingOrder.invoiceNo,
+        existingOrder.items,
+        items
+      );
 
+      // 2. Update OrderItem secara in-place tanpa merusak status pengerjaan dapur (PREPARING/READY)
+      const buildKey = (item) => `${item.productId}_${(item.variantName || '').toLowerCase().trim()}`;
+      const activeExistingMap = new Map();
+      for (const item of existingOrder.items) {
+        if (item.status !== 'CANCELLED') {
+          activeExistingMap.set(buildKey(item), item);
+        }
+      }
+
+      const incomingKeys = new Set();
+      for (const incoming of orderItemsData) {
+        const key = buildKey(incoming);
+        incomingKeys.add(key);
+        const existingItem = activeExistingMap.get(key);
+
+        if (existingItem) {
+          // Update item yang sudah ada, pertahankan status dapur saat ini (misal PREPARING atau READY)
+          await tx.orderItem.update({
+            where: { id: existingItem.id },
+            data: {
+              qty: incoming.qty,
+              unitPrice: incoming.unitPrice,
+              unitCost: incoming.unitCost,
+              discount: incoming.discount,
+              note: incoming.note,
+              lineTotal: incoming.lineTotal,
+              lineCost: incoming.lineCost,
+              stationId: incoming.stationId,
+            },
+          });
+        } else {
+          // Tambahkan item baru dengan status awal PENDING
+          await tx.orderItem.create({
+            data: incoming,
+          });
+        }
+      }
+
+      // Tandai CANCELLED untuk item lama yang dihilangkan dari pesanan
+      for (const [key, existingItem] of activeExistingMap) {
+        if (!incomingKeys.has(key)) {
+          await tx.orderItem.update({
+            where: { id: existingItem.id },
+            data: { status: 'CANCELLED' },
+          });
+        }
+      }
+
+      // 3. Update data header Order
       return await tx.order.update({
         where: { id },
         data: {
@@ -488,8 +707,8 @@ export async function updateOrder(req, res) {
     const outputOrder = formatOrderForResponse(updated, canView);
 
     try {
-      const hasKitchen = (outputOrder.items || []).some((i) => i.station?.type === 'KITCHEN');
-      const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR');
+      const hasKitchen = (outputOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
+      const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
       if (hasKitchen) emitToStation('KITCHEN_MAIN', 'order:updated', outputOrder);
       if (hasBar) emitToStation('BAR_MAIN', 'order:updated', outputOrder);
       emitOrderEvent('order:updated', outputOrder);
@@ -499,14 +718,20 @@ export async function updateOrder(req, res) {
 
     return successResponse(res, outputOrder, 'Pesanan berhasil diperbarui');
   } catch (err) {
-    return errorResponse(res, err.message, 500);
+    return errorResponse(res, err.message, err.statusCode || 500);
   }
 }
 
 export async function payOrder(req, res) {
   try {
     const id = parseInt(req.params.id);
-    const { payments, items, discount, type, tableNo, customerName } = req.body;
+    const { payments, items, discount, type, tableNo, customerName, customerId } = req.body;
+
+    // Validasi jadwal kerja & presensi staf: Staf wajib presensi sebelum bertransaksi
+    const eligibility = await checkStaffShiftEligibility(req.user.id, req.user.role);
+    if (!eligibility.eligible) {
+      return errorResponse(res, eligibility.message, 403);
+    }
 
     if (!payments || payments.length === 0) {
       return errorResponse(res, 'Rincian pembayaran wajib diisi', 400);
@@ -523,11 +748,7 @@ export async function payOrder(req, res) {
     let updatedTotals = null;
     let orderItemsData = null;
     if (items && items.length > 0) {
-      const settings = await prisma.setting.findMany();
-      const settingsMap = settings.reduce((acc, s) => {
-        acc[s.key] = s.value;
-        return acc;
-      }, {});
+      const settingsMap = await getSettingsMap();
 
       const taxEnabled = settingsMap['taxEnabled'] === 'true' || settingsMap['taxEnabled'] === true;
       const taxPercentage = taxEnabled ? parseFloat(settingsMap['taxPercentage'] || '10') : 0;
@@ -535,40 +756,9 @@ export async function payOrder(req, res) {
       const serviceFeePercentage = serviceFeeEnabled ? parseFloat(settingsMap['serviceFeePercentage'] || '5') : 0;
       const roundingEnabled = settingsMap['roundingEnabled'] === 'true' || settingsMap['roundingEnabled'] === true;
 
-      let itemsSubtotal = 0;
-      orderItemsData = [];
-      for (const item of items) {
-        const lineTotal = item.qty * item.unitPrice - (item.discount || 0);
-        itemsSubtotal += lineTotal;
-        const product = await prisma.product.findUnique({
-          where: { id: item.productId },
-          include: { category: true, station: true },
-        });
-        const stationId = await resolveStationId(product);
-
-        let unitCost = 0;
-        try {
-          unitCost = await calculateProductCogs(item.productId, item.variantName || null);
-        } catch (e) {
-          unitCost = 0;
-        }
-        const lineCost = Math.round(unitCost * item.qty * 100) / 100;
-        orderItemsData.push({
-          orderId: id,
-          productId: item.productId,
-          stationId,
-          status: 'PENDING',
-          productName: product ? product.name : 'Item',
-          variantName: item.variantName || null,
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          unitCost,
-          discount: item.discount || 0,
-          note: item.note || null,
-          lineTotal,
-          lineCost,
-        });
-      }
+      const prepared = await prepareOrderItems(items, id);
+      const itemsSubtotal = prepared.itemsSubtotal;
+      orderItemsData = prepared.orderItemsData;
 
       const disc = discount !== undefined ? parseFloat(discount) : parseFloat(order.discount || 0);
       const subtotal = itemsSubtotal;
@@ -582,10 +772,71 @@ export async function payOrder(req, res) {
       updatedTotals = { subtotal, discount: disc, serviceFee, tax, total };
     }
 
+    // Validasi kecukupan nominal pembayaran (Payment Tampering Defense)
+    const expectedTotal = updatedTotals ? updatedTotals.total : parseFloat(order.total);
+    const totalPaid = payments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    if (totalPaid < expectedTotal) {
+      return errorResponse(
+        res,
+        `Total pembayaran (Rp ${totalPaid.toLocaleString('id-ID')}) kurang dari jumlah tagihan (Rp ${expectedTotal.toLocaleString('id-ID')})`,
+        400
+      );
+    }
+
+    let updatedCustForPayEmit = null;
+
     const updated = await prisma.$transaction(async (tx) => {
-      if (orderItemsData) {
-        await tx.orderItem.deleteMany({ where: { orderId: id } });
-        await tx.orderItem.createMany({ data: orderItemsData });
+      // 1. Jika ada perubahan items saat pembayaran kasir, jalankan delta in-place update
+      if (orderItemsData && items && items.length > 0) {
+        await deltaInventoryService.processOrderDelta(
+          tx,
+          id,
+          order.invoiceNo,
+          order.items,
+          items
+        );
+
+        const buildKey = (item) => `${item.productId}_${(item.variantName || '').toLowerCase().trim()}`;
+        const activeExistingMap = new Map();
+        for (const item of order.items) {
+          if (item.status !== 'CANCELLED') {
+            activeExistingMap.set(buildKey(item), item);
+          }
+        }
+
+        const incomingKeys = new Set();
+        for (const incoming of orderItemsData) {
+          const key = buildKey(incoming);
+          incomingKeys.add(key);
+          const existingItem = activeExistingMap.get(key);
+
+          if (existingItem) {
+            await tx.orderItem.update({
+              where: { id: existingItem.id },
+              data: {
+                qty: incoming.qty,
+                unitPrice: incoming.unitPrice,
+                unitCost: incoming.unitCost,
+                discount: incoming.discount,
+                note: incoming.note,
+                lineTotal: incoming.lineTotal,
+                lineCost: incoming.lineCost,
+                stationId: incoming.stationId,
+              },
+            });
+          } else {
+            await tx.orderItem.create({ data: incoming });
+          }
+        }
+
+        for (const [key, existingItem] of activeExistingMap) {
+          if (!incomingKeys.has(key)) {
+            await tx.orderItem.update({
+              where: { id: existingItem.id },
+              data: { status: 'CANCELLED' },
+            });
+          }
+        }
       }
 
       await tx.payment.createMany({
@@ -606,10 +857,14 @@ export async function payOrder(req, res) {
         });
         if (activeShift) {
           resolvedShiftId = activeShift.id;
+        } else {
+          throw new Error('Tidak dapat memproses pembayaran: Sesi kasir (shift) belum dibuka.');
         }
       }
 
-      return await tx.order.update({
+      const resolvedCustomerId = customerId ? parseInt(customerId) : (order.customerId || null);
+
+      const updatedOrder = await tx.order.update({
         where: { id },
         data: {
           status: 'PAID',
@@ -617,6 +872,7 @@ export async function payOrder(req, res) {
           ...(resolvedShiftId ? { shiftId: resolvedShiftId } : {}),
           ...(tableNo ? { tableNo } : {}),
           ...(customerName ? { customerName } : {}),
+          ...(resolvedCustomerId ? { customerId: resolvedCustomerId } : {}),
           ...(type ? { type } : {}),
           ...(updatedTotals ? updatedTotals : {}),
         },
@@ -637,28 +893,103 @@ export async function payOrder(req, res) {
           },
           payments: true,
           cashier: { select: { id: true, name: true, username: true } },
+          customer: { select: { id: true, name: true, phone: true, tier: true, points: true } },
         },
       });
+
+      // Update customer loyalty points saat pembayaran lunas
+      if (resolvedCustomerId) {
+        const finalSpent = parseFloat(updatedTotals?.total || order.total) || 0;
+        const pointsEarned = Math.floor(finalSpent / 10000);
+        const currentCust = await tx.customer.findUnique({ where: { id: resolvedCustomerId } });
+        if (currentCust) {
+          const newPoints = currentCust.points + pointsEarned;
+          const newSpent = parseFloat(currentCust.totalSpent) + finalSpent;
+          const newVisits = currentCust.visitCount + 1;
+          let newTier = 'SILVER';
+          if (newPoints >= 500) newTier = 'PLATINUM';
+          else if (newPoints >= 200) newTier = 'GOLD';
+
+          updatedCustForPayEmit = await tx.customer.update({
+            where: { id: resolvedCustomerId },
+            data: {
+              points: newPoints,
+              totalSpent: newSpent,
+              visitCount: newVisits,
+              tier: newTier,
+            },
+          });
+        }
+      }
+
+      // ZERO DOUBLE-DEDUCTION GUARANTEE:
+      // Cek apakah pesanan ini sudah pernah dipotong stoknya (saat Hold Bill dibuat / diedit)
+      const existingSaleMovement = await tx.stockMovement.findFirst({
+        where: {
+          note: { contains: `Order #${id}` },
+          type: 'SALE',
+        },
+      });
+
+      // Jika belum pernah dipotong sama sekali (misal legacy order), potong sekali saja
+      if (!existingSaleMovement) {
+        const activeItems = (order.items || []).filter((i) => i.status !== 'CANCELLED');
+        await deltaInventoryService.deductNewOrderStock(
+          tx,
+          order.id,
+          order.invoiceNo,
+          activeItems
+        );
+      }
+      // Jika sudah ada pergerakan SALE sebelumnya, STOK TIDAK DIPOTONG LAGI!
+
+      return updatedOrder;
     });
 
     const canView = canViewCostData(req.user?.role);
     const outputUpdated = formatOrderForResponse(updated, canView);
 
     try {
-      const hasKitchen = (outputUpdated.items || []).some((i) => i.station?.type === 'KITCHEN');
-      const hasBar = (outputUpdated.items || []).some((i) => i.station?.type === 'BAR');
+      const hasKitchen = (outputUpdated.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
+      const hasBar = (outputUpdated.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
       if (hasKitchen) emitToStation('KITCHEN_MAIN', 'order:updated', outputUpdated);
       if (hasBar) emitToStation('BAR_MAIN', 'order:updated', outputUpdated);
       emitOrderEvent('order:updated', outputUpdated);
+
+      if (updatedCustForPayEmit) {
+        emitCustomerEvent('customer:updated', updatedCustForPayEmit);
+        emitCustomerEvent('customers:changed', { action: 'ORDER_PAID', customerId: updatedCustForPayEmit.id });
+      }
     } catch (e) {
       console.warn('[Socket.IO] Emit order:updated error on payOrder:', e);
     }
 
     notifyPaidTransaction(outputUpdated).catch(() => {});
 
+    // Role-based Android Push & In-App Notification (ORDER_PAID)
+    dispatchNotification({
+      event: 'ORDER_PAID',
+      category: 'ORDERS',
+      title: `💰 Pembayaran Lunas: #${outputUpdated.invoiceNo}`,
+      body: `Total Rp${Number(outputUpdated.total).toLocaleString('id-ID')} (${(payments || []).map((p) => p.method).join(', ') || 'Tunai'})`,
+      data: {
+        orderId: outputUpdated.id,
+        invoiceNo: outputUpdated.invoiceNo,
+        total: String(outputUpdated.total),
+        url: '/orders',
+      },
+      context: { initiatorId: req.user?.id },
+    }).catch(() => {});
+
+    logger.payment.success(`Payment confirmed | orderId=${outputUpdated.invoiceNo} amount=${outputUpdated.total}`, {
+      orderId: outputUpdated.invoiceNo,
+      amount: outputUpdated.total,
+      methods: (payments || []).map((p) => p.method).join(', '),
+    });
+
     return successResponse(res, outputUpdated, 'Pembayaran berhasil dikonfirmasi');
   } catch (err) {
-    return errorResponse(res, err.message, 500);
+    return errorResponse(res, err.message, err.statusCode || 500);
   }
 }
 
@@ -675,8 +1006,15 @@ export async function voidOrder(req, res) {
     // PRD FR-28: Pembatalan pesanan yang sudah dibayar (PAID) memerlukan role MANAGER atau OWNER, atau PIN Otorisasi Supervisor
     if (order.status === 'PAID' && !['MANAGER', 'OWNER'].includes(req.user.role)) {
       const pinSetting = await prisma.setting.findUnique({ where: { key: 'supervisorPin' } });
-      const validPin = pinSetting?.value || '1234';
-      if (!managerPin || String(managerPin).trim() !== String(validPin).trim()) {
+      const validPin = pinSetting?.value ? String(pinSetting.value).trim() : null;
+      if (!validPin) {
+        return errorResponse(
+          res,
+          'Akses ditolak: PIN Supervisor belum dikonfigurasi oleh Owner/Manager',
+          403
+        );
+      }
+      if (!managerPin || String(managerPin).trim() !== validPin) {
         return errorResponse(
           res,
           'Akses ditolak: Pembatalan pesanan yang sudah dibayar memerlukan otorisasi Manager atau Owner (PIN salah)',
@@ -686,11 +1024,16 @@ export async function voidOrder(req, res) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // 1. Kembalikan seluruh stok bahan baku dari item aktif sebelum ditandai CANCELLED
+      await deltaInventoryService.restoreOrderStock(tx, order.id, reason);
+
+      // 2. Tandai seluruh item sebagai CANCELLED
       await tx.orderItem.updateMany({
         where: { orderId: id },
         data: { status: 'CANCELLED' },
       });
 
+      // 3. Update status pesanan menjadi VOIDED
       const vOrder = await tx.order.update({
         where: { id },
         data: {
@@ -735,65 +1078,162 @@ export async function voidOrder(req, res) {
       emitToStation('KITCHEN_MAIN', 'order:updated', updated);
       emitToStation('BAR_MAIN', 'order:updated', updated);
       emitOrderEvent('order:updated', updated);
+      emitOrderEvent('order:voided', { orderId: updated.id, invoiceNo: updated.invoiceNo, reason });
     } catch (e) {
       console.warn('[Socket.IO] Emit voidOrder error:', e);
     }
 
+    // Role-based Android Push & In-App Notification (ORDER_VOIDED)
+    dispatchNotification({
+      event: 'ORDER_VOIDED',
+      category: 'ALERTS',
+      title: `⚠️ Pesanan Dibatalkan (VOID): #${updated.invoiceNo}`,
+      body: `Alasan: "${reason}" oleh ${req.user.name}`,
+      data: {
+        orderId: updated.id,
+        invoiceNo: updated.invoiceNo,
+        reason,
+        url: '/orders',
+      },
+      context: { initiatorId: req.user?.id },
+    }).catch(() => {});
+
+    logger.order.warn(`Order voided | orderId=${updated.invoiceNo} reason="${reason}"`, {
+      orderId: updated.invoiceNo,
+      reason,
+      total: updated.total,
+    });
+
     return successResponse(res, updated, 'Pesanan berhasil dibatalkan (VOID)');
   } catch (err) {
-    return errorResponse(res, err.message, 500);
+    return errorResponse(res, err.message, err.statusCode || 500);
   }
 }
 
 export async function refundOrder(req, res) {
   try {
     const id = parseInt(req.params.id);
-    const { reason, refundAmount, managerPin } = req.body;
+    const { reason, refundAmount } = req.body;
     const userId = req.user.id;
+    const userRole = req.user.role;
 
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
     if (!order) return errorResponse(res, 'Pesanan tidak ditemukan', 404);
-    if (order.status !== 'PAID') return errorResponse(res, 'Hanya pesanan yang sudah dibayar yang dapat di-refund', 400);
+    if (order.status !== 'PAID') return errorResponse(res, 'Hanya pesanan yang sudah dibayar (PAID) yang dapat di-refund', 400);
 
-    if (!['MANAGER', 'OWNER'].includes(req.user.role)) {
-      const pinSetting = await prisma.setting.findUnique({ where: { key: 'supervisorPin' } });
-      const validPin = pinSetting?.value || '1234';
-      if (!managerPin || String(managerPin).trim() !== String(validPin).trim()) {
-        return errorResponse(
-          res,
-          'Akses ditolak: Pengembalian dana memerlukan otorisasi Manager atau Owner (PIN salah)',
-          403
-        );
+    const amount = Number(refundAmount) || Number(order.total);
+
+    // 1. Jika pengguna adalah OWNER: proses langsung disetujui seketika
+    if (userRole === 'OWNER') {
+      const updated = await prisma.$transaction(async (tx) => {
+        const rOrder = await tx.order.update({
+          where: { id },
+          data: {
+            status: 'REFUNDED',
+            voidReason: `REFUND: ${reason} (Jumlah: ${amount})`,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId,
+            action: 'REFUND_ORDER',
+            detail: {
+              invoiceNo: order.invoiceNo,
+              reason,
+              refundAmount: amount,
+              decidedDirectlyByOwner: true,
+            },
+          },
+        });
+
+        // 1. Pengembalian stok bahan baku jika pesanan di-REFUND
+        await deltaInventoryService.restoreOrderStock(tx, order.id, `Refund: ${reason}`);
+
+        // 2. Tandai item order sebagai CANCELLED
+        await tx.orderItem.updateMany({
+          where: { orderId: id },
+          data: { status: 'CANCELLED' },
+        });
+
+        return rOrder;
+      });
+
+      try {
+        emitToStation('KITCHEN_MAIN', 'order:updated', updated);
+        emitToStation('BAR_MAIN', 'order:updated', updated);
+        emitOrderEvent('order:updated', updated);
+        emitOrderEvent('order:refunded', { orderId: updated.id, invoiceNo: updated.invoiceNo, reason, amount });
+      } catch (e) {
+        console.warn('[Socket.IO] Emit refundOrder error:', e);
       }
+
+      logger.payment.warn(`Order refunded | orderId=${updated.invoiceNo} amount=${amount} reason="${reason}"`, {
+        orderId: updated.invoiceNo,
+        amount,
+        reason,
+      });
+
+      return successResponse(res, updated, 'Pengembalian dana (Refund) berhasil disetujui langsung oleh Owner');
     }
 
-    const amount = refundAmount || order.total;
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const rOrder = await tx.order.update({
-        where: { id },
-        data: {
-          status: 'REFUNDED',
-          voidReason: `REFUND: ${reason} (Jumlah: ${amount})`,
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: 'REFUND_ORDER',
-          detail: {
-            invoiceNo: order.invoiceNo,
-            reason,
-            refundAmount: amount,
-          },
-        },
-      });
-
-      return rOrder;
+    // 2. Jika CASHIER atau MANAGER: 100% BERHASIL DIAJUKAN KE OWNER TANPA PERLU PIN/OTORISASI!
+    const approvalReq = await approvalService.request({
+      type: 'REFUND',
+      orderId: order.id,
+      requesterId: userId,
+      reason: reason.trim(),
+      payload: {
+        refundAmount: amount,
+        invoiceNo: order.invoiceNo,
+        customerName: order.customerName,
+        paymentMethod: order.payments?.[0]?.method || 'TUNAI',
+      },
     });
 
-    return successResponse(res, updated, 'Pengembalian dana (Refund) berhasil dicatat');
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'REQUEST_REFUND',
+        detail: {
+          invoiceNo: order.invoiceNo,
+          reason,
+          refundAmount: amount,
+          approvalRequestId: approvalReq.id,
+        },
+      },
+    });
+
+    try {
+      emitOrderEvent('approval:requested', {
+        type: 'REFUND',
+        requestId: approvalReq.id,
+        orderId: order.id,
+        invoiceNo: order.invoiceNo,
+        amount,
+        reason,
+        requesterName: req.user.name,
+      });
+    } catch (e) {
+      console.warn('[Socket.IO] Emit approval:requested error:', e);
+    }
+
+    return successResponse(
+      res,
+      {
+        orderId: order.id,
+        invoiceNo: order.invoiceNo,
+        approvalRequestId: approvalReq.id,
+        status: 'PENDING_OWNER_APPROVAL',
+        refundAmount: amount,
+        reason,
+        pendingApproval: true,
+      },
+      'Permintaan pengembalian dana (Refund) berhasil diajukan! Menunggu persetujuan Owner.'
+    );
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }
@@ -874,6 +1314,23 @@ export async function updateKitchenStatus(req, res) {
 
     const canView = canViewCostData(req.user?.role);
     const outputOrder = formatOrderForResponse(updated, canView);
+
+    // Role-based Android Push & In-App Notification jika status pesanan menjadi READY
+    if (status === 'READY') {
+      dispatchNotification({
+        event: 'ORDER_READY',
+        category: 'ORDERS',
+        title: `🍽️ Pesanan Siap Saji: #${outputOrder.invoiceNo}`,
+        body: `Pesanan ${outputOrder.tableNo ? `Meja ${outputOrder.tableNo}` : 'pelanggan'} sudah siap diantar!`,
+        data: {
+          orderId: outputOrder.id,
+          invoiceNo: outputOrder.invoiceNo,
+          url: '/orders',
+        },
+        context: { cashierId: outputOrder.cashierId },
+      }).catch(() => {});
+    }
+
     return successResponse(res, outputOrder, 'Status dapur/bar berhasil diperbarui');
   } catch (err) {
     return errorResponse(res, err.message, 500);

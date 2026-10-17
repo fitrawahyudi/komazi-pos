@@ -29,11 +29,12 @@ export default function ReceiptPreviewCard() {
     }
   };
 
-  const storeName = settings?.storeName || 'KOMAZI COFFEE & WORKSPACE';
-  const tagline = settings?.storeTagline || 'Coffee, Food & Productivity Space';
-  const address = settings?.address || 'Jl. Gatot Subroto No. 88, Medan';
-  const phone = settings?.phone || '0812-6899-7721';
-  const receiptFooter = settings?.receiptFooter || 'Follow IG kami: @komazi.coffee';
+  const storeName = settings?.storeName !== undefined ? settings.storeName : 'KOMAZI COFFEE & WORKSPACE';
+  const tagline = settings?.storeTagline !== undefined ? settings.storeTagline : '';
+  const address = settings?.address !== undefined ? settings.address : '';
+  const phone = settings?.phone !== undefined ? settings.phone : '';
+  const headerText = settings?.headerText || settings?.receiptHeader || '';
+  const receiptFooter = settings?.receiptFooter !== undefined ? settings.receiptFooter : '';
   const wifiName = settings?.wifiName;
   const wifiPass = settings?.wifiPass;
 
@@ -112,9 +113,12 @@ export default function ReceiptPreviewCard() {
               <h3 className="text-base font-black tracking-wider uppercase font-sans">
                 {storeName}
               </h3>
-              <p className="text-[10px] text-neutral-600">{tagline}</p>
-              <p className="text-[10px] text-neutral-600">{address}</p>
-              <p className="text-[10px] text-neutral-600">Telp: {phone}</p>
+              {tagline && tagline.trim() ? <p className="text-[10px] text-neutral-600">{tagline.trim()}</p> : null}
+              {address && address.trim() ? <p className="text-[10px] text-neutral-600">{address.trim()}</p> : null}
+              {phone && phone.trim() ? <p className="text-[10px] text-neutral-600">Telp: {phone.trim()}</p> : null}
+              {headerText && headerText.trim() ? (
+                <p className="text-[10px] font-bold text-neutral-800">*** {headerText.trim()} ***</p>
+              ) : null}
             </div>
 
             <div className="border-b border-dashed border-neutral-400 my-2"></div>
@@ -191,10 +195,12 @@ export default function ReceiptPreviewCard() {
             {/* Receipt Footer Notes */}
             <div className="text-center space-y-1 pt-1">
               <p className="font-bold text-[10px]">Terima Kasih atas Kunjungan Anda!</p>
-              <p className="text-[9px] text-neutral-500">
-                {receiptFooter}
-              </p>
-              {wifiName && (
+              {receiptFooter && receiptFooter.trim() ? (
+                <p className="text-[9px] text-neutral-500 whitespace-pre-line">
+                  {receiptFooter.trim()}
+                </p>
+              ) : null}
+              {wifiName && settings?.receiptShowWifi !== false && (
                 <p className="text-[9px] text-neutral-600 pt-1">
                   WiFi: {wifiName} | Password: {wifiPass || '-'}
                 </p>

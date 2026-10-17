@@ -2,17 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { formatRupiah, formatDateTime, formatOrderType } from '../../utils/format';
 import {
   Printer,
-  Share2,
   X,
-  CheckCircle,
-  Copy,
   Receipt,
-  MessageCircle,
   Bluetooth,
-  BluetoothConnected,
   AlertCircle,
   Loader2,
   QrCode,
+  CheckCircle2,
 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
 import { usePrinterStore } from '../../store/printerStore';
@@ -23,6 +19,7 @@ import { useUiStore } from '../../store/uiStore';
 import { printQueue } from '../../services/printQueue.service';
 import { AndroidPrinter } from '../../adapters/printer/printer.android';
 import { isAndroid, isNative } from '../../services/platform';
+import LoadingButton from '../ui/loading/LoadingButton';
 
 export default function ThermalReceiptModal({ order, onClose }) {
   const { openBluetoothModal } = useUiStore();
@@ -35,11 +32,13 @@ export default function ThermalReceiptModal({ order, onClose }) {
     printCopies,
     autoPrintOnCheckout,
     connectBluetooth,
+    recordPrintJob,
+    activeReceiptPrinter,
+    kickCashDrawer,
   } = usePrinterStore();
   const { settings } = useSettingsStore();
 
   const [paperWidth, setPaperWidth] = useState(defaultPaperWidth || '58mm');
-  const [customerPhone, setCustomerPhone] = useState(order?.customerPhone || '');
   const [isPrinting, setIsPrinting] = useState(false);
   const [receiptQrisUrl, setReceiptQrisUrl] = useState('');
   const [receiptQrisSvg, setReceiptQrisSvg] = useState('');
@@ -53,6 +52,19 @@ export default function ThermalReceiptModal({ order, onClose }) {
     (Array.isArray(order?.payments) && order.payments.length > 0 ? order.payments[0]?.method : '') ||
     'CASH'
   ).toUpperCase();
+
+  const displayPaymentMethod = (() => {
+    if (resolvedPaymentMethod === 'CASH') return 'TUNAI';
+    if (resolvedPaymentMethod.includes('QRIS')) return 'QRIS';
+    if (resolvedPaymentMethod.includes('TRANSFER')) {
+      const ref = order?.payments?.[0]?.reference;
+      if (ref && ref.includes(':')) {
+        return `TRANSFER (${ref.split(':')[0]})`;
+      }
+      return 'TRANSFER BANK';
+    }
+    return resolvedPaymentMethod;
+  })();
 
   const isQrisPayment =
     resolvedPaymentMethod.includes('QRIS') ||
@@ -102,7 +114,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
     const orderJobId = String(order?.orderNumber || order?.invoiceNo || `ORD_${order?.id}`);
     if (printQueue.hasPrinted(orderJobId)) {
       const confirmReprint = window.confirm(
-        'Struk untuk pesanan ini sudah pernah dicetak. Apakah Anda yakin ingin mencetak ulang (reprint)?'
+        'Struk untuk pesanan ini sudah pernah dicetak. Apakah Anda ingin mencetak ulang (reprint)?'
       );
       if (!confirmReprint) return;
     }
@@ -118,20 +130,20 @@ export default function ThermalReceiptModal({ order, onClose }) {
         setReceiptQrisUrl(url);
         setReceiptQrisSvg(svg);
         setIsQrReady(true);
-        // Small delay to allow DOM painting before browser print freezes JS
         await new Promise((r) => setTimeout(r, 120));
       } catch (e) {
         console.warn('[Receipt] QR prep notice:', e);
       }
     }
 
-    // If direct Bluetooth or USB is connected, send ESC/POS payload directly
+    // A. Direct Hardware Print (Bluetooth or USB)
     if (isConnected && (connectionType === 'BLUETOOTH' || connectionType === 'USB')) {
       setIsPrinting(true);
       try {
         toast.info('Mengirim struk ke printer thermal...');
         const bytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
           showQris: showQrisOnReceipt,
+          kickCashDrawer,
         });
         const copies = printCopies || 1;
         for (let i = 0; i < copies; i++) {
@@ -141,16 +153,32 @@ export default function ThermalReceiptModal({ order, onClose }) {
         }
         printQueue.printedJobIds.add(orderJobId);
         toast.success('Struk berhasil dicetak langsung ke printer!');
+        await recordPrintJob({
+          printerProfileId: activeReceiptPrinter?.id || null,
+          orderId: order?.id || null,
+          documentType: 'RECEIPT',
+          status: 'PRINTED',
+          requestedBy: order?.cashierName || order?.cashier?.name || order?.shift?.cashier?.name || 'Kasir',
+        });
         setIsPrinting(false);
         return;
       } catch (err) {
         setIsPrinting(false);
         toast.error(`Gagal cetak hardware: ${err.message}`);
+        await recordPrintJob({
+          printerProfileId: activeReceiptPrinter?.id || null,
+          orderId: order?.id || null,
+          documentType: 'RECEIPT',
+          status: 'FAILED',
+          errorCode: 'ERR_PRINT_FAILED',
+          errorMessage: err.message,
+          requestedBy: order?.cashierName || order?.cashier?.name || order?.shift?.cashier?.name || 'Kasir',
+        });
         return;
       }
     }
 
-    // If connectionType is explicitly BLUETOOTH but not connected yet:
+    // B. Bluetooth selected but not yet connected
     if (connectionType === 'BLUETOOTH' && !isConnected) {
       setIsPrinting(true);
       try {
@@ -159,6 +187,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
           toast.info('Mengirim struk ke printer thermal...');
           const bytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
             showQris: showQrisOnReceipt,
+            kickCashDrawer,
           });
           const copies = printCopies || 1;
           for (let i = 0; i < copies; i++) {
@@ -183,10 +212,10 @@ export default function ThermalReceiptModal({ order, onClose }) {
       return;
     }
 
-    // Default Browser / System Printer Dialog
+    // C. Default Universal Browser / System Printer Dialog
     printQueue.printedJobIds.add(orderJobId);
 
-    // On Android Native, route to Android PrintManager instead of window.print()
+    // On Android Native, route to Android PrintManager HTML service
     if (isAndroid || isNative) {
       const receiptElem = document.getElementById('printable-receipt');
       if (receiptElem) {
@@ -196,7 +225,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
             <head>
               <meta charset="utf-8">
               <style>
-                body { font-family: monospace; width: ${paperWidth}; margin: 0 auto; padding: 8px 4px; font-size: 11px; color: black; }
+                body { font-family: 'Courier New', monospace; width: ${paperWidth}; margin: 0 auto; padding: 4px; font-size: 11px; color: black; line-height: 1.25; }
                 .print\\:hidden { display: none !important; }
               </style>
             </head>
@@ -217,7 +246,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
   useEffect(() => {
     if (autoPrintOnCheckout) {
       if (showQrisOnReceipt && !isQrReady) {
-        return; // Will fire once isQrReady becomes true
+        return;
       }
       const timer = setTimeout(() => {
         handlePrint();
@@ -228,392 +257,382 @@ export default function ThermalReceiptModal({ order, onClose }) {
 
   if (!order) return null;
 
-  const generateWhatsAppMessage = () => {
-    const storeName = settings?.storeName || 'KOMAZI COFFEE';
-    const storeAddress = settings?.address || 'Jl. Senopati No. 45, Jakarta Selatan';
-
-    let itemsText = '';
-    (order.items || []).forEach((item) => {
-      const variant = item.variantName ? ` (${item.variantName})` : '';
-      const notes = item.note ? `\n   Note: ${item.note}` : '';
-      itemsText += `• ${item.qty}x ${item.name || item.productName}${variant} - ${formatRupiah(item.price || item.unitPrice)}${notes}\n`;
-    });
-
-    const text = `🧾 *STRUK PEMBAYARAN - ${storeName}*\n` +
-      `📍 ${storeAddress}\n` +
-      `--------------------------------\n` +
-      `No. Faktur : ${order.invoiceNo || order.id}\n` +
-      `Tanggal    : ${formatDateTime(order.createdAt || new Date().toISOString())}\n` +
-      `Kasir      : ${order.cashierName || 'Kasir Bertugas'}\n` +
-      `Pelanggan  : ${order.customerName || 'Tamu Umum'}\n` +
-      `Layanan    : ${formatOrderType(order.orderType || order.type)} ${order.tableNo ? `(Meja ${order.tableNo})` : ''}\n` +
-      `--------------------------------\n` +
-      itemsText +
-      `--------------------------------\n` +
-      `Subtotal   : ${formatRupiah(order.subtotal || order.total)}\n` +
-      (Number(order.discount) > 0 ? `Diskon     : -${formatRupiah(order.discount)}\n` : '') +
-      (Number(order.tax) > 0 ? `PB1 / Pajak (10%): ${formatRupiah(order.tax)}\n` : '') +
-      (Number(order.serviceFee) > 0 ? `Service Fee (5%): ${formatRupiah(order.serviceFee)}\n` : '') +
-      `*TOTAL     : ${formatRupiah(order.total || order.grandTotal)}*\n` +
-      `--------------------------------\n` +
-      `Metode     : ${resolvedPaymentMethod}\n` +
-      (order.cashReceived ? `Bayar Tunai: ${formatRupiah(order.cashReceived)}\nKembalian  : ${formatRupiah(order.cashChange || 0)}\n` : '') +
-      `\n${settings?.receiptFooter || 'Terima Kasih Atas Kunjungan Anda!'}\n` +
-      (settings?.wifiName ? `WiFi: ${settings.wifiName} | Pass: ${settings.wifiPass || '-'}\n` : '') +
-      `Follow IG: @komazicoffee`;
-
-    return encodeURIComponent(text);
-  };
-
-  const handleSendWhatsApp = () => {
-    let phone = customerPhone.trim().replace(/[^0-9]/g, '');
-    if (!phone) {
-      toast.error('Masukkan nomor WhatsApp pelanggan terlebih dahulu');
-      return;
-    }
-    if (phone.startsWith('0')) {
-      phone = '62' + phone.slice(1);
-    }
-
-    const encodedMsg = generateWhatsAppMessage();
-    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMsg}`;
-    window.open(url, '_blank');
-    toast.success('Struk WhatsApp berhasil dibuka!');
-  };
+  const cols = paperWidth === '80mm' ? 48 : 32;
+  const dividerText = '-'.repeat(cols);
+  const cashReceived = order.cashReceived || order.payments?.[0]?.tendered;
+  const cashChange = order.cashChange ?? order.payments?.[0]?.change;
+  const footerText = settings?.receiptFooter && settings.receiptFooter.trim()
+    ? settings.receiptFooter.trim()
+    : 'Terima Kasih Atas Kunjungan Anda!';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Modal Toolbar (Hidden on print) */}
-        <div className="flex items-center justify-between p-4 border-b border-komazi-border bg-komazi-surface-2 print:hidden shrink-0">
-          <div className="flex items-center gap-2">
-            <Receipt className="w-5 h-5 text-komazi-coral" />
-            <h3 className="font-bold text-sm text-komazi-text">Pratinjau Struk Kasir</h3>
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150"
+    >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* Modal Toolbar (Hidden on print) */}
+          <div className="flex items-center justify-between p-4 border-b border-komazi-border bg-komazi-surface-2 print:hidden shrink-0">
+            <div className="flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-komazi-coral" />
+              <h3 className="font-bold text-sm text-komazi-text">Pratinjau Struk Kasir</h3>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* QRIS Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setShowQrisOnReceipt(!showQrisOnReceipt)}
+                title={showQrisOnReceipt ? 'Sembunyikan QRIS di Struk' : 'Tampilkan QRIS di Struk'}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-all ${
+                  showQrisOnReceipt
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>{showQrisOnReceipt ? 'QRIS Aktif' : '+ QRIS'}</span>
+              </button>
+
+              {/* Paper Width Toggle */}
+              <div className="flex items-center bg-komazi-surface rounded-xl p-0.5 border border-komazi-border text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setPaperWidth('58mm')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    paperWidth === '58mm'
+                      ? 'bg-komazi-coral text-white'
+                      : 'text-komazi-muted hover:text-white'
+                  }`}
+                >
+                  58 mm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaperWidth('80mm')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    paperWidth === '80mm'
+                      ? 'bg-komazi-coral text-white'
+                      : 'text-komazi-muted hover:text-white'
+                  }`}
+                >
+                  80 mm
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* QRIS Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setShowQrisOnReceipt(!showQrisOnReceipt)}
-              title={showQrisOnReceipt ? 'Sembunyikan QRIS di Struk' : 'Tampilkan QRIS di Struk'}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-all ${
-                showQrisOnReceipt
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                  : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white'
+          {/* Scrollable Receipt Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-neutral-900/90 flex justify-center items-start">
+            {/* THE RECEIPT PAPER (WYSIWYG 1:1 Monospace POS Receipt) */}
+            <div
+              id="printable-receipt"
+              className={`bg-white text-black font-mono text-[11px] leading-[1.3] shadow-2xl rounded-sm p-4 sm:p-5 select-text print:m-0 print:p-0 print:shadow-none ${
+                paperWidth === '58mm' ? 'w-[290px] max-w-[290px] receipt-58mm' : 'w-[390px] max-w-[390px] receipt-80mm'
               }`}
+              style={{
+                fontFamily: "'Courier New', Courier, monospace",
+                letterSpacing: '-0.02em',
+              }}
             >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>{showQrisOnReceipt ? 'QRIS Aktif' : '+ QRIS'}</span>
-            </button>
-
-            {/* Paper Width Toggle */}
-            <div className="flex items-center bg-komazi-surface rounded-xl p-0.5 border border-komazi-border text-[11px] font-semibold">
-              <button
-                type="button"
-                onClick={() => setPaperWidth('58mm')}
-                className={`px-2.5 py-1 rounded-lg transition-colors ${
-                  paperWidth === '58mm'
-                    ? 'bg-komazi-coral text-white'
-                    : 'text-komazi-muted hover:text-white'
-                }`}
-              >
-                58 mm
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaperWidth('80mm')}
-                className={`px-2.5 py-1 rounded-lg transition-colors ${
-                  paperWidth === '80mm'
-                    ? 'bg-komazi-coral text-white'
-                    : 'text-komazi-muted hover:text-white'
-                }`}
-              >
-                80 mm
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-komazi-muted hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Scrollable Receipt Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-neutral-900/90 flex justify-center items-start">
-          {/* THE RECEIPT PAPER */}
-          <div
-            id="printable-receipt"
-            style={{ width: paperWidth === '58mm' ? '300px' : '400px' }}
-            className={`bg-white text-black font-mono text-[11px] p-5 shadow-2xl rounded-sm print:m-0 print:p-2 print:shadow-none select-text leading-tight ${paperWidth === '58mm' ? 'receipt-58mm' : 'receipt-80mm'}`}
-          >
-            {/* Store Header */}
-            <div className="text-center space-y-1 mb-4">
-              <h2 className="text-base font-black tracking-wider uppercase font-sans">
-                {settings?.storeName || 'KOMAZI COFFEE'}
-              </h2>
-              <p className="text-[10px] text-neutral-600">{settings?.storeTagline || 'Coffee & Co-Working Space'}</p>
-              <p className="text-[10px] text-neutral-600">{settings?.address || 'Jl. Senopati No. 45, Jakarta Selatan'}</p>
-              <p className="text-[10px] text-neutral-600">Telp: {settings?.phone || '0812-3456-7890'}</p>
-            </div>
-
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
-
-            {/* Metadata */}
-            <div className="space-y-1 text-[10px]">
-              <div className="flex justify-between">
-                <span>No. Faktur:</span>
-                <span className="font-bold">{order.invoiceNo || `KMZ-${order.id}`}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tanggal:</span>
-                <span>{formatDateTime(order.createdAt || new Date().toISOString())}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Kasir:</span>
-                <span>{order.cashierName || 'Kasir Bertugas'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Pelanggan:</span>
-                <span>{order.customerName || 'Tamu Umum'}</span>
-              </div>
-              <div className="flex justify-between font-bold">
-                <span>Layanan:</span>
-                <span>
-                  {formatOrderType(order.orderType || order.type)}{' '}
-                  {order.tableNo ? `(Meja ${order.tableNo})` : ''}
-                </span>
-              </div>
-            </div>
-
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
-
-            {/* Items Table */}
-            <div className="space-y-2 my-2">
-              {(order.items || []).map((item, idx) => {
-                const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
-                return (
-                  <div key={idx} className="space-y-0.5">
-                    <div className="flex justify-between font-bold">
-                      <span className="truncate pr-2">
-                        {item.name || item.productName}
-                      </span>
-                      <span className="shrink-0">{formatRupiah(itemTotal)}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-neutral-600">
-                      <span>
-                        {item.qty} x {formatRupiah(item.price || item.unitPrice)}
-                        {item.variantName ? ` • ${item.variantName}` : ''}
-                      </span>
-                    </div>
-                    {item.note && (
-                      <p className="text-[9px] italic text-neutral-500">
-                        * {item.note}
-                      </p>
-                    )}
+              {/* Store Header */}
+              <div className="text-center space-y-0.5 mb-2">
+                {settings?.receiptShowStoreName !== false && (
+                  <div className="text-sm font-bold tracking-wider uppercase text-neutral-950 font-mono">
+                    {settings?.storeName || 'KOMAZI COFFEE'}
                   </div>
-                );
-              })}
-            </div>
+                )}
+                {settings?.receiptShowTagline !== false && settings?.storeTagline && settings.storeTagline.trim() ? (
+                  <div className="text-[10px] text-neutral-700">{settings.storeTagline.trim()}</div>
+                ) : null}
+                {settings?.receiptShowAddress !== false && settings?.address && settings.address.trim() ? (
+                  <div className="text-[10px] text-neutral-700">{settings.address.trim()}</div>
+                ) : null}
+                {settings?.receiptShowPhone !== false && settings?.phone && settings.phone.trim() ? (
+                  <div className="text-[10px] text-neutral-700">Telp: {settings.phone.trim()}</div>
+                ) : null}
+                {settings?.receiptShowHeader !== false && (settings?.headerText || settings?.receiptHeader) && (settings.headerText || settings.receiptHeader).trim() ? (
+                  <div className="text-[10px] font-bold text-neutral-900 mt-1">
+                    *** {(settings.headerText || settings.receiptHeader).trim()} ***
+                  </div>
+                ) : null}
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
-
-            {/* Financial Summary */}
-            <div className="space-y-1 text-[10px]">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>{formatRupiah(order.subtotal || order.total)}</span>
+                {order.isBillCheck && (
+                  <div className="font-bold text-[10px] text-neutral-950 tracking-wider uppercase my-1">
+                    *** TAGIHAN SEMENTARA (BILL) ***
+                  </div>
+                )}
               </div>
 
-              {Number(order.discount) > 0 && (
-                <div className="flex justify-between text-neutral-700">
-                  <span>Diskon:</span>
-                  <span>-{formatRupiah(order.discount)}</span>
-                </div>
-              )}
+              {/* Monospace Divider */}
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
 
-              {Number(order.tax) > 0 && (
+              {/* Metadata */}
+              <div className="space-y-0.5 text-[10px]">
+                {order.isBillCheck && (
+                  <div className="flex justify-between font-bold text-neutral-950">
+                    <span>Status:</span>
+                    <span>BELUM LUNAS</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
-                  <span>PB1 / Pajak (10%):</span>
-                  <span>{formatRupiah(order.tax)}</span>
+                  <span className="text-neutral-700">No. Faktur:</span>
+                  <span className="font-bold text-neutral-950">{order.invoiceNo || `KMZ-${order.id}`}</span>
                 </div>
-              )}
-
-              {Number(order.serviceFee) > 0 && (
                 <div className="flex justify-between">
-                  <span>Service Fee (5%):</span>
-                  <span>{formatRupiah(order.serviceFee)}</span>
+                  <span className="text-neutral-700">Tanggal:</span>
+                  <span className="text-neutral-950">{formatDateTime(order.createdAt || new Date().toISOString())}</span>
                 </div>
-              )}
-
-              <div className="border-t border-neutral-800 pt-1.5 flex justify-between font-black text-xs">
-                <span>TOTAL:</span>
-                <span>{formatRupiah(order.total || order.grandTotal)}</span>
-              </div>
-
-              <div className="border-t border-dashed border-neutral-400 my-1 pt-1"></div>
-
-              <div className="flex justify-between">
-                <span>Metode Pembayaran:</span>
-                <span className="font-bold">{resolvedPaymentMethod}</span>
-              </div>
-
-              {(order.cashReceived || order.payments?.[0]?.tendered) && (
-                <>
+                {settings?.receiptShowCashier !== false && (
                   <div className="flex justify-between">
-                    <span>Bayar Tunai:</span>
-                    <span>{formatRupiah(order.cashReceived || order.payments?.[0]?.tendered)}</span>
+                    <span className="text-neutral-700">Kasir:</span>
+                    <span className="text-neutral-950">{order?.cashierName || order?.cashier?.name || order?.shift?.cashier?.name || 'Kasir Bertugas'}</span>
                   </div>
+                )}
+                {settings?.receiptShowCustomer !== false && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-700">Pelanggan:</span>
+                    <span className="text-neutral-950">{order.customerName || 'Tamu Umum'}</span>
+                  </div>
+                )}
+                {settings?.receiptShowTable !== false && (
                   <div className="flex justify-between font-bold">
-                    <span>Kembalian:</span>
-                    <span>{formatRupiah(order.cashChange ?? order.payments?.[0]?.change ?? 0)}</span>
+                    <span className="text-neutral-700">Layanan:</span>
+                    <span className="text-neutral-950">
+                      {formatOrderType(order.orderType || order.type)}{' '}
+                      {order.tableNo ? `(Meja ${order.tableNo})` : ''}
+                    </span>
                   </div>
-                </>
-              )}
-
-              {/* Dynamic QRIS Block if QRIS is active */}
-              {showQrisOnReceipt && settings?.qrisEnabled !== false && (
-                <div className="mt-2.5 pt-2 border-t border-dashed border-neutral-300 text-center">
-                  <div className="text-[10px] font-bold text-neutral-900 tracking-wide uppercase">
-                    Bayar Dengan QRIS
-                  </div>
-                  <div className="text-[9px] text-neutral-600 font-mono">
-                    Nominal: {formatRupiah(order.total || order.grandTotal)}
-                  </div>
-                  <div className="my-1.5 flex justify-center">
-                    {receiptQrisSvg ? (
-                      <div
-                        className="w-32 h-32 flex items-center justify-center border border-neutral-200 p-1 rounded bg-white shadow-sm print:border-none print:p-0 print:shadow-none [&_svg]:w-full [&_svg]:h-full"
-                        dangerouslySetInnerHTML={{ __html: receiptQrisSvg }}
-                      />
-                    ) : receiptQrisUrl ? (
-                      <img
-                        src={receiptQrisUrl}
-                        alt="QRIS Dinamis"
-                        className="w-32 h-32 object-contain border border-neutral-200 p-1 rounded bg-white shadow-sm print:border-none print:p-0 print:shadow-none"
-                      />
-                    ) : (
-                      <div className="w-32 h-32 flex flex-col items-center justify-center text-[9px] text-neutral-400 border border-neutral-200 rounded p-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-komazi-coral mb-1" />
-                        <span>Memuat QR...</span>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[8px] text-neutral-500 italic mt-0.5">
-                    Scan via BCA, Mandiri, GoPay, Dana dll.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="border-b border-dashed border-neutral-400 my-3"></div>
-
-            {/* Footer Note & Barcode Mock */}
-            <div className="text-center space-y-1 text-[10px] text-neutral-600">
-              <p className="font-bold text-black">{settings?.receiptFooter || 'Terima Kasih Atas Kunjungan Anda!'}</p>
-              {settings?.wifiName && (
-                <p>WiFi: {settings.wifiName} | Pass: {settings.wifiPass || '-'}</p>
-              )}
-              <p className="text-[9px]">Follow IG: @komazicoffee</p>
-
-              {/* Barcode Mock visual */}
-              <div className="pt-2 flex justify-center">
-                <div className="tracking-[4px] font-mono text-[9px] text-neutral-800">
-                  ||||| | |||| ||| ||||| |||| || |
-                </div>
+                )}
               </div>
-              <p className="text-[8px] text-neutral-500 font-mono tracking-widest">
-                {order.invoiceNo || order.id}
-              </p>
+
+              {/* Monospace Divider */}
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
+
+              {/* Line Items */}
+              <div className="space-y-1.5 my-1.5">
+                {(order.items || []).map((item, idx) => {
+                  const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
+                  const unitPrice = Number(item.price || item.unitPrice || 0);
+                  const itemName = item.name || item.productName || 'Item';
+                  const variantStr = item.variantName ? ` • ${item.variantName}` : '';
+                  return (
+                    <div key={idx} className="space-y-0.5 text-[10px]">
+                      <div className="flex justify-between items-baseline font-bold text-neutral-950">
+                        <span className="truncate pr-1">{itemName}</span>
+                        <span className="shrink-0">{formatRupiah(itemTotal)}</span>
+                      </div>
+                      <div className="text-neutral-600 pl-2">
+                        {item.qty} x {formatRupiah(unitPrice)}{variantStr}
+                      </div>
+                      {settings?.receiptShowNotes !== false && item.note && (
+                        <div className="text-neutral-500 italic pl-2 text-[9px]">
+                          * {item.note}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Monospace Divider */}
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
+
+              {/* Financial Summary */}
+              <div className="space-y-0.5 text-[10px]">
+                <div className="flex justify-between text-neutral-800">
+                  <span>Subtotal:</span>
+                  <span>{formatRupiah(order.subtotal || order.total || 0)}</span>
+                </div>
+
+                {Number(order.discount) > 0 && (
+                  <div className="flex justify-between text-neutral-800">
+                    <span>Diskon:</span>
+                    <span>-{formatRupiah(order.discount)}</span>
+                  </div>
+                )}
+
+                {Number(order.tax) > 0 && (
+                  <div className="flex justify-between text-neutral-800">
+                    <span>PB1 / Pajak (10%):</span>
+                    <span>{formatRupiah(order.tax)}</span>
+                  </div>
+                )}
+
+                {Number(order.serviceFee) > 0 && (
+                  <div className="flex justify-between text-neutral-800">
+                    <span>Service Fee (5%):</span>
+                    <span>{formatRupiah(order.serviceFee)}</span>
+                  </div>
+                )}
+
+                {/* Monospace Divider */}
+                <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                  {dividerText}
+                </div>
+
+                <div className="flex justify-between font-bold text-xs text-neutral-950">
+                  <span>TOTAL:</span>
+                  <span>{formatRupiah(order.total || order.grandTotal || 0)}</span>
+                </div>
+
+                {/* Monospace Divider */}
+                <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                  {dividerText}
+                </div>
+
+                <div className="flex justify-between text-neutral-800">
+                  <span>Metode Pembayaran:</span>
+                  <span className="font-bold text-neutral-950">{displayPaymentMethod}</span>
+                </div>
+
+                {cashReceived ? (
+                  <>
+                    <div className="flex justify-between text-neutral-800">
+                      <span>Bayar Tunai:</span>
+                      <span>{formatRupiah(cashReceived)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-neutral-950">
+                      <span>Kembalian:</span>
+                      <span>{formatRupiah(cashChange || 0)}</span>
+                    </div>
+                  </>
+                ) : null}
+
+                {/* Dynamic QRIS */}
+                {settings?.receiptShowQris !== false && showQrisOnReceipt && settings?.qrisEnabled !== false && (
+                  <>
+                    <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                      {dividerText}
+                    </div>
+                    <div className="text-center space-y-1 my-2">
+                      <div className="text-[10px] font-bold text-neutral-950 uppercase tracking-wide">
+                        SCAN QR CODE UNTUK MEMBAYAR
+                      </div>
+                      <div className="text-[9px] text-neutral-600">
+                        Tagihan: {formatRupiah(order.total || order.grandTotal || 0)}
+                      </div>
+                      <div className="my-1.5 flex justify-center">
+                        {receiptQrisSvg ? (
+                          <div
+                            className="w-28 h-28 flex items-center justify-center p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0 [&_svg]:w-full [&_svg]:h-full"
+                            dangerouslySetInnerHTML={{ __html: receiptQrisSvg }}
+                          />
+                        ) : receiptQrisUrl ? (
+                          <img
+                            src={receiptQrisUrl}
+                            alt="QRIS Dinamis"
+                            className="w-28 h-28 object-contain p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0"
+                          />
+                        ) : (
+                          <div className="w-28 h-28 flex flex-col items-center justify-center text-[9px] text-neutral-400 border border-neutral-200 rounded p-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-komazi-coral mb-1" />
+                            <span>Memuat QR...</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[8px] text-neutral-500">Scan via BCA, Mandiri, GoPay, Dana dll.</div>
+                      <div className="text-[8px] text-neutral-400 italic">(Nominal otomatis terisi & terkunci)</div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Monospace Divider */}
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
+
+              {/* Footer Note & Barcode Mock */}
+              <div className="text-center space-y-0.5 text-[9px] text-neutral-700 mt-2">
+                {settings?.receiptShowFooter !== false && (
+                  <div className="font-bold text-[10px] text-neutral-950 whitespace-pre-line">
+                    {footerText}
+                  </div>
+                )}
+                {settings?.receiptShowWifi !== false && settings?.wifiName && (
+                  <div>WiFi: {settings.wifiName} | Pass: {settings.wifiPass || '-'}</div>
+                )}
+                <div>Follow IG: @komazicoffee</div>
+                {settings?.receiptShowBarcode !== false && (
+                  <>
+                    <div className="tracking-[3px] font-mono text-[8px] text-neutral-800 pt-1 select-none">
+                      ||||| | |||| ||| ||||| |||| || |
+                    </div>
+                    <div className="text-[8px] text-neutral-500 font-mono tracking-wider">
+                      {order.invoiceNo || `KMZ-${order.id}`}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Modal Bottom Actions (Hidden on print) */}
-        <div className="p-4 border-t border-komazi-border bg-komazi-surface space-y-3 print:hidden shrink-0">
-          {/* Printer Connection Status Banner */}
-          {isConnected ? (
-            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-success/10 border border-success/30 text-xs">
-              <div className="flex items-center gap-2 truncate">
-                <span className="w-2 h-2 rounded-full bg-success shrink-0 animate-pulse" />
-                <span className="font-semibold text-success truncate">
-                  Printer: {connectedDeviceName || 'Printer Thermal'}
-                </span>
+          {/* Modal Bottom Actions (Hidden on print) */}
+          <div className="p-4 border-t border-komazi-border bg-komazi-surface space-y-3 print:hidden shrink-0">
+            {/* Status Connection Badge */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                {isConnected ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-success shrink-0 animate-pulse" />
+                    <span className="font-semibold text-komazi-text truncate">
+                      {connectionType === 'BLUETOOTH' ? 'Bluetooth: ' : connectionType === 'USB' ? 'USB: ' : 'Printer: '}
+                      {connectedDeviceName || 'Printer Thermal Siap'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-komazi-muted shrink-0" />
+                    <span className="text-komazi-muted truncate">
+                      Driver Cetak Browser / Sistem (Siap Cetak)
+                    </span>
+                  </>
+                )}
               </div>
-              <span className="text-[10px] text-success/90 font-bold bg-success/20 px-2 py-0.5 rounded shrink-0">
-                TERHUBUNG
-              </span>
+
+              {!isConnected && (
+                <button
+                  type="button"
+                  onClick={openBluetoothModal}
+                  className="text-[11px] font-semibold text-komazi-coral hover:underline shrink-0 ml-2"
+                >
+                  Hubungkan
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs">
-              <div className="flex items-center gap-2 text-amber-300 min-w-0">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-                <span className="truncate">Printer belum terhubung</span>
-              </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={openBluetoothModal}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-[11px] shrink-0 transition-colors shadow-sm active:scale-95"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 text-komazi-muted hover:text-white font-semibold text-xs transition-colors"
               >
-                <Bluetooth className="w-3.5 h-3.5" />
-                <span>Hubungkan</span>
+                Tutup
               </button>
+
+              <LoadingButton
+                type="button"
+                isLoading={isPrinting}
+                loadingText="Mencetak..."
+                variant="primary"
+                size="sm"
+                icon={Printer}
+                onClick={handlePrint}
+                className="flex-1 py-2.5 rounded-xl font-bold text-xs shadow-md"
+              >
+                Cetak Struk
+              </LoadingButton>
             </div>
-          )}
-
-          {/* WhatsApp sender row */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <MessageCircle className="w-3.5 h-3.5 text-success absolute left-3 top-2.5" />
-              <input
-                type="tel"
-                placeholder="No. WhatsApp Pelanggan (08...)"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-mono focus:border-success focus:outline-none"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleSendWhatsApp}
-              className="px-3.5 py-1.5 rounded-xl bg-success/20 hover:bg-success/30 text-success border border-success/30 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Kirim WA</span>
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white font-semibold text-xs transition-colors"
-            >
-              Tutup
-            </button>
-
-            <button
-              type="button"
-              disabled={isPrinting}
-              onClick={handlePrint}
-              className="flex-1 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPrinting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Mencetak...</span>
-                </>
-              ) : (
-                <>
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Struk</span>
-                </>
-              )}
-            </button>
           </div>
         </div>
       </div>

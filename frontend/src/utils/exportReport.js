@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
+import { getColumnLetter, EXCEL_STYLES } from './excel.js';
 
 /**
  * Format timestamp to clean Indonesian Western Standard Time (WIB)
@@ -32,6 +33,8 @@ export function formatOrderType(type) {
   const clean = String(type).trim().toUpperCase();
   if (clean === 'DINE_IN') return 'Dine-In';
   if (clean === 'TAKE_AWAY' || clean === 'TAKEAWAY') return 'Take-Away';
+  if (clean === 'DELIVERY') return 'Delivery';
+  if (clean === 'PICKUP') return 'Pickup';
   return clean.replace(/_/g, ' ');
 }
 
@@ -371,6 +374,85 @@ export function exportReportToExcel({
     { wch: 18 }, // Metode Pembayaran
     { wch: 16 }, // Status
   ];
+
+  const headerRowIdx = 5; // Row 5 (1-indexed)
+  const dataStartRowIdx = 6;
+  const dataEndRowIdx = dataStartRowIdx + dataRows.length - 1;
+  const totalRowIdx = sheetData.length; // Last row
+
+  // Row heights
+  ws['!rows'] = [
+    { hpt: 26 }, // Title
+    { hpt: 20 }, // Meta
+    { hpt: 20 }, // KPI
+    { hpt: 12 }, // Empty
+    { hpt: 26 }, // Table Header
+  ];
+
+  // Style Title Row (A1)
+  if (ws['A1']) {
+    ws['A1'].s = EXCEL_STYLES.title;
+  }
+
+  // Style Table Headers (Row 5: A5..N5)
+  headers.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}${headerRowIdx}`;
+    if (ws[cellRef]) {
+      ws[cellRef].s = EXCEL_STYLES.header;
+    }
+  });
+
+  // Style Data Rows
+  dataRows.forEach((row, rIdx) => {
+    const currentRowNum = dataStartRowIdx + rIdx;
+    const isEven = rIdx % 2 === 0;
+    const baseStyle = isEven ? EXCEL_STYLES.cell : EXCEL_STYLES.cellZebra;
+
+    headers.forEach((_, colIdx) => {
+      const colLetter = getColumnLetter(colIdx);
+      const cellRef = `${colLetter}${currentRowNum}`;
+      if (ws[cellRef]) {
+        const val = row[colIdx];
+        const isNum = typeof val === 'number';
+        ws[cellRef].s = {
+          ...baseStyle,
+          alignment: {
+            vertical: 'center',
+            horizontal: isNum ? 'right' : 'left',
+          },
+        };
+      }
+    });
+  });
+
+  // Style Total Row
+  headers.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}${totalRowIdx}`;
+    if (ws[cellRef]) {
+      const val = totalRow[colIdx];
+      const isNum = typeof val === 'number';
+      ws[cellRef].s = {
+        fill: { fgColor: { rgb: 'F3F4F6' } },
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '105932' } },
+        alignment: {
+          vertical: 'center',
+          horizontal: isNum ? 'right' : 'left',
+        },
+        border: {
+          top: { style: 'medium', color: { rgb: '105932' } },
+          bottom: { style: 'double', color: { rgb: '105932' } },
+          left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          right: { style: 'thin', color: { rgb: 'E5E7EB' } },
+        },
+      };
+    }
+  });
+
+  // Set AutoFilter on Table Header & Data range
+  const lastColLetter = getColumnLetter(headers.length - 1);
+  ws['!autofilter'] = { ref: `A${headerRowIdx}:${lastColLetter}${dataEndRowIdx}` };
 
   XLSX.utils.book_append_sheet(wb, ws, 'Laporan Penjualan');
 

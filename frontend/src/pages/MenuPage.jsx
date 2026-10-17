@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { usePosStore } from '../store/posStore';
 import { useAuthStore } from '../store/authStore';
 import { useRecipeStore } from '../store/useRecipeStore';
-import { formatRupiah } from '../utils/format';
+import { useStockStore } from '../store/stockStore';
+import { formatRupiah, getProductInitials, getProductColor } from '../utils/format';
 import {
   UtensilsCrossed,
   Plus,
@@ -25,6 +27,8 @@ import {
   ArrowUpDown,
   CheckCircle2,
   AlertTriangle,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import ImageUpload from '../components/ui/ImageUpload';
 import AlertModal from '../components/ui/AlertModal';
@@ -32,6 +36,8 @@ import PromptModal from '../components/ui/PromptModal';
 import RecipeModal from '../components/menu/RecipeModal';
 import CategoryManagementModal from '../components/menu/CategoryManagementModal';
 import Pagination from '../components/ui/Pagination';
+import ExcelImportModal from '../components/common/ExcelImportModal';
+import { exportToExcel } from '../utils/excel';
 import { toast } from '../store/toastStore';
 
 export default function MenuPage() {
@@ -54,14 +60,40 @@ export default function MenuPage() {
   const [selectedProductForRecipe, setSelectedProductForRecipe] = useState(null);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
 
+  // Load fresh catalog, recipes and ingredients when mounting
+  useEffect(() => {
+    usePosStore.getState().fetchCategories?.();
+    usePosStore.getState().fetchProducts?.();
+    if (canManageRecipe) {
+      useRecipeStore.getState().fetchCogsOverview?.();
+      useStockStore.getState().fetchIngredients?.();
+    }
+  }, [canManageRecipe]);
+
   // Multi-select state
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isBulkCatModalOpen, setIsBulkCatModalOpen] = useState(false);
   const [bulkTargetCatId, setBulkTargetCatId] = useState(2);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [isDeletingSingle, setIsDeletingSingle] = useState(false);
+
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('all');
+
+  // Otomatis pilih kategori jika URL memiliki parameter ?cat=
+  useEffect(() => {
+    const catParam = searchParams.get('cat');
+    if (catParam) {
+      const parsed = Number(catParam);
+      if (!isNaN(parsed)) {
+        setSelectedCatId(parsed);
+      }
+    }
+  }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'AVAILABLE' | 'SOLDOUT' | 'INACTIVE'
   const [recipeFilter, setRecipeFilter] = useState('ALL'); // 'ALL' | 'WITH_RECIPE' | 'NO_RECIPE'
   const [priceRangeFilter, setPriceRangeFilter] = useState('ALL'); // 'ALL' | 'UNDER_25K' | '25K_TO_40K' | 'ABOVE_40K'
@@ -71,15 +103,39 @@ export default function MenuPage() {
   const [productToDelete, setProductToDelete] = useState(null);
   const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState('info'); // 'info' | 'variants' | 'modifiers'
+
+  const handleExportMenu = () => {
+    if (!products || products.length === 0) {
+      toast.error('Tidak ada data produk untuk diekspor');
+      return;
+    }
+    const exportData = products.map((p) => ({
+      'ID': p.id,
+      'Nama Produk': p.name,
+      'Kategori': categories.find((c) => c.id === p.categoryId)?.name || '-',
+      'Harga Jual': p.price,
+      'Harga Dinamis?': p.isDynamicPrice ? 'ya' : 'tidak',
+      'Batas Harga Minimum': p.minPrice ? Number(p.minPrice) : 0,
+      'SKU': p.sku || '-',
+      'Deskripsi': p.description || '-',
+      'Status': p.isSoldOut ? 'Habis' : 'Tersedia',
+      'Varian': (p.variants || []).map((v) => `${v.name} (${v.price})`).join(', ') || '-',
+    }));
+    exportToExcel(exportData, `katalog_menu_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`, 'Katalog Menu');
+    toast.success('Katalog menu berhasil diekspor ke Excel');
+  };
 
   // Form states
   const [formData, setFormData] = useState({
     name: '',
     categoryId: 2,
     price: 25000,
+    isDynamicPrice: false,
+    minPrice: 0,
     sku: '',
-    imageUrl: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=500&auto=format&fit=crop&q=80',
+    imageUrl: '',
     description: '',
     variants: [],
     modifiers: [],
@@ -92,8 +148,10 @@ export default function MenuPage() {
       name: '',
       categoryId: categories[1]?.id || 2,
       price: 25000,
+      isDynamicPrice: false,
+      minPrice: 0,
       sku: `KMZ-PRD-${Math.floor(100 + Math.random() * 900)}`,
-      imageUrl: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=500&auto=format&fit=crop&q=80',
+      imageUrl: '',
       description: '',
       variants: [
         { id: 1, name: 'Regular', extraPrice: 0 },
@@ -111,6 +169,8 @@ export default function MenuPage() {
       name: prod.name,
       categoryId: prod.categoryId,
       price: prod.price,
+      isDynamicPrice: Boolean(prod.isDynamicPrice),
+      minPrice: Number(prod.minPrice) || 0,
       sku: prod.sku || '',
       imageUrl: prod.imageUrl || '',
       description: prod.description || '',
@@ -259,7 +319,9 @@ export default function MenuPage() {
 
     const payload = {
       ...formData,
-      price: Number(formData.price),
+      price: Number(formData.price) || 0,
+      isDynamicPrice: Boolean(formData.isDynamicPrice),
+      minPrice: Number(formData.minPrice) || 0,
       categoryName: cat?.name || 'Kopi',
       variants: cleanVariants,
       modifiers: cleanModifiers,
@@ -297,9 +359,12 @@ export default function MenuPage() {
       if (statusFilter === 'AVAILABLE') {
         if (p.isSoldOut === true || p.isActive === false) return false;
       } else if (statusFilter === 'SOLDOUT') {
-        if (p.isSoldOut !== true) return false;
+        if (p.isSoldOut !== true || p.isActive === false) return false;
       } else if (statusFilter === 'INACTIVE') {
         if (p.isActive !== false) return false;
+      } else {
+        // Status 'ALL': hanya tampilkan menu aktif agar produk yang dinonaktifkan/dihapus tidak bercampur di katalog
+        if (p.isActive === false) return false;
       }
 
       // 4. Status Resep HPP (BOM)
@@ -313,12 +378,14 @@ export default function MenuPage() {
 
       // 5. Rentang Harga
       const price = Number(p.price) || 0;
-      if (priceRangeFilter === 'UNDER_25K') {
-        if (price >= 25000) return false;
+      if (priceRangeFilter === 'DYNAMIC') {
+        if (!p.isDynamicPrice) return false;
+      } else if (priceRangeFilter === 'UNDER_25K') {
+        if (p.isDynamicPrice || price >= 25000) return false;
       } else if (priceRangeFilter === '25K_TO_40K') {
-        if (price < 25000 || price > 40000) return false;
+        if (p.isDynamicPrice || price < 25000 || price > 40000) return false;
       } else if (priceRangeFilter === 'ABOVE_40K') {
-        if (price <= 40000) return false;
+        if (p.isDynamicPrice || price <= 40000) return false;
       }
 
       return true;
@@ -342,13 +409,15 @@ export default function MenuPage() {
 
   // Statistik Cepat untuk Quick Chips
   const stats = useMemo(() => {
-    const total = products.length;
-    const available = products.filter((p) => !p.isSoldOut && p.isActive !== false).length;
-    const soldOut = products.filter((p) => p.isSoldOut).length;
+    const activeProducts = products.filter((p) => p.isActive !== false);
+    const total = activeProducts.length;
+    const available = activeProducts.filter((p) => !p.isSoldOut).length;
+    const soldOut = activeProducts.filter((p) => p.isSoldOut).length;
     const inactive = products.filter((p) => p.isActive === false).length;
-    const withRecipe = products.filter((p) => recipes[p.id] && recipes[p.id].length > 0).length;
+    const withRecipe = activeProducts.filter((p) => recipes[p.id] && recipes[p.id].length > 0).length;
     const noRecipe = total - withRecipe;
-    return { total, available, soldOut, inactive, withRecipe, noRecipe };
+    const dynamicCount = activeProducts.filter((p) => p.isDynamicPrice).length;
+    return { total, available, soldOut, inactive, withRecipe, noRecipe, dynamicCount };
   }, [products, recipes]);
 
   const hasActiveFilters =
@@ -368,27 +437,6 @@ export default function MenuPage() {
     setSortBy('DEFAULT');
   };
 
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((p) => selectedProductIds.includes(p.id));
-  const someFilteredSelected =
-    filtered.some((p) => selectedProductIds.includes(p.id)) && !allFilteredSelected;
-
-  const handleToggleSelectAll = () => {
-    if (allFilteredSelected) {
-      const filteredIdSet = new Set(filtered.map((p) => p.id));
-      setSelectedProductIds((prev) => prev.filter((id) => !filteredIdSet.has(id)));
-    } else {
-      const combined = new Set([...selectedProductIds, ...filtered.map((p) => p.id)]);
-      setSelectedProductIds(Array.from(combined));
-    }
-  };
-
-  const handleToggleSelectProduct = (id) => {
-    setSelectedProductIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -404,6 +452,51 @@ export default function MenuPage() {
     return filtered.slice(start, start + itemsPerPage);
   }, [filtered, currentPage, itemsPerPage]);
 
+  const allPageSelected =
+    paginatedProducts.length > 0 &&
+    paginatedProducts.every((p) => selectedProductIds.includes(p.id));
+  const somePageSelected =
+    paginatedProducts.some((p) => selectedProductIds.includes(p.id)) && !allPageSelected;
+  const allFilteredSelected =
+    filtered.length > 0 &&
+    filtered.every((p) => selectedProductIds.includes(p.id));
+
+  const handleToggleSelectPage = () => {
+    if (allPageSelected) {
+      const pageIdSet = new Set(paginatedProducts.map((p) => p.id));
+      setSelectedProductIds((prev) => prev.filter((id) => !pageIdSet.has(id)));
+    } else {
+      const combined = new Set([
+        ...selectedProductIds,
+        ...paginatedProducts.map((p) => p.id),
+      ]);
+      setSelectedProductIds(Array.from(combined));
+    }
+  };
+
+  const handleToggleSelectProduct = (id) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedProductIds(filtered.map((p) => p.id));
+  };
+
+  const handleRestoreProduct = async (prod) => {
+    try {
+      const res = await updateProduct(prod.id, { isActive: true });
+      if (res) {
+        toast.success(`Produk "${prod.name}" berhasil diaktifkan kembali.`);
+      } else {
+        toast.error('Gagal mengaktifkan produk');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan saat mengaktifkan produk');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 pb-24 lg:pb-6 space-y-6 max-w-7xl mx-auto select-none">
       {/* 1. Header */}
@@ -411,7 +504,7 @@ export default function MenuPage() {
         <div>
           <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
             <UtensilsCrossed className="w-6 h-6 text-komazi-coral" />
-            <span>Manajemen Menu & Kategori</span>
+            <span>Manajemen Menu</span>
           </h1>
           <p className="text-xs text-komazi-muted mt-0.5">
             Kelola daftar minuman, makanan, harga dasar, pilihan ukuran, tambahan (add-ons), dan ketersediaan stok.
@@ -421,15 +514,22 @@ export default function MenuPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-semibold border border-komazi-border transition-colors flex items-center gap-1.5"
-            title="Kelola daftar kategori, ubah nama, urutan atau hapus kategori"
+            onClick={handleExportMenu}
+            className="px-3 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-semibold border border-komazi-border transition-colors flex items-center gap-1.5"
+            title="Ekspor seluruh katalog menu ke file Excel (.xlsx)"
           >
-            <Layers className="w-3.5 h-3.5 text-komazi-coral" />
-            <span>Kelola Kategori</span>
-            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-komazi-coral/15 text-komazi-coral">
-              {categories.filter((c) => c.id !== 1).length}
-            </span>
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Ekspor Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsExcelImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
+            title="Import katalog menu massal dari file Excel atau CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Import Excel</span>
           </button>
 
           <button
@@ -500,9 +600,9 @@ export default function MenuPage() {
 
             <button
               type="button"
-              onClick={() => setIsCategoryModalOpen(true)}
+              onClick={() => navigate('/categories')}
               className="px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap bg-komazi-surface-2/60 text-komazi-muted hover:text-komazi-coral border border-dashed border-komazi-border flex items-center gap-1 transition-colors ml-1"
-              title="Buka Pengaturan Kategori"
+              title="Buka Halaman Manajemen Kategori Terpisah"
             >
               <Plus className="w-3 h-3" />
               <span>Kategori</span>
@@ -549,9 +649,9 @@ export default function MenuPage() {
                 title="Filter berdasarkan status stok"
               >
                 <option value="ALL">Semua Status</option>
-                <option value="AVAILABLE">Tersedia (Ready)</option>
-                <option value="SOLDOUT">Habis (Sold Out)</option>
-                <option value="INACTIVE">Nonaktif / Diarsipkan</option>
+                <option value="AVAILABLE">Tersedia</option>
+                <option value="SOLDOUT">Habis</option>
+                <option value="INACTIVE">Nonaktif</option>
               </select>
             </div>
 
@@ -588,6 +688,7 @@ export default function MenuPage() {
                 title="Filter berdasarkan rentang harga"
               >
                 <option value="ALL">Semua Harga</option>
+                <option value="DYNAMIC">⚡ Harga Dinamis</option>
                 <option value="UNDER_25K">&lt; Rp 25.000</option>
                 <option value="25K_TO_40K">Rp 25.000 - Rp 40.000</option>
                 <option value="ABOVE_40K">&gt; Rp 40.000</option>
@@ -625,71 +726,26 @@ export default function MenuPage() {
             )}
           </div>
         </div>
-
-        {/* Row C: Quick Stat Pills (Interactive Clickable Chips) */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-[11px] font-semibold text-komazi-muted mr-1">
-            Filter Cepat:
-          </span>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-              statusFilter === 'ALL'
-                ? 'bg-komazi-surface-2 border-komazi-muted text-white font-bold'
-                : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white'
-            }`}
-          >
-            Total: <strong className="text-komazi-text">{stats.total}</strong>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('AVAILABLE')}
-            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-              statusFilter === 'AVAILABLE'
-                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10'
-            }`}
-          >
-            Tersedia: <strong>{stats.available}</strong>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('SOLDOUT')}
-            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-              statusFilter === 'SOLDOUT'
-                ? 'bg-rose-500/25 border-rose-500 text-rose-300 font-bold'
-                : 'bg-rose-500/10 border-rose-500/25 text-rose-400 hover:bg-rose-500/15'
-            }`}
-          >
-            Habis (Sold Out): <strong>{stats.soldOut}</strong>
-          </button>
-
-          {canManageRecipe && stats.noRecipe > 0 && (
-            <button
-              type="button"
-              onClick={() => setRecipeFilter('NO_RECIPE')}
-              className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-                recipeFilter === 'NO_RECIPE'
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                  : 'bg-amber-500/5 border-amber-500/20 text-amber-400 hover:bg-amber-500/10'
-              }`}
-            >
-              Belum Ada Resep: <strong>{stats.noRecipe}</strong>
-            </button>
-          )}
-
-          <div className="ml-auto text-[11px] text-komazi-muted">
-            Menampilkan <strong className="text-komazi-coral">{filtered.length}</strong> dari {products.length} menu
-          </div>
-        </div>
       </div>
 
       {/* 3. Products Table */}
       <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden">
+        {/* Select all across pages banner */}
+        {allPageSelected && filtered.length > paginatedProducts.length && selectedProductIds.length < filtered.length && (
+          <div className="bg-komazi-coral/10 border-b border-komazi-coral/30 px-4 py-2 text-xs flex items-center justify-between text-komazi-text animate-fadeIn">
+            <span>
+              Semua <strong>{paginatedProducts.length}</strong> menu di halaman ini terpilih.
+            </span>
+            <button
+              type="button"
+              onClick={handleSelectAllFiltered}
+              className="text-komazi-coral hover:underline font-bold text-xs"
+            >
+              Pilih semua {filtered.length} menu hasil pencarian
+            </button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="border-b border-komazi-border bg-komazi-surface-2 text-komazi-muted font-bold uppercase tracking-wider">
@@ -697,13 +753,13 @@ export default function MenuPage() {
                 <th className="w-10 py-3 px-3 text-center">
                   <input
                     type="checkbox"
-                    checked={allFilteredSelected}
+                    checked={allPageSelected}
                     ref={(el) => {
-                      if (el) el.indeterminate = someFilteredSelected;
+                      if (el) el.indeterminate = somePageSelected;
                     }}
-                    onChange={handleToggleSelectAll}
+                    onChange={handleToggleSelectPage}
                     className="w-4 h-4 rounded border-komazi-border text-komazi-coral focus:ring-komazi-coral bg-komazi-surface cursor-pointer accent-komazi-coral"
-                    title={allFilteredSelected ? 'Batalkan semua pilihan' : 'Pilih semua menu yang tampil'}
+                    title={allPageSelected ? 'Batalkan pilihan halaman ini' : 'Pilih semua menu di halaman ini'}
                   />
                 </th>
                 <th className="py-3 px-4">Produk</th>
@@ -765,11 +821,25 @@ export default function MenuPage() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={prod.imageUrl}
-                            alt={prod.name}
-                            className="w-10 h-10 rounded-xl object-cover border border-komazi-border shrink-0"
-                          />
+                          {prod.imageUrl ? (
+                            <img
+                              src={prod.imageUrl}
+                              alt={prod.name}
+                              className="w-10 h-10 rounded-xl object-cover border border-komazi-border shrink-0"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                if (e.currentTarget.nextSibling) {
+                                  e.currentTarget.nextSibling.style.display = 'flex';
+                                }
+                              }}
+                            />
+                          ) : null}
+                          <div
+                            style={{ display: prod.imageUrl ? 'none' : 'flex' }}
+                            className="w-10 h-10 rounded-xl bg-gradient-to-b from-[#FF6B5E] to-[#D9382B] flex items-center justify-center font-sans font-black text-sm text-white shrink-0 shadow-sm shadow-komazi-coral/20 select-none"
+                          >
+                            {getProductInitials(prod.name)}
+                          </div>
                           <div>
                             <p className="font-bold text-komazi-text">{prod.name}</p>
                             <p className="text-[10px] text-komazi-muted line-clamp-1">{prod.description}</p>
@@ -782,8 +852,26 @@ export default function MenuPage() {
                       <td className="py-3 px-4 font-mono text-komazi-muted text-[11px]">
                         {prod.sku || '-'}
                       </td>
-                      <td className="py-3 px-4 font-mono font-bold text-komazi-coral text-sm">
-                        {formatRupiah(prod.price)}
+                      <td className="py-3 px-4">
+                        {prod.isDynamicPrice ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 w-fit">
+                              <Sparkles className="w-2.5 h-2.5 fill-amber-300" />
+                              Dinamis
+                            </span>
+                            <span className="text-[11px] text-komazi-muted font-mono">
+                              {Number(prod.minPrice) > 0
+                                ? `Min: ${formatRupiah(prod.minPrice)}`
+                                : Number(prod.price) > 0
+                                  ? `Saran: ${formatRupiah(prod.price)}`
+                                  : 'Bebas Tentukan'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-mono font-bold text-komazi-coral text-sm">
+                            {formatRupiah(prod.price)}
+                          </span>
+                        )}
                       </td>
                       {canManageRecipe && (() => {
                         const hpp = calculateProductHpp(prod.id);
@@ -842,21 +930,27 @@ export default function MenuPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => toggleSoldOut(prod.id)}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-                            prod.isSoldOut
-                              ? 'bg-danger/15 text-danger border-danger/30 hover:bg-danger/25'
-                              : 'bg-success/15 text-success border-success/30 hover:bg-success/25'
-                          }`}
-                        >
-                          {prod.isSoldOut ? 'Tandai Tersedia' : 'Tersedia'}
-                        </button>
+                        {prod.isActive === false ? (
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-neutral-500/15 text-neutral-400 border-neutral-500/30">
+                            Nonaktif
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleSoldOut(prod.id)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+                              prod.isSoldOut
+                                ? 'bg-danger/15 text-danger border-danger/30 hover:bg-danger/25'
+                                : 'bg-success/15 text-success border-success/30 hover:bg-success/25'
+                            }`}
+                          >
+                            {prod.isSoldOut ? 'Tandai Tersedia' : 'Tersedia'}
+                          </button>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {canManageRecipe && (
+                          {canManageRecipe && prod.isActive !== false && (
                             <button
                               type="button"
                               onClick={() => {
@@ -876,13 +970,23 @@ export default function MenuPage() {
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => setProductToDelete(prod)}
-                            className="p-1.5 rounded-lg text-komazi-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                            title="Hapus menu"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {prod.isActive === false ? (
+                            <button
+                              onClick={() => handleRestoreProduct(prod)}
+                              className="p-1.5 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-500/20 border border-transparent hover:border-emerald-500/40 transition-colors"
+                              title="Aktifkan kembali menu ini"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setProductToDelete(prod)}
+                              className="p-1.5 rounded-lg text-komazi-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                              title="Hapus menu"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -979,10 +1083,15 @@ export default function MenuPage() {
 
       {/* Add / Edit Product Modal */}
       {isProductModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-2xl rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in"
+        >
+          <div className="min-h-full flex items-center justify-center">
+            <div className="w-full max-w-2xl rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-komazi-coral/10 border border-komazi-coral/20 flex items-center justify-center text-komazi-coral">
                   <UtensilsCrossed className="w-4 h-4" />
@@ -996,13 +1105,6 @@ export default function MenuPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsProductModalOpen(false)}
-                className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
             {/* Modal Tab Selector */}
@@ -1105,18 +1207,74 @@ export default function MenuPage() {
 
                       <div>
                         <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                          Harga Dasar (Rp):
+                          {formData.isDynamicPrice ? 'Harga Saran / Acuan (Rp):' : 'Harga Dasar (Rp):'}
                         </label>
                         <input
                           type="number"
                           step="1000"
                           min="0"
-                          required
+                          required={!formData.isDynamicPrice}
                           value={formData.price}
                           onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                          placeholder={formData.isDynamicPrice ? '0 (Opsional)' : '25000'}
                           className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono font-bold text-komazi-text focus:border-komazi-coral focus:outline-none"
                         />
                       </div>
+                    </div>
+
+                    {/* Toggle: Menu Harga Dinamis (Open Price) */}
+                    <div className="p-3.5 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${formData.isDynamicPrice ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-komazi-surface text-komazi-muted border border-komazi-border'}`}>
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-komazi-text">
+                              Menu Harga Dinamis (Open Price)
+                            </span>
+                            <span className="block text-[11px] text-komazi-muted">
+                              Aktifkan jika harga ditentukan fleksibel oleh kasir saat transaksi
+                            </span>
+                          </div>
+                        </div>
+
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(formData.isDynamicPrice)}
+                            onChange={(e) => setFormData({ ...formData, isDynamicPrice: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-komazi-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 border border-komazi-border" />
+                        </label>
+                      </div>
+
+                      {formData.isDynamicPrice && (
+                        <div className="pt-2.5 border-t border-komazi-border/60 space-y-3 animate-in fade-in">
+                          <p className="text-[11px] text-amber-300/90 leading-relaxed bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
+                            Kasir POS akan diminta menentukan nominal harga saat menu ini dimasukkan ke keranjang. Anda dapat membatasi harga minimum di bawah ini.
+                          </p>
+
+                          <div>
+                            <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                              Batas Minimum Harga (Rp):
+                            </label>
+                            <input
+                              type="number"
+                              step="1000"
+                              min="0"
+                              value={formData.minPrice || 0}
+                              onChange={(e) => setFormData({ ...formData, minPrice: e.target.value })}
+                              placeholder="0 = Tanpa batas minimal"
+                              className="w-full p-2.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono font-bold text-amber-400 focus:border-amber-400 focus:outline-none"
+                            />
+                            <span className="text-[10px] text-komazi-muted mt-0.5 block">
+                              Kasir tidak dapat memasukkan harga di bawah nilai ini (isi 0 jika bebas)
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -1451,22 +1609,33 @@ export default function MenuPage() {
             </form>
           </div>
         </div>
+      </div>
       )}
 
       {/* Custom Confirmation Alert Modal */}
       <AlertModal
         isOpen={!!productToDelete}
-        onClose={() => setProductToDelete(null)}
-        onConfirm={() => {
-          if (productToDelete) {
-            deleteProduct(productToDelete.id);
-            toast.success(`Produk "${productToDelete.name}" berhasil dihapus.`);
-            setProductToDelete(null);
+        onClose={() => !isDeletingSingle && setProductToDelete(null)}
+        isProcessing={isDeletingSingle}
+        onConfirm={async () => {
+          if (!productToDelete) return;
+          setIsDeletingSingle(true);
+          try {
+            const res = await deleteProduct(productToDelete.id);
+            if (res?.success) {
+              toast.success(res.message || `Produk "${productToDelete.name}" berhasil dihapus.`);
+              setSelectedProductIds((prev) => prev.filter((id) => id !== productToDelete.id));
+              setProductToDelete(null);
+            } else {
+              toast.error(res?.message || 'Gagal menghapus produk');
+            }
+          } finally {
+            setIsDeletingSingle(false);
           }
         }}
         type="danger"
         title="Hapus Produk Menu?"
-        message={`Apakah Anda yakin ingin menghapus "${productToDelete?.name}" dari katalog produk? Tindakan ini tidak dapat dibatalkan.`}
+        message={`Apakah Anda yakin ingin menghapus "${productToDelete?.name}" dari katalog produk? Menu yang memiliki riwayat transaksi pesanan akan dinonaktifkan secara aman.`}
         confirmText="Ya, Hapus Produk"
         cancelText="Batal"
       />
@@ -1499,24 +1668,40 @@ export default function MenuPage() {
       {/* Bulk Delete Confirmation Modal */}
       <AlertModal
         isOpen={isBulkDeleteModalOpen}
-        onClose={() => setIsBulkDeleteModalOpen(false)}
-        onConfirm={() => {
-          bulkDeleteProducts(selectedProductIds);
-          toast.success(`${selectedProductIds.length} menu berhasil dihapus.`);
-          setSelectedProductIds([]);
-          setIsBulkDeleteModalOpen(false);
+        onClose={() => !isDeletingBulk && setIsBulkDeleteModalOpen(false)}
+        isProcessing={isDeletingBulk}
+        onConfirm={async () => {
+          if (selectedProductIds.length === 0) return;
+          setIsDeletingBulk(true);
+          try {
+            const res = await bulkDeleteProducts(selectedProductIds);
+            if (res?.success) {
+              toast.success(res.message || `${res.count || selectedProductIds.length} menu berhasil dihapus.`);
+              setSelectedProductIds([]);
+              setIsBulkDeleteModalOpen(false);
+            } else {
+              toast.error(res?.message || 'Gagal menghapus menu terpilih');
+            }
+          } finally {
+            setIsDeletingBulk(false);
+          }
         }}
         type="danger"
         title={`Hapus ${selectedProductIds.length} Menu Terpilih?`}
-        message={`Apakah Anda yakin ingin menghapus ${selectedProductIds.length} menu yang dipilih dari katalog produk? Tindakan ini tidak dapat dibatalkan.`}
+        message={`Apakah Anda yakin ingin menghapus ${selectedProductIds.length} menu yang dipilih dari katalog produk? Menu yang memiliki riwayat pesanan akan dinonaktifkan secara aman.`}
         confirmText={`Ya, Hapus ${selectedProductIds.length} Menu`}
         cancelText="Batal"
       />
 
       {/* Bulk Category Change Modal */}
       {isBulkCatModalOpen && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn select-none">
-          <div className="w-full max-w-sm bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[9998] overflow-y-auto overscroll-contain p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn select-none"
+        >
+          <div className="min-h-full flex items-center justify-center">
+            <div className="w-full max-w-sm bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4 my-auto">
             <div className="flex items-center justify-between pb-2 border-b border-komazi-border">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-xl bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral">
@@ -1581,6 +1766,7 @@ export default function MenuPage() {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* Recipe Modal for COGS calculation */}
@@ -1590,10 +1776,28 @@ export default function MenuPage() {
           onClose={() => {
             setIsRecipeModalOpen(false);
             setSelectedProductForRecipe(null);
+            if (canManageRecipe) {
+              useRecipeStore.getState().fetchCogsOverview?.();
+            }
           }}
           product={selectedProductForRecipe}
         />
       )}
+
+      {/* Excel Import Modal */}
+      <ExcelImportModal
+        isOpen={isExcelImportModalOpen}
+        onClose={() => setIsExcelImportModalOpen(false)}
+        title="Import Katalog Menu Produk"
+        type="MENU"
+        categories={categories}
+        onSuccess={() => {
+          usePosStore.getState().fetchProducts();
+          useRecipeStore.getState().fetchCogsOverview?.();
+          useStockStore.getState().fetchIngredients?.();
+          toast.success('Katalog produk & perhitungan HPP berhasil diimpor!');
+        }}
+      />
     </div>
   );
 }

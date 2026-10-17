@@ -1,18 +1,66 @@
 import { io } from 'socket.io-client';
+import { isNative } from './platform';
 
 let socket = null;
 let currentJoinedStation = null;
 
+export function getSocketUrl() {
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+  // 1. Explicit VITE_SOCKET_URL
+  const envSocketUrl = (import.meta.env.VITE_SOCKET_URL || '').trim();
+  if (envSocketUrl) {
+    // Pada browser yang dimuat via HTTPS, koneksi langsung ke ws:// / http://
+    // diblokir oleh browser sebagai Mixed Content.
+    // Gunakan window.location.origin agar proxy HTTPS/WSS Vite dev server menangani koneksi.
+    if (isHttps && !isNative && envSocketUrl.startsWith('http://')) {
+      return window.location.origin;
+    }
+    return envSocketUrl;
+  }
+
+  // 2. Fallback dari VITE_API_URL
+  const envApiUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (envApiUrl && !envApiUrl.startsWith('/')) {
+    try {
+      const parsed = new URL(envApiUrl);
+      if (isHttps && !isNative && parsed.protocol === 'http:') {
+        return window.location.origin;
+      }
+      return parsed.origin;
+    } catch {}
+  }
+
+  // 3. Fallback lingkungan browser
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    // Pada origin HTTPS (misal Vite basicSsl atau reverse proxy), selalu gunakan origin saat ini
+    if (isHttps && !isNative) {
+      return window.location.origin;
+    }
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return `http://${host}:4000`;
+    }
+    return window.location.origin;
+  }
+
+  return 'http://localhost:4000';
+}
+
 export function getSocket() {
   if (!socket) {
-    const socketUrl =
-      import.meta.env.VITE_SOCKET_URL ||
-      (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost'
-        ? `http://${window.location.hostname}:4000`
-        : 'http://192.168.1.13:4000');
+    const socketUrl = getSocketUrl();
+    const storedToken =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem('token') || localStorage.getItem('komazi_token') || ''
+        : '';
+
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
+      auth: {
+        token: storedToken,
+      },
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -21,6 +69,7 @@ export function getSocket() {
 
     socket.on('connect', () => {
       console.log('[Socket.IO] Connected, socket ID:', socket.id);
+      socket.emit('orders:join');
       if (currentJoinedStation) {
         socket.emit('station:join', { stationCode: currentJoinedStation });
       }

@@ -6,18 +6,25 @@ export async function getSummary(req, res) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const PAID_STATUSES = ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'];
     const [todayOrders, totalOrders, lowStockIngredients] = await Promise.all([
       prisma.order.findMany({
         where: {
           createdAt: { gte: today },
-          status: 'PAID',
+          status: { in: PAID_STATUSES },
         },
         include: {
           workspace: true,
+          payments: true,
+          items: {
+            select: { lineCost: true },
+          },
         },
       }),
-      prisma.order.count({ where: { status: 'PAID' } }),
-      prisma.ingredient.findMany(),
+      prisma.order.count({ where: { status: { in: PAID_STATUSES } } }),
+      prisma.ingredient.findMany({
+        select: { stock: true, minStock: true },
+      }),
     ]);
 
     const todayRevenue = todayOrders.reduce((sum, o) => sum + parseFloat(o.total), 0);
@@ -25,11 +32,34 @@ export async function getSummary(req, res) {
     const aov = todayTransactions > 0 ? Math.round(todayRevenue / todayTransactions) : 0;
 
     let workspaceRevenue = 0;
+    let todayCogs = 0;
+    const paymentBreakdown = {
+      CASH: 0,
+      QRIS: 0,
+      TRANSFER: 0,
+      OTHER: 0,
+    };
+
     for (const order of todayOrders) {
-      for (const ws of order.workspace) {
+      for (const ws of (order.workspace || [])) {
         if (ws.charge) workspaceRevenue += parseFloat(ws.charge);
       }
+      for (const item of (order.items || [])) {
+        todayCogs += parseFloat(item.lineCost || 0);
+      }
+      for (const payment of (order.payments || [])) {
+        const method = (payment.method || 'CASH').toUpperCase();
+        const amt = parseFloat(payment.amount || 0);
+        if (paymentBreakdown[method] !== undefined) {
+          paymentBreakdown[method] += amt;
+        } else {
+          paymentBreakdown.OTHER += amt;
+        }
+      }
     }
+
+    const todayGrossProfit = Math.max(0, todayRevenue - todayCogs);
+    const profitMargin = todayRevenue > 0 ? Math.round((todayGrossProfit / todayRevenue) * 100) : 0;
 
     const lowStockCount = lowStockIngredients.filter(
       (i) => parseFloat(i.stock) <= parseFloat(i.minStock)
@@ -42,6 +72,10 @@ export async function getSummary(req, res) {
       workspaceRevenue,
       totalOrdersAllTime: totalOrders,
       lowStockCount,
+      todayCogs,
+      todayGrossProfit,
+      profitMargin,
+      paymentBreakdown,
     }, 'Ringkasan laporan penjualan hari ini');
   } catch (err) {
     return errorResponse(res, err.message, 500);
@@ -57,7 +91,7 @@ export async function getSales(req, res) {
     const orders = await prisma.order.findMany({
       where: {
         createdAt: { gte: pastDate },
-        status: 'PAID',
+        status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] },
       },
       select: {
         createdAt: true,
@@ -76,6 +110,11 @@ export async function getTopProducts(req, res) {
   try {
     const items = await prisma.orderItem.groupBy({
       by: ['productId', 'productName'],
+      where: {
+        order: {
+          status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] },
+        },
+      },
       _sum: {
         qty: true,
         lineTotal: true,

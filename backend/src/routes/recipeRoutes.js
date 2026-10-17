@@ -10,13 +10,13 @@ import { requireRole } from '../middlewares/role.js';
 const router = Router();
 
 // All recipe/COGS endpoints require MANAGER or OWNER
-router.use(authenticate, requireRole(['MANAGER', 'OWNER']));
+const requireManagerOrOwner = [authenticate, requireRole(['MANAGER', 'OWNER'])];
 
 // COGS overview for all products (must be BEFORE /:id routes)
-router.get('/cogs/overview', getCogsOverview);
+router.get('/cogs/overview', requireManagerOrOwner, getCogsOverview);
 
 // Product-specific recipe CRUD
-router.get('/:id/recipe', getProductRecipe);
-router.put('/:id/recipe', saveProductRecipe);
+router.get('/:id/recipe', requireManagerOrOwner, getProductRecipe);
+router.put('/:id/recipe', requireManagerOrOwner, saveProductRecipe);
 
 export default router;

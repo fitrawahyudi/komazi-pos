@@ -7,63 +7,63 @@ import { formatRupiah } from '../utils/format';
 
 import { useAuthStore } from './authStore';
 
-export function getRoleWelcomeMessage(role = 'CASHIER') {
+export function getRoleWelcomeMessage(role = 'CASHIER', name = '') {
   const normalized = (role || 'CASHIER').toUpperCase();
+  const trimmedName = (name || '').trim();
+  const greeting = trimmedName ? `Halo Kak ${trimmedName}!` : 'Halo Rekan Komazi!';
 
   if (normalized === 'OWNER') {
     return {
-      text: 'Halo Owner! Saya **Komazi AI — Asisten Eksekutif Bisnis**.\n\nSaya dapat menyajikan seluruh laporan omset komparatif, margin HPP bahan baku, audit selisih kas kasir, serta performa bisnis kedai secara komprehensif. Silakan tanyakan hal strategis seputar kedai!',
+      text: `${greeting} Saya **Komazi AI — Asisten Eksekutif Bisnis** ☕\n\nSelamat bertugas! Saya dapat menyajikan seluruh laporan omset komparatif, margin HPP bahan baku, audit selisih kas kasir, serta performa bisnis kedai secara komprehensif. Silakan tanyakan hal strategis seputar kedai!`,
       followUps: [
         'Bagaimana perbandingan omset hari ini vs kemarin?',
         'Menu apa yang menyumbang pendapatan terbesar?',
         'Apakah ada selisih kas pada shift kasir?',
-        'Bahan baku apa yang biayanya paling tinggi?',
       ],
     };
   }
 
   if (normalized === 'MANAGER') {
     return {
-      text: 'Halo Manager! Saya **Komazi AI — Asisten Operasional Kedai**.\n\nSaya memantau volume transaksi operasional harian, peringatan bahan baku menipis, status shift kasir, dan kapasitas workspace aktif. Silakan tanyakan seputar operasional harian kedai!',
+      text: `${greeting} Saya **Komazi AI — Asisten Operasional** ☕\n\nSelamat bertugas! Saya memantau volume transaksi operasional harian, peringatan bahan baku menipis, status shift kasir, dan kapasitas workspace aktif. Silakan tanyakan seputar operasional harian kedai!`,
       followUps: [
         'Bahan baku apa yang stoknya di bawah batas minimum?',
         'Siapa kasir yang sedang shift aktif sekarang?',
-        'Menu apa yang paling laku hari ini?',
-        'Berapa sesi workspace yang sedang aktif?',
+        'Bagaimana cara tutup shift dan hitung selisih kas?',
       ],
     };
   }
 
   if (normalized === 'BARISTA') {
     return {
-      text: 'Halo Barista! Saya **Komazi AI — Asisten Bar Minuman** ☕\n\nSaya memantau ketersediaan bahan kopi, fresh milk, oat milk, sirup, serta pesanan minuman terlaris untuk persiapan bar Anda. Silakan tanyakan seputar stok bar & menu minuman!',
+      text: `${greeting} Saya **Komazi AI — Asisten Bar Minuman** ☕\n\nSemangat menyeduh hari ini! Saya memantau ketersediaan bahan kopi, fresh milk, oat milk, sirup, serta pesanan minuman terlaris untuk persiapan bar Anda. Silakan tanyakan seputar stok bar & menu minuman!`,
       followUps: [
+        'Apa resep dan takaran Vanilla Latte?',
         'Berapa sisa stok Fresh Milk dan Biji Kopi?',
         'Minuman kopi apa yang paling banyak dipesan hari ini?',
-        'Bahan minuman apa yang perlu di-restock ke gudang?',
       ],
     };
   }
 
   if (normalized === 'KITCHEN') {
     return {
-      text: 'Halo Kitchen! Saya **Komazi AI — Asisten Dapur Makanan** 🥐\n\nSaya memantau ketersediaan bahan pastry, croissant, butter, bahan dapur, serta pesanan makanan terlaris untuk persiapan dapur Anda. Silakan tanyakan seputar stok & menu dapur!',
+      text: `${greeting} Saya **Komazi AI — Asisten Dapur Makanan** 🥐\n\nSemangat di dapur hari ini! Saya memantau ketersediaan bahan pastry, croissant, butter, bahan dapur, serta pesanan makanan terlaris untuk persiapan dapur Anda. Silakan tanyakan seputar stok & menu dapur!`,
       followUps: [
         'Bahan dapur apa yang stoknya paling sedikit saat ini?',
         'Makanan atau pastry apa yang paling laku hari ini?',
-        'Berapa porsi Croissant yang masih bisa dibuat?',
+        'Bagaimana cara mengatur resep menu di sistem?',
       ],
     };
   }
 
   // CASHIER (Default)
   return {
-    text: 'Halo Kasir! Saya **Komazi AI — Asisten POS & Layanan Pelanggan** ☕\n\nSaya siap membantu memeriksa menu terlaris untuk rekomendasi pelanggan, peringatan bahan habis/kritis, ketersediaan meja workspace, serta ringkasan shift Anda. Silakan tanyakan!',
+    text: `${greeting} Saya **Komazi AI — Asisten POS & Layanan Pelanggan** ☕\n\nSelamat bertugas di kasir! Saya siap membantu memeriksa SOP kasir (split bill, printer thermal, shift), rekomendasi menu pelanggan, peringatan bahan habis/kritis, serta ketersediaan meja workspace. Silakan tanyakan!`,
     followUps: [
-      'Menu apa yang stok bahannya habis dan tidak bisa dipesan?',
+      'Bagaimana cara split bill pesanan meja?',
+      'Cara pasang printer thermal bluetooth?',
+      'Bagaimana cara tutup shift kasir?',
       'Menu apa yang paling laku untuk rekomendasi pelanggan?',
-      'Berapa meja dan sesi workspace yang sedang aktif?',
-      'Bagaimana ringkasan transaksi shift saya hari ini?',
     ],
   };
 }
@@ -88,15 +88,17 @@ export const useAiAnalyticsStore = create(
   ],
 
   /**
-   * Buka modal asisten dan perbarui pesan pembuka jika belum ada percakapan pengguna
+   * Buka modal asisten dan perbarui pesan pembuka dengan sapaan nama jika belum ada percakapan pengguna
    */
   openAssistant: () => {
-    const userRole = useAuthStore.getState().user?.role || 'CASHIER';
+    const user = useAuthStore.getState().user;
+    const userRole = user?.role || 'CASHIER';
+    const userName = user?.name || user?.username || '';
     const currentMessages = get().messages || [];
     const hasUserInteracted = currentMessages.some((m) => m.role === 'user');
 
     if (!hasUserInteracted) {
-      const welcome = getRoleWelcomeMessage(userRole);
+      const welcome = getRoleWelcomeMessage(userRole, userName);
       set({
         isAssistantOpen: true,
         messages: [
@@ -121,8 +123,10 @@ export const useAiAnalyticsStore = create(
   },
 
   clearChat: () => {
-    const userRole = useAuthStore.getState().user?.role || 'CASHIER';
-    const welcome = getRoleWelcomeMessage(userRole);
+    const user = useAuthStore.getState().user;
+    const userRole = user?.role || 'CASHIER';
+    const userName = user?.name || user?.username || '';
+    const welcome = getRoleWelcomeMessage(userRole, userName);
     set({
       messages: [
         {
@@ -139,7 +143,7 @@ export const useAiAnalyticsStore = create(
   },
 
   /**
-   * Mengirim pertanyaan ke AI backend dengan memori percakapan sebelumnya
+   * Mengirim pertanyaan ke AI backend dengan memori percakapan sebelumnya dan nama pengguna
    */
   askQuestion: async (userQuery) => {
     const query = userQuery?.trim() || 'Menu apa yang paling laku hari ini?';
@@ -165,8 +169,10 @@ export const useAiAnalyticsStore = create(
     }));
 
     try {
-      // Kirim pertanyaan beserta riwayat percakapan sebelumnya
-      const res = await api.analytics.askAi({ query, history: previousHistory });
+      const user = useAuthStore.getState().user;
+      const userName = user?.name || user?.username || '';
+      // Kirim pertanyaan beserta riwayat percakapan sebelumnya dan nama user
+      const res = await api.analytics.askAi({ query, history: previousHistory, userName });
 
       if (res && res.success && res.data) {
         const d = res.data;
@@ -177,6 +183,10 @@ export const useAiAnalyticsStore = create(
           provider: d.provider || 'GROQ',
           model: 'Komazi AI',
           latencyTier: d.latencyTier || 'Komazi AI',
+          intent: d.intent || null,
+          intentMeta: d.intentMeta || null,
+          actionHint: d.actionHint || null,
+          matchedSop: d.matchedSop || null,
           metrics: d.metrics,
           followUps: [],
           timestamp: d.generatedAt || new Date().toISOString(),
@@ -233,10 +243,13 @@ export const useAiAnalyticsStore = create(
       const greetingWords = ['hi', 'halo', 'hello', 'hey', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum', 'tes', 'test', 'ping', 'bantu'];
       const isGreeting = greetingWords.some((w) => q === w || q.startsWith(`${w} `) || q.endsWith(` ${w}`));
 
+      const authUser = useAuthStore.getState().user;
+      const greetingName = authUser?.name ? `Kak ${authUser.name}` : 'Rekan Komazi';
+
       if (isGreeting || !q) {
         const revFormatted = formatRupiah(totalRevenue);
         const stockAlertText = lowStock.length > 0 ? `${lowStock.length} bahan menipis ⚠️` : 'Aman terkendali ✅';
-        narrative = `Halo! Selamat datang di **Komazi Coffee & Workspace** ☕\n\nSaya **Komazi AI**, asisten data penjualan dan operasional kedai Anda.\n\n📌 **Status Sekilas Kedai Hari Ini:**\n- Total Omset: **${revFormatted}** (${validOrders.length} transaksi)\n- Menu Teratas: **${top1 ? top1.name : 'Belum ada transaksi'}**\n- Stok Bahan Baku: **${stockAlertText}**\n\nSilakan tanyakan hal apa saja seputar operasional, atau klik pertanyaan di bawah!`;
+        narrative = `Halo ${greetingName}! Selamat datang di **Komazi Coffee & Workspace** ☕\n\nSaya **Komazi AI**, asisten data penjualan dan operasional kedai Anda.\n\n📌 **Status Sekilas Kedai Hari Ini:**\n- Total Omset: **${revFormatted}** (${validOrders.length} transaksi)\n- Menu Teratas: **${top1 ? top1.name : 'Belum ada transaksi'}**\n- Stok Bahan Baku: **${stockAlertText}**\n\nSilakan tanyakan hal apa saja seputar operasional, atau klik pertanyaan di bawah!`;
         customFollowUps = [
           'Menu apa yang paling laku hari ini?',
           'Berapa sisa stok bahan menu terlaris?',
@@ -345,11 +358,20 @@ export const useAiAnalyticsStore = create(
     // Client fallback calculation
     try {
       const orders = useOrdersStore.getState().orders || [];
-      const validOrders = orders.filter((o) => o.status === 'PAID');
-      const totalRev = validOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const now = new Date();
+      const todayOrders = orders.filter((o) => {
+        if (o.status !== 'PAID' || !o.createdAt) return false;
+        const d = new Date(o.createdAt);
+        return (
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate()
+        );
+      });
+      const totalRev = todayOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
       const productMap = {};
-      validOrders.forEach((o) => {
+      todayOrders.forEach((o) => {
         (o.items || []).forEach((item) => {
           const name = item.name || item.productName || 'Produk';
           if (!productMap[name]) productMap[name] = { name, qty: 0, revenue: 0 };
@@ -361,9 +383,9 @@ export const useAiAnalyticsStore = create(
 
       set({
         quickInsight: {
-          hasSales: validOrders.length > 0,
+          hasSales: todayOrders.length > 0,
           todayRevenue: formatRupiah(totalRev),
-          todayOrders: validOrders.length,
+          todayOrders: todayOrders.length,
           topProduct: top ? {
             name: top.name,
             qty: top.qty,

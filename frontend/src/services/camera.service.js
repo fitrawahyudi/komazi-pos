@@ -6,7 +6,8 @@ import { isNative } from './platform';
  * Web Fallback: Menggunakan HTML file input dengan capture="environment"
  */
 export const CameraService = {
-  async takePhoto() {
+  async takePhoto(options = {}) {
+    const facing = options.facingMode || 'user';
     if (isNative && typeof window !== 'undefined' && window.Capacitor?.Plugins?.Camera) {
       try {
         const image = await window.Capacitor.Plugins.Camera.getPhoto({
@@ -14,6 +15,7 @@ export const CameraService = {
           allowEditing: false,
           resultType: 'dataUrl',
           source: 'CAMERA',
+          direction: facing === 'user' ? 'FRONT' : 'REAR',
         });
         return { success: true, dataUrl: image.dataUrl };
       } catch (err) {
@@ -29,7 +31,7 @@ export const CameraService = {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
-      input.capture = 'environment';
+      input.capture = facing;
       input.style.display = 'none';
 
       input.onchange = (e) => {

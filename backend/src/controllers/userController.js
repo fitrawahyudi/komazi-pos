@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
 import { successResponse, errorResponse } from '../utils/response.js';
+import { passwordResetService } from '../services/passwordReset.service.js';
+import { emitForceLogout } from '../config/socket.js';
 
 export async function getAllUsers(req, res) {
   try {
@@ -45,9 +47,58 @@ export async function getAllUsers(req, res) {
 
 export async function createUser(req, res) {
   try {
-    const { name, username, password, role } = req.body;
+    const {
+      name,
+      username,
+      password,
+      role = 'CASHIER',
+      phone,
+      department,
+      jobTitle,
+      employmentType,
+      joinDate,
+      baseSalary,
+      dailyAllowance,
+      hourlyOvertimeRate,
+    } = req.body;
 
-    const existing = await prisma.user.findUnique({ where: { username } });
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Nama wajib diisi', 400);
+    }
+    if (!username || !username.trim()) {
+      return errorResponse(res, 'Username wajib diisi', 400);
+    }
+    if (!password) {
+      return errorResponse(res, 'Password wajib diisi', 400);
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername.length < 3) {
+      return errorResponse(res, 'Username minimal 3 karakter', 400);
+    }
+    if (!/^[a-z0-9_.-]+$/.test(cleanUsername)) {
+      return errorResponse(
+        res,
+        'Username hanya boleh berisi huruf kecil, angka, titik, strip (-), atau garis bawah (_)',
+        400
+      );
+    }
+
+    if (typeof password !== 'string' || password.length < 6) {
+      return errorResponse(res, 'Password minimal 6 karakter', 400);
+    }
+
+    const validRoles = ['OWNER', 'MANAGER', 'CASHIER', 'KITCHEN', 'BARISTA'];
+    const normalizedRole = String(role || 'CASHIER').toUpperCase().trim();
+    if (!validRoles.includes(normalizedRole)) {
+      return errorResponse(
+        res,
+        `Role "${role}" tidak valid. Pilihan role: ${validRoles.join(', ')}`,
+        400
+      );
+    }
+
+    const existing = await prisma.user.findUnique({ where: { username: cleanUsername } });
     if (existing) {
       return errorResponse(res, 'Username sudah digunakan', 400);
     }
@@ -55,12 +106,26 @@ export async function createUser(req, res) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    let defaultDepartment = 'Operasional';
+    if (normalizedRole === 'BARISTA') defaultDepartment = 'Bar & Minuman';
+    else if (normalizedRole === 'KITCHEN') defaultDepartment = 'Dapur & Makanan';
+    else if (normalizedRole === 'CASHIER') defaultDepartment = 'Kasir';
+    else if (normalizedRole === 'MANAGER' || normalizedRole === 'OWNER') defaultDepartment = 'Manajemen';
+
     const newUser = await prisma.user.create({
       data: {
-        name,
-        username,
+        name: name.trim(),
+        username: cleanUsername,
         password: hashedPassword,
-        role: role || 'CASHIER',
+        role: normalizedRole,
+        phone: phone ? String(phone).trim() : null,
+        department: department?.trim() || defaultDepartment,
+        jobTitle: jobTitle?.trim() || null,
+        employmentType: employmentType || 'FULL_TIME',
+        joinDate: joinDate || new Date().toISOString().split('T')[0],
+        baseSalary: baseSalary ? Number(baseSalary) : 0,
+        dailyAllowance: dailyAllowance ? Number(dailyAllowance) : 0,
+        hourlyOvertimeRate: hourlyOvertimeRate ? Number(hourlyOvertimeRate) : 0,
         isActive: true,
       },
       select: {
@@ -68,6 +133,11 @@ export async function createUser(req, res) {
         name: true,
         username: true,
         role: true,
+        phone: true,
+        department: true,
+        jobTitle: true,
+        employmentType: true,
+        joinDate: true,
         isActive: true,
         createdAt: true,
       },
@@ -106,7 +176,51 @@ export async function updateUser(req, res) {
       },
     });
 
+    // Jika akun dinonaktifkan, paksa logout sesi aktif user tersebut secara real-time
+    if (dataToUpdate.isActive === false) {
+      emitForceLogout(updated.id, 'Akun Anda telah dinonaktifkan oleh pemilik kedai. Silakan hubungi manager.');
+    }
+
     return successResponse(res, updated, 'User berhasil diperbarui');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function createPasswordResetToken(req, res) {
+  try {
+    const targetUserId = parseInt(req.params.id);
+    const ownerId = req.user.id;
+
+    const result = await passwordResetService.createResetToken(targetUserId, ownerId);
+    return successResponse(
+      res,
+      result,
+      'Token reset password berhasil diterbitkan. Salin dan sampaikan tautan/kode secara privat.',
+      201
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 400);
+  }
+}
+
+export async function revokePasswordResetToken(req, res) {
+  try {
+    const targetUserId = parseInt(req.params.id);
+    const ownerId = req.user.id;
+
+    const result = await passwordResetService.revokeActiveToken(targetUserId, ownerId);
+    return successResponse(res, result, 'Token reset aktif berhasil dibatalkan');
+  } catch (err) {
+    return errorResponse(res, err.message, 400);
+  }
+}
+
+export async function getPasswordResetStatus(req, res) {
+  try {
+    const targetUserId = parseInt(req.params.id);
+    const result = await passwordResetService.getActiveTokenStatus(targetUserId);
+    return successResponse(res, result, 'Status token reset berhasil diambil');
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }
@@ -126,7 +240,10 @@ export async function resetPasswordByOwner(req, res) {
 
     await prisma.user.update({
       where: { id },
-      data: { password: hashedPassword },
+      data: {
+        password: hashedPassword,
+        tokenVersion: { increment: 1 },
+      },
     });
 
     return successResponse(res, null, 'Password user berhasil direset oleh Owner');

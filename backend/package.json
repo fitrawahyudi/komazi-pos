@@ -6,12 +6,21 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
     "start": "node src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
-    "prisma:seed": "node prisma/seed.js",
-    "db:setup": "prisma db push && node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "db:setup": "prisma db push && node prisma/seed.js",
+    "test:unit": "node --test tests/*.test.js",
+    "test:cron": "node tests/test-cronjob-e2e.js",
+    "test:bot": "node tests/test-telegram-bot-e2e.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "keywords": [
     "pos",
@@ -21,7 +30,7 @@
     "prisma",
     "mysql"
   ],
-  "author": "Komazi POS Team",
+  "author": "Komazi POS",
   "license": "ISC",
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
@@ -32,20 +41,26 @@
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
+    "cron-parser": "^5.10.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^14.5.0",
     "grammy": "^1.46.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.6.0",
+    "pino": "^10.4.0",
+    "puppeteer": "^25.13.0",
     "socket.io": "^4.8.4",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.9",
-    "prisma": "^6.4.1"
+    "pino-pretty": "^13.2.0",
+    "prisma": "^6.4.1",
+    "socket.io-client": "^4.8.4"
   }
 }

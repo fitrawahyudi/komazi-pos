@@ -5,6 +5,15 @@ import { stockService } from '../services/stock.service.js';
 import { workspaceService } from '../services/workspace.service.js';
 import { approvalService } from '../services/approval.service.js';
 import { rupiah, esc } from './utils/format.js';
+import { generateBotImage } from '../services/botImage/index.js';
+import { notifierVisual } from './utils/sendVisual.js';
+import {
+  dispatchMorningBriefing,
+  dispatchEveningWrapup,
+  dispatchStockoutAlert,
+} from '../services/aiProactiveScheduler.js';
+import { startCronWorker } from '../services/cron/cronWorker.js';
+import logger from '../utils/logger.js';
 
 // Cache untuk mencegah notifikasi ganda
 const notifiedExpiringSessions = new Set();
@@ -35,9 +44,22 @@ ${topLines}
 <i>Laporan otomatis harian Komazi POS @ 22:00 WIB</i>
     `.trim();
 
-    await notifier.toRoles(['OWNER'], text);
+    const imagePromise = generateBotImage('daily_close_book', {
+      grossSales: summary.totalRevenue,
+      discounts: 0,
+      tax: Math.round(summary.totalRevenue * 0.1),
+      netRevenue: summary.totalRevenue,
+      totalTransactions: summary.totalTransactions,
+      topProducts: summary.topProducts,
+    });
+
+    await notifierVisual.toRoles(['OWNER'], {
+      imageBufferPromise: imagePromise,
+      captionHtml: text,
+    });
+    logger.scheduler.info('Daily sales report (close book) dispatched to Owner');
   } catch (err) {
-    console.warn('[Jobs] Error sending daily report:', err.message);
+    logger.scheduler.warn(`Error sending daily report: ${err.message}`);
   }
 }
 
@@ -63,7 +85,14 @@ ${lines}
 <i>Gunakan /stok_masuk untuk mencatat restock.</i>
       `.trim();
 
-      await notifier.toRoles(['MANAGER', 'OWNER'], text);
+      const imagePromise = generateBotImage('inventory_critical', {
+        items: lowItems,
+      });
+
+      await notifierVisual.toRoles(['MANAGER', 'OWNER'], {
+        imageBufferPromise: imagePromise,
+        captionHtml: text,
+      });
     }
   } catch (err) {
     console.warn('[Jobs] Error checking low stock:', err.message);
@@ -88,7 +117,16 @@ Sisa Waktu: <b>${session.remainingMinutes} Menit</b> lagi
 <i>Harap informasikan ke tamu untuk persiapan check-out atau perpanjangan.</i>
         `.trim();
 
-        await notifier.toRoles(['CASHIER', 'MANAGER'], text);
+        const imagePromise = generateBotImage('workspace_expiry', {
+          customerName: session.customerName,
+          areaName: session.area?.name,
+          remainingMinutes: session.remainingMinutes,
+        });
+
+        await notifierVisual.toRoles(['CASHIER', 'MANAGER'], {
+          imageBufferPromise: imagePromise,
+          captionHtml: text,
+        });
       }
     }
 
@@ -105,10 +143,10 @@ async function expireApprovals() {
   try {
     const expiredCount = await approvalService.expireOldApprovals(30);
     if (expiredCount > 0) {
-      console.log(`[Jobs] Kadaluwarsa otomatis ${expiredCount} permintaan approval yang melebihi 30 menit`);
+      logger.scheduler.info(`Expired ${expiredCount} approval requests (>30m)`, { count: expiredCount });
     }
   } catch (err) {
-    console.warn('[Jobs] Error expiring approvals:', err.message);
+    logger.scheduler.warn(`Error expiring approvals: ${err.message}`);
   }
 }
 
@@ -125,5 +163,19 @@ export function startJobs() {
   // 4) Approval kedaluwarsa — tiap 5 menit
   cron.schedule('*/5 * * * *', expireApprovals, { timezone: 'Asia/Jakarta' });
 
-  console.log('⏰ [Cron Jobs] Telegram automated background jobs scheduled (Asia/Jakarta)');
+  // 5) Komazi AI Morning Executive Briefing — 08:00 WIB
+  cron.schedule('0 8 * * *', () => dispatchMorningBriefing(), { timezone: 'Asia/Jakarta' });
+
+  // 6) Komazi AI Evening Performance Wrap-Up — 22:00 WIB
+  cron.schedule('0 22 * * *', () => dispatchEveningWrapup(), { timezone: 'Asia/Jakarta' });
+
+  // 7) Komazi AI Stockout Sentinel Check — Tiap 30 menit (08:00 - 22:00 WIB)
+  cron.schedule('*/30 8-22 * * *', () => dispatchStockoutAlert(false), { timezone: 'Asia/Jakarta' });
+
+  // 8) Start Dynamic Cron Engine Worker
+  startCronWorker().catch((err) => {
+    logger.scheduler.error(`Failed to start dynamic cron worker: ${err.message}`);
+  });
+
+  logger.scheduler.info('Telegram automated background jobs & Komazi AI Proactive scheduled (Asia/Jakarta)');
 }

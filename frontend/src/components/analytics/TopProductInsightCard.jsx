@@ -39,7 +39,7 @@ export default function TopProductInsightCard() {
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-komazi-primary/10 text-komazi-primary border border-komazi-primary/20">
               <Sparkles className="w-3.5 h-3.5 text-komazi-primary animate-pulse" />
-              Komazi AI Intelligence
+              Komazi AI
             </span>
           </div>
 

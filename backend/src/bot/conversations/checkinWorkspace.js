@@ -2,6 +2,8 @@ import { InlineKeyboard } from 'grammy';
 import { getBotUser } from '../context.js';
 import { workspaceService } from '../../services/workspace.service.js';
 import { rupiah, esc } from '../utils/format.js';
+import { generateBotImage } from '../../services/botImage/index.js';
+import { replyWithPhotoFallback } from '../utils/sendVisual.js';
 
 export async function checkinWorkspace(conversation, ctx) {
   const user = await getBotUser(conversation, ctx);
@@ -31,7 +33,15 @@ export async function checkinWorkspace(conversation, ctx) {
   const area = areas.find((a) => a.id === areaId);
 
   // 2) Pilih Paket
-  const packages = await conversation.external(() => workspaceService.listPackages());
+  const packages = await conversation.external(async () => {
+    const list = await workspaceService.listPackages();
+    return (list || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      durationMin: p.durationMin,
+      price: Number(p.price),
+    }));
+  });
   if (!packages || packages.length === 0) {
     return ctx.reply('Belum ada paket workspace yang aktif.');
   }
@@ -67,19 +77,36 @@ export async function checkinWorkspace(conversation, ctx) {
   const phone = phoneMsg.message.text.trim() === '-' ? null : phoneMsg.message.text.trim();
 
   try {
-    const session = await conversation.external(() =>
-      workspaceService.checkIn({
+    const session = await conversation.external(async () => {
+      const s = await workspaceService.checkIn({
         areaId,
         packageId,
         customerName,
         phone,
-      })
-    );
+      });
+      return {
+        customerName: s.customerName,
+        endsAtLabel: s.endsAtLabel,
+        area: s.area ? { name: s.area.name } : null,
+        package: s.package ? {
+          name: s.package.name,
+          durationMin: s.package.durationMin,
+          price: Number(s.package.price),
+        } : null,
+      };
+    });
 
-    await ctx.reply(
-      `✅ <b>Check-in Workspace Berhasil!</b>\n━━━━━━━━━━━━━━━━━━\nArea: <b>${esc(session.area?.name || area.name)}</b>\nPelanggan: <b>${esc(session.customerName)}</b>\nPaket: <b>${esc(session.package?.name)}</b>\nDurasi: ${session.package?.durationMin} Menit\nJam Berakhir: <b>${session.endsAtLabel} WIB</b>\nTarif: ${rupiah(session.package?.price)}\n━━━━━━━━━━━━━━━━━━\n<i>Timer sesi berjalan otomatis di POS.</i>`,
-      { parse_mode: 'HTML' }
-    );
+    const caption = `✅ <b>Check-in Workspace Berhasil!</b>\n━━━━━━━━━━━━━━━━━━\nArea: <b>${esc(session.area?.name || area.name)}</b>\nPelanggan: <b>${esc(session.customerName)}</b>\nPaket: <b>${esc(session.package?.name)}</b>\nDurasi: ${session.package?.durationMin} Menit\nJam Berakhir: <b>${session.endsAtLabel} WIB</b>\nTarif: ${rupiah(session.package?.price)}\n━━━━━━━━━━━━━━━━━━\n<i>Timer sesi berjalan otomatis di POS.</i>`;
+
+    await replyWithPhotoFallback(ctx, {
+      imageBufferPromise: generateBotImage('workspace_pass', {
+        customerName: session.customerName,
+        areaName: session.area?.name || area.name,
+        package: session.package,
+        endsAtLabel: session.endsAtLabel,
+      }),
+      captionHtml: caption,
+    });
   } catch (err) {
     await ctx.reply(`❌ Gagal check-in workspace: ${err.message}`);
   }

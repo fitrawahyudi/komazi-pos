@@ -30,7 +30,14 @@ export async function requestApproval(conversation, ctx) {
   if (type === 'cancel') return ctx.reply('Pengajuan dibatalkan.');
 
   // 2) Tentukan Pesanan (Pilih dari daftar pesanan aktif atau ketik invoice)
-  const openOrders = await conversation.external(() => orderService.listOpenBills());
+  const openOrders = await conversation.external(async () => {
+    const list = await orderService.listOpenBills();
+    return (list || []).map((o) => ({
+      id: o.id,
+      invoiceNo: o.invoiceNo,
+      total: Number(o.total),
+    }));
+  });
 
   let targetOrder = null;
   if (openOrders && openOrders.length > 0) {
@@ -52,9 +59,10 @@ export async function requestApproval(conversation, ctx) {
     if (sel === 'cancel') return ctx.reply('Pengajuan dibatalkan.');
     if (sel !== 'manual') {
       const orderId = Number(sel);
-      targetOrder = await conversation.external(() =>
-        prisma.order.findUnique({ where: { id: orderId } })
-      );
+      targetOrder = await conversation.external(async () => {
+        const o = await prisma.order.findUnique({ where: { id: orderId } });
+        return o ? { id: o.id, invoiceNo: o.invoiceNo, total: Number(o.total) } : null;
+      });
     }
   }
 
@@ -64,9 +72,10 @@ export async function requestApproval(conversation, ctx) {
     });
     const invMsg = await conversation.waitFor('message:text');
     const invoiceNo = invMsg.message.text.trim();
-    targetOrder = await conversation.external(() =>
-      prisma.order.findUnique({ where: { invoiceNo } })
-    );
+    targetOrder = await conversation.external(async () => {
+      const o = await prisma.order.findUnique({ where: { invoiceNo } });
+      return o ? { id: o.id, invoiceNo: o.invoiceNo, total: Number(o.total) } : null;
+    });
 
     if (!targetOrder) {
       return ctx.reply('❌ Pesanan dengan nomor invoice tersebut tidak ditemukan.');
@@ -94,15 +103,16 @@ export async function requestApproval(conversation, ctx) {
   }
 
   try {
-    const reqRecord = await conversation.external(() =>
-      approvalService.request({
+    const reqRecord = await conversation.external(async () => {
+      const r = await approvalService.request({
         type,
         orderId: targetOrder.id,
         requesterId: user.id,
         reason,
         payload,
-      })
-    );
+      });
+      return { id: r.id };
+    });
 
     await ctx.reply(
       `✅ <b>Permintaan Persetujuan #${reqRecord.id} Terkirim!</b>\n━━━━━━━━━━━━━━━━━━\nJenis: <b>${type}</b>\nPesanan: <b>${esc(targetOrder.invoiceNo)}</b> (${rupiah(targetOrder.total)})\nAlasan: <i>${esc(reason)}</i>\n━━━━━━━━━━━━━━━━━━\n<i>Kartu persetujuan telah otomatis disiarkan ke Telegram Manager & Owner.</i>`,

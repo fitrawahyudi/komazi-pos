@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Printer, X, CheckCircle2 } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { generateQrDataUrl, generateQrSvgString, DEFAULT_STATIC_QRIS } from '../../utils/qris';
@@ -8,10 +8,12 @@ export default function TestReceiptModal({ onClose }) {
   const { paperWidth, connectedDeviceName, connectionType } = usePrinterStore();
   const { settings } = useSettingsStore();
 
-  const storeName = settings?.storeName || 'KOMAZI COFFEE';
-  const tagline = settings?.storeTagline || 'Coffee & Co-Working Space';
-  const address = settings?.address || 'Jl. Senopati No. 45, Jakarta Selatan';
-  const phone = settings?.phone || '0812-3456-7890';
+  const storeName = settings?.storeName !== undefined ? settings.storeName : 'KOMAZI COFFEE';
+  const tagline = settings?.storeTagline !== undefined ? settings.storeTagline : '';
+  const address = settings?.address !== undefined ? settings.address : '';
+  const phone = settings?.phone !== undefined ? settings.phone : '';
+  const headerText = settings?.headerText || settings?.receiptHeader || '';
+  const receiptFooter = settings?.receiptFooter || settings?.footerText || '';
 
   const currentTime = new Date();
   const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -20,6 +22,9 @@ export default function TestReceiptModal({ onClose }) {
   const [testQrUrl, setTestQrUrl] = useState('');
   const [testQrSvg, setTestQrSvg] = useState('');
   const [isQrReady, setIsQrReady] = useState(false);
+
+  const cols = paperWidth === '80mm' ? 48 : 32;
+  const dividerText = '-'.repeat(cols);
 
   const handlePrint = () => {
     window.print();
@@ -45,7 +50,6 @@ export default function TestReceiptModal({ onClose }) {
 
   useEffect(() => {
     if (!isQrReady) return;
-    // Trigger print dialog once QR is painted
     const timer = setTimeout(() => {
       window.print();
     }, 250);
@@ -79,88 +83,137 @@ export default function TestReceiptModal({ onClose }) {
           {/* THE RECEIPT PAPER */}
           <div
             id="printable-receipt"
-            style={{ width: paperWidth === '58mm' ? '300px' : '400px' }}
-            className="bg-white text-black font-mono text-[11px] p-5 shadow-2xl rounded-sm print:m-0 print:p-0 print:shadow-none print:w-full select-text leading-tight"
+            className={`bg-white text-black font-mono text-[11px] leading-[1.3] shadow-2xl rounded-sm p-4 sm:p-5 select-text print:m-0 print:p-0 print:shadow-none ${
+              paperWidth === '58mm' ? 'w-[290px] max-w-[290px] receipt-58mm' : 'w-[390px] max-w-[390px] receipt-80mm'
+            }`}
+            style={{
+              fontFamily: "'Courier New', Courier, monospace",
+              letterSpacing: '-0.02em',
+            }}
           >
             {/* Header */}
-            <div className="text-center space-y-1 mb-3">
-              <h2 className="text-base font-black tracking-wider uppercase font-sans">
-                {storeName}
-              </h2>
-              <p className="text-[10px] text-neutral-600">{tagline}</p>
-              <p className="text-[10px] text-neutral-600">{address}</p>
-              <p className="text-[10px] text-neutral-600">Telp: {phone}</p>
+            <div className="text-center space-y-0.5 mb-2">
+              <div className="text-sm font-bold tracking-wider uppercase text-neutral-950 font-mono">
+                {storeName || 'KOMAZI COFFEE'}
+              </div>
+              {tagline && tagline.trim() ? <div className="text-[10px] text-neutral-700">{tagline.trim()}</div> : null}
+              {address && address.trim() ? <div className="text-[10px] text-neutral-700">{address.trim()}</div> : null}
+              {phone && phone.trim() ? <div className="text-[10px] text-neutral-700">Telp: {phone.trim()}</div> : null}
+              {headerText && headerText.trim() ? (
+                <div className="text-[10px] font-bold text-neutral-900 mt-1">*** {headerText.trim()} ***</div>
+              ) : null}
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
+            <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+              {dividerText}
+            </div>
 
             {/* Test Banner */}
-            <div className="text-center py-1 bg-neutral-100 rounded my-2 border border-neutral-300">
-              <p className="font-bold text-[11px] text-neutral-800">*** UJI COBA PRINTER OK ***</p>
-              <p className="text-[9px] text-neutral-500 uppercase tracking-widest">
+            <div className="text-center py-1 bg-neutral-100 rounded my-1 border border-neutral-300">
+              <div className="font-bold text-[11px] text-neutral-950">*** UJI COBA PRINTER OK ***</div>
+              <div className="text-[9px] text-neutral-600 uppercase tracking-widest">
                 {connectionType === 'BLUETOOTH' ? `Bluetooth: ${connectedDeviceName || 'Thermal'}` : 'Driver POS Ready'}
-              </p>
+              </div>
             </div>
 
-            <div className="space-y-1 text-[10px]">
+            <div className="space-y-0.5 text-[10px]">
               <div className="flex justify-between">
-                <span>Tanggal:</span>
-                <span>{formattedDate}</span>
+                <span className="text-neutral-700">Tanggal:</span>
+                <span className="text-neutral-950">{formattedDate}</span>
               </div>
               <div className="flex justify-between">
-                <span>Waktu:</span>
-                <span>{formattedTime} WIB</span>
+                <span className="text-neutral-700">Waktu:</span>
+                <span className="text-neutral-950">{formattedTime} WIB</span>
               </div>
               <div className="flex justify-between">
-                <span>Lebar Kertas:</span>
-                <span className="font-bold">{paperWidth} Thermal</span>
+                <span className="text-neutral-700">Lebar Kertas:</span>
+                <span className="font-bold text-neutral-950">{paperWidth} Thermal</span>
               </div>
               <div className="flex justify-between">
-                <span>Status:</span>
+                <span className="text-neutral-700">Status:</span>
                 <span className="font-bold text-emerald-700">SIAP MENCETAK</span>
               </div>
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
+            <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+              {dividerText}
+            </div>
 
             {/* Sample items */}
-            <div className="space-y-1.5 my-2">
-              <div className="flex justify-between font-bold">
-                <span>1x Kopi Susu Aren</span>
-                <span>22.000</span>
-              </div>
-              <div className="flex justify-between text-[10px] text-neutral-500">
-                <span>Ukuran Regular • Less Sugar</span>
+            <div className="space-y-1.5 my-1.5">
+              <div className="text-[10px]">
+                <div className="flex justify-between font-bold text-neutral-950">
+                  <span>Americano Ice</span>
+                  <span>Rp 24.000</span>
+                </div>
+                <div className="text-neutral-600 pl-2">
+                  1 x Rp 24.000 • Less Sugar
+                </div>
               </div>
 
-              <div className="flex justify-between font-bold pt-1">
-                <span>1x Butter Croissant</span>
-                <span>28.000</span>
+              <div className="text-[10px]">
+                <div className="flex justify-between font-bold text-neutral-950">
+                  <span>Croissant Butter</span>
+                  <span>Rp 28.000</span>
+                </div>
+                <div className="text-neutral-600 pl-2">
+                  1 x Rp 28.000
+                </div>
               </div>
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
+            <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+              {dividerText}
+            </div>
 
-            <div className="space-y-1 text-[10px]">
-              <div className="flex justify-between">
+            <div className="space-y-0.5 text-[10px]">
+              <div className="flex justify-between text-neutral-800">
                 <span>Subtotal:</span>
-                <span>50.000</span>
+                <span>Rp 52.000</span>
               </div>
-              <div className="flex justify-between">
-                <span>Pajak Resto (10%):</span>
-                <span>5.000</span>
+              <div className="flex justify-between text-neutral-800">
+                <span>Diskon:</span>
+                <span>-Rp 5.000</span>
               </div>
-              <div className="flex justify-between font-bold text-xs pt-1 border-t border-neutral-300">
-                <span>TOTAL TEST:</span>
-                <span>Rp 55.000</span>
+              <div className="flex justify-between text-neutral-800">
+                <span>PB1 / Pajak (10%):</span>
+                <span>Rp 4.700</span>
+              </div>
+
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
+
+              <div className="flex justify-between font-bold text-xs text-neutral-950">
+                <span>TOTAL:</span>
+                <span>Rp 51.700</span>
+              </div>
+
+              <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                {dividerText}
+              </div>
+
+              <div className="flex justify-between text-neutral-800">
+                <span>Metode Pembayaran:</span>
+                <span className="font-bold text-neutral-950">CASH</span>
+              </div>
+              <div className="flex justify-between text-neutral-800">
+                <span>Bayar Tunai:</span>
+                <span>Rp 100.000</span>
+              </div>
+              <div className="flex justify-between font-bold text-neutral-950">
+                <span>Kembalian:</span>
+                <span>Rp 48.300</span>
               </div>
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
+            <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+              {dividerText}
+            </div>
 
             {/* Test QR Code visual */}
             <div className="text-center my-2 space-y-1">
-              <p className="font-bold text-[10px]">UJI CETAK QR CODE</p>
+              <div className="font-bold text-[10px] text-neutral-950">UJI CETAK QR CODE</div>
               <div className="flex justify-center my-1">
                 {testQrSvg ? (
                   <div
@@ -179,21 +232,28 @@ export default function TestReceiptModal({ onClose }) {
                   </div>
                 )}
               </div>
-              <p className="text-[8px] text-neutral-500">TEST QR SCAN OK</p>
+              <div className="text-[8px] text-neutral-500">TEST QR SCAN OK</div>
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
+            <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+              {dividerText}
+            </div>
 
             {/* Footer */}
-            <div className="text-center space-y-1 pt-1">
-              <p className="font-bold text-[10px]">Printer berhasil terhubung!</p>
-              <p className="text-[9px] text-neutral-500">
+            <div className="text-center space-y-0.5 pt-1 text-[9px] text-neutral-700">
+              <div className="font-bold text-[10px] text-neutral-950">Printer berhasil terhubung!</div>
+              <div className="text-neutral-500">
                 Sistem POS Komazi siap mencetak transaksi kasir secara otomatis.
-              </p>
-              {settings?.wifiName && (
-                <p className="text-[9px] text-neutral-600 pt-1">
+              </div>
+              {receiptFooter && receiptFooter.trim() ? (
+                <div className="text-neutral-600 pt-0.5 whitespace-pre-line">
+                  {receiptFooter.trim()}
+                </div>
+              ) : null}
+              {settings?.wifiName && settings?.receiptShowWifi !== false && (
+                <div className="text-neutral-600 pt-1">
                   WiFi: {settings.wifiName} | Pass: {settings.wifiPass || '-'}
-                </p>
+                </div>
               )}
             </div>
           </div>
@@ -204,7 +264,7 @@ export default function TestReceiptModal({ onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl bg-komazi-surface hover:bg-komazi-border text-komazi-muted text-xs font-bold transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-komazi-surface hover:bg-neutral-800 text-komazi-muted text-xs font-bold transition-colors"
           >
             Tutup
           </button>

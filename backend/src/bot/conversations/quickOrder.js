@@ -3,12 +3,27 @@ import { getBotUser } from '../context.js';
 import { menuService } from '../../services/menu.service.js';
 import { orderService } from '../../services/order.service.js';
 import { rupiah, esc } from '../utils/format.js';
+import { generateBotImage } from '../../services/botImage/index.js';
+import { replyWithPhotoFallback } from '../utils/sendVisual.js';
+import { checkStaffShiftEligibility } from '../../services/scheduleGuard.service.js';
 
 export async function quickOrder(conversation, ctx) {
   const user = await getBotUser(conversation, ctx);
   if (!user) return ctx.reply('Akun belum tertaut.');
 
-  const shift = await conversation.external(() => orderService.requireOpenShift(user.id));
+  const eligibility = await conversation.external(async () => {
+    return checkStaffShiftEligibility(user.id, user.role);
+  });
+  if (!eligibility.eligible) {
+    return ctx.reply(`⚠️ <b>Akses Ditolak</b>\n\n${eligibility.message}`, {
+      parse_mode: 'HTML',
+    });
+  }
+
+  const shift = await conversation.external(async () => {
+    const s = await orderService.requireOpenShift(user.id);
+    return s ? { id: s.id } : null;
+  });
   if (!shift) {
     return ctx.reply('⚠️ Anda harus membuka shift terlebih dahulu. Gunakan /buka_shift.');
   }
@@ -31,7 +46,7 @@ export async function quickOrder(conversation, ctx) {
 
     await ctx.reply(
       cart.length > 0
-        ? `Keranjang saat ini (${cart.length} item):\n${cart.map((c) => `• ${c.qty}x ${esc(c.name)} (${rupiah(c.price * c.qty)})`).join('\n')}\n\nPilih kategori untuk menambah menu lagi:`
+        ? `Keranjang saat ini (${cart.length} item):\n${cart.map((c) => `• ${c.qty}x ${esc(c.name)}${c.variantName ? ` <i>(${esc(c.variantName)})</i>` : ''}${c.note ? ` [${esc(c.note)}]` : ''} (${rupiah(c.price * c.qty)})`).join('\n')}\n\nPilih kategori untuk menambah menu lagi:`
         : '📋 <b>Pilih Kategori Menu:</b>',
       { parse_mode: 'HTML', reply_markup: kbCat }
     );
@@ -48,7 +63,19 @@ export async function quickOrder(conversation, ctx) {
 
     // 2) Pilih produk dalam kategori
     const catId = Number(catCtx.callbackQuery.data.split(':')[1]);
-    const products = await conversation.external(() => menuService.listAvailable(catId));
+    const products = await conversation.external(async () => {
+      const list = await menuService.listAvailable(catId);
+      return (list || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        variants: (p.variants || []).map((v) => ({
+          id: v.id,
+          name: v.name,
+          extraPrice: Number(v.extraPrice || 0),
+        })),
+      }));
+    });
 
     if (!products || products.length === 0) {
       await ctx.reply('Tidak ada menu aktif yang tersedia pada kategori ini.');
@@ -74,8 +101,38 @@ export async function quickOrder(conversation, ctx) {
     const product = products.find((p) => p.id === prdId);
     if (!product) continue;
 
-    // 3) Jumlah porsi/cup
-    await ctx.reply(`Berapa porsi/cup untuk <b>${esc(product.name)}</b>? (Kirim angka 1–50)`, {
+    // 3) Pilih Varian / Ukuran / Suhu (jika menu memiliki opsi varian)
+    let selectedVariant = null;
+    let finalUnitPrice = Number(product.price);
+
+    if (product.variants && product.variants.length > 0) {
+      const kbVar = new InlineKeyboard();
+      product.variants.forEach((v) => {
+        const extra = v.extraPrice > 0 ? ` (+${rupiah(v.extraPrice)})` : '';
+        kbVar.text(`${v.name}${extra}`, `var:${v.id}`).row();
+      });
+      kbVar.text('Standar / Normal', 'var:none');
+
+      await ctx.reply(`Pilih opsi varian / ukuran / suhu untuk <b>${esc(product.name)}</b>:`, {
+        parse_mode: 'HTML',
+        reply_markup: kbVar,
+      });
+
+      const varCtx = await conversation.waitForCallbackQuery(/^(var:\d+|var:none)$/);
+      await varCtx.answerCallbackQuery();
+      const varChoice = varCtx.callbackQuery.data.split(':')[1];
+      if (varChoice !== 'none') {
+        const found = product.variants.find((v) => v.id === Number(varChoice));
+        if (found) {
+          selectedVariant = found;
+          finalUnitPrice += Number(found.extraPrice || 0);
+        }
+      }
+    }
+
+    // 4) Jumlah porsi/cup
+    const varLabel = selectedVariant ? ` (${selectedVariant.name})` : '';
+    await ctx.reply(`Berapa porsi/cup untuk <b>${esc(product.name)}${varLabel}</b>? (Kirim angka 1–50)`, {
       parse_mode: 'HTML',
     });
 
@@ -87,25 +144,35 @@ export async function quickOrder(conversation, ctx) {
       await ctx.reply('Jumlah tidak valid. Masukkan angka antara 1 sampai 50:');
     }
 
-    // Cek apakah item sudah ada di keranjang
-    const existingIndex = cart.findIndex((i) => i.productId === product.id);
+    // 5) Catatan Pesanan
+    await ctx.reply('Catatan pesanan? (Misal: <code>Less ice, less sugar</code> atau ketik <code>-</code> jika tidak ada):', {
+      parse_mode: 'HTML',
+    });
+    const noteMsg = await conversation.waitFor('message:text');
+    const note = noteMsg.message.text.trim() === '-' ? null : noteMsg.message.text.trim();
+
+    // Simpan ke keranjang
+    const variantName = selectedVariant ? selectedVariant.name : null;
+    const existingIndex = cart.findIndex((i) => i.productId === product.id && i.variantName === variantName && i.note === note);
     if (existingIndex >= 0) {
       cart[existingIndex].qty += qty;
     } else {
       cart.push({
         productId: product.id,
         name: product.name,
-        price: Number(product.price),
+        variantName,
+        note,
+        price: finalUnitPrice,
         qty,
       });
     }
 
-    await ctx.reply(`➕ <b>${qty}× ${esc(product.name)}</b> ditambahkan ke keranjang.`, {
+    await ctx.reply(`➕ <b>${qty}× ${esc(product.name)}${variantName ? ` (${variantName})` : ''}</b> ditambahkan ke keranjang.`, {
       parse_mode: 'HTML',
     });
   }
 
-  // 4) Tipe Pesanan
+  // 6) Tipe Pesanan
   await ctx.reply('Pilih tipe pesanan:', {
     reply_markup: new InlineKeyboard()
       .text('🍽️ Dine-in (Makan di Tempat)', 'type:DINE_IN')
@@ -131,10 +198,10 @@ export async function quickOrder(conversation, ctx) {
   const nameMsg = await conversation.waitFor('message:text');
   const customerName = nameMsg.message.text.trim() === '-' ? null : nameMsg.message.text.trim();
 
-  // 5) Ringkasan & Kalkulasi
+  // 7) Ringkasan & Kalkulasi
   const preview = await conversation.external(() => orderService.preview({ items: cart, type }));
   const lines = preview.items
-    .map((i) => `• ${i.qty}× ${esc(i.name)} — ${rupiah(i.lineTotal)}`)
+    .map((i) => `• ${i.qty}× ${esc(i.name)}${i.variantName ? ` <i>(${esc(i.variantName)})</i>` : ''}${i.note ? ` [${esc(i.note)}]` : ''} — ${rupiah(i.lineTotal)}`)
     .join('\n');
 
   const summaryText = `
@@ -173,8 +240,8 @@ Pilih metode pembayaran:
   }
 
   // 6) Simpan Pesanan
-  const order = await conversation.external(() =>
-    orderService.createFromBot({
+  const order = await conversation.external(async () => {
+    const o = await orderService.createFromBot({
       cashierId: user.id,
       shiftId: shift.id,
       items: cart,
@@ -182,11 +249,26 @@ Pilih metode pembayaran:
       payment,
       tableNo,
       customerName,
-    })
-  );
+    });
+    return {
+      id: o.id,
+      invoiceNo: o.invoiceNo,
+      total: Number(o.total),
+      status: o.status,
+    };
+  });
 
-  await ctx.reply(
-    `✅ <b>Pesanan Berhasil Disimpan!</b>\nInvoice: <b>${esc(order.invoiceNo)}</b>\nTotal: <b>${rupiah(order.total)}</b>\nStatus: <b>${order.status}</b>${payment === 'OPEN' ? '\n<i>(Tagihan Open Bill tersimpan di POS)</i>' : '\n<i>(Notifikasi antrean terkirim ke Barista/Kitchen)</i>'}`,
-    { parse_mode: 'HTML' }
-  );
+  const doneCaption = `✅ <b>Pesanan Berhasil Disimpan!</b>\nInvoice: <b>${esc(order.invoiceNo)}</b>\nTotal: <b>${rupiah(order.total)}</b>\nStatus: <b>${order.status}</b>${payment === 'OPEN' ? '\n<i>(Tagihan Open Bill tersimpan di POS)</i>' : '\n<i>(Notifikasi antrean terkirim ke Barista/Kitchen)</i>'}`;
+
+  await replyWithPhotoFallback(ctx, {
+    imageBufferPromise: generateBotImage('quick_order', {
+      invoiceNo: order.invoiceNo,
+      type,
+      customerName,
+      cashierName: user.name,
+      total: order.total,
+      items: cart,
+    }),
+    captionHtml: doneCaption,
+  });
 }

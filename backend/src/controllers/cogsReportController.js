@@ -11,7 +11,9 @@ export async function getCogsReport(req, res) {
   try {
     const { startDate, endDate } = req.query;
 
-    const where = { status: 'PAID' };
+    const where = {
+      status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] },
+    };
 
     if (startDate || endDate) {
       where.createdAt = {};

@@ -2,22 +2,44 @@ import { Router } from 'express';
 import {
   login,
   register,
-  verifyUserForReset,
-  resetPassword,
+  verifyResetToken,
+  completePasswordReset,
   getProfile,
   updateProfile,
   refreshToken,
 } from '../controllers/authController.js';
 import { authenticate } from '../middlewares/auth.js';
+import { requireRole } from '../middlewares/role.js';
 import { validate } from '../middlewares/validate.js';
-import { loginSchema } from '../validators/schemas.js';
+import {
+  loginSchema,
+  completePasswordResetSchema,
+  verifyPasswordResetTokenSchema,
+} from '../validators/schemas.js';
+import rateLimit from 'express-rate-limit';
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 10, // Maksimal 10 percobaan per 15 menit
+  skip: () => process.env.NODE_ENV === 'test',
+  message: {
+    success: false,
+    message: 'Terlalu banyak percobaan reset password. Silakan coba lagi 15 menit kemudian.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
 router.post('/login', validate(loginSchema), login);
-router.post('/register', register);
-router.post('/forgot-password/verify', verifyUserForReset);
-router.post('/forgot-password/reset', resetPassword);
+// Registrasi staf dapat dipanggil oleh OWNER atau MANAGER yang terautentikasi
+router.post('/register', authenticate, requireRole(['OWNER', 'MANAGER']), register);
+
+// Endpoint Lupa Password Aman Berbasis Token Sekali Pakai & Verifikasi Manual Owner
+router.post('/password-reset/verify-token', passwordResetLimiter, validate(verifyPasswordResetTokenSchema), verifyResetToken);
+router.post('/password-reset/complete', passwordResetLimiter, validate(completePasswordResetSchema), completePasswordReset);
+
 router.post('/refresh', refreshToken);
 router.get('/me', authenticate, getProfile);
 router.patch('/profile', authenticate, updateProfile);

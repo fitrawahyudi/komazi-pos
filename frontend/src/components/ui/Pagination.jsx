@@ -55,7 +55,7 @@ export default function Pagination({
               <strong className="text-komazi-text font-mono font-bold">
                 {startIndex + 1}–{endIndex}
               </strong>
-              {' dari '}
+              {' - '}
               <strong className="text-komazi-text font-mono font-bold">
                 {totalItems}
               </strong>

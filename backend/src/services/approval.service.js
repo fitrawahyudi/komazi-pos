@@ -1,5 +1,7 @@
 import prisma from '../config/db.js';
 import { events } from '../bot/events.js';
+import { deltaInventoryService } from './deltaInventoryService.js';
+import { emitOrderEvent, emitToStation } from '../config/socket.js';
 
 export const approvalService = {
   async request({ type, orderId, requesterId, reason, payload = null }) {
@@ -63,6 +65,16 @@ export const approvalService = {
       // Efek samping persetujuan pada Order
       if (approve) {
         if (existing.type === 'VOID_ORDER') {
+          // 1. Kembalikan stok bahan baku
+          await deltaInventoryService.restoreOrderStock(tx, existing.orderId, `Approval Void: ${existing.reason}`);
+
+          // 2. Tandai item order sebagai CANCELLED
+          await tx.orderItem.updateMany({
+            where: { orderId: existing.orderId },
+            data: { status: 'CANCELLED' },
+          });
+
+          // 3. Update order status VOIDED
           const voidedOrder = await tx.order.update({
             where: { id: existing.orderId },
             data: {
@@ -70,6 +82,16 @@ export const approvalService = {
               voidReason: existing.reason,
             },
           });
+
+          try {
+            emitToStation('KITCHEN_MAIN', 'order:updated', voidedOrder);
+            emitToStation('BAR_MAIN', 'order:updated', voidedOrder);
+            emitOrderEvent('order:updated', voidedOrder);
+            emitOrderEvent('order:voided', { orderId: voidedOrder.id, invoiceNo: voidedOrder.invoiceNo, reason: existing.reason });
+          } catch (e) {
+            console.warn('[approval.service] Socket emit error:', e);
+          }
+
           events.emit('order.voided', { order: voidedOrder, reason: existing.reason });
         } else if (existing.type === 'DISCOUNT' && existing.payload?.discount) {
           const disc = parseFloat(existing.payload.discount);
@@ -79,6 +101,56 @@ export const approvalService = {
               discount: disc,
             },
           });
+        } else if (existing.type === 'REFUND') {
+          const amount = existing.payload?.refundAmount ? Number(existing.payload.refundAmount) : undefined;
+          const order = await tx.order.findUnique({ where: { id: existing.orderId } });
+          const finalAmount = amount || (order ? Number(order.total) : 0);
+
+          // 1. Kembalikan stok bahan baku jika pesanan di-REFUND
+          await deltaInventoryService.restoreOrderStock(tx, existing.orderId, `Approval Refund: ${existing.reason}`);
+
+          // 2. Tandai item order sebagai CANCELLED
+          await tx.orderItem.updateMany({
+            where: { orderId: existing.orderId },
+            data: { status: 'CANCELLED' },
+          });
+
+          const refundedOrder = await tx.order.update({
+            where: { id: existing.orderId },
+            data: {
+              status: 'REFUNDED',
+              voidReason: `REFUND: ${existing.reason} (Jumlah: ${finalAmount})`,
+            },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              userId: Number(deciderId),
+              action: 'REFUND_ORDER',
+              detail: {
+                invoiceNo: order?.invoiceNo,
+                reason: existing.reason,
+                refundAmount: finalAmount,
+                decidedBy: Number(deciderId),
+              },
+            },
+          });
+
+          try {
+            emitToStation('KITCHEN_MAIN', 'order:updated', refundedOrder);
+            emitToStation('BAR_MAIN', 'order:updated', refundedOrder);
+            emitOrderEvent('order:updated', refundedOrder);
+            emitOrderEvent('order:refunded', {
+              orderId: refundedOrder.id,
+              invoiceNo: refundedOrder.invoiceNo,
+              reason: existing.reason,
+              amount: finalAmount,
+            });
+          } catch (e) {
+            console.warn('[approval.service] Socket emit error:', e);
+          }
+
+          events.emit('order.refunded', { order: refundedOrder, reason: existing.reason, amount: finalAmount });
         }
       }
 
@@ -87,14 +159,26 @@ export const approvalService = {
   },
 
   async listPending() {
-    return prisma.approvalRequest.findMany({
+    const list = await prisma.approvalRequest.findMany({
       where: { status: 'PENDING' },
       include: {
         requester: { select: { id: true, name: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 10,
+      take: 20,
     });
+
+    const orderIds = list.map((item) => item.orderId);
+    const orders = await prisma.order.findMany({
+      where: { id: { in: orderIds } },
+      select: { id: true, invoiceNo: true, customerName: true, total: true, status: true, paymentMethod: true },
+    });
+    const orderMap = new Map(orders.map((o) => [o.id, o]));
+
+    return list.map((item) => ({
+      ...item,
+      order: orderMap.get(item.orderId) || null,
+    }));
   },
 
   async expireOldApprovals(minutes = 30) {
@@ -112,3 +196,5 @@ export const approvalService = {
     return result.count;
   },
 };
+
+

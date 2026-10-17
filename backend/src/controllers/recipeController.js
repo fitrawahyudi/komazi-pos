@@ -165,8 +165,11 @@ export async function saveProductRecipe(req, res) {
  */
 export async function getCogsOverview(req, res) {
   try {
+    const { activeOnly } = req.query || {};
+    const where = activeOnly === 'true' ? { isActive: true } : {};
+
     const products = await prisma.product.findMany({
-      where: { isActive: true },
+      where,
       include: {
         category: { select: { name: true } },
         variants: true,
@@ -201,6 +204,17 @@ export async function getCogsOverview(req, res) {
         margin,
         hasRecipe: product.recipeItems.length > 0,
         ingredientCount: baseItems.length,
+        recipeItems: product.recipeItems.map((ri) => ({
+          id: ri.id,
+          ingredientId: ri.ingredientId,
+          ingredientName: ri.ingredient.name,
+          ingredientUnit: ri.ingredient.unit,
+          costPerUnit: parseFloat(ri.ingredient.costPerUnit),
+          quantity: parseFloat(ri.quantity),
+          lineCost: Math.round(parseFloat(ri.quantity) * parseFloat(ri.ingredient.costPerUnit) * 100) / 100,
+          variantId: ri.variantId,
+          variantName: ri.variant?.name || null,
+        })),
       };
     });
 

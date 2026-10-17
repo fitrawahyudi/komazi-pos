@@ -35,29 +35,42 @@ export const workspaceService = {
   },
 
   async checkIn({ areaId, packageId, customerName, phone = null }) {
-    const active = await prisma.workspaceSession.findFirst({
-      where: {
-        areaId: Number(areaId),
-        status: 'ACTIVE',
-      },
-    });
+    const session = await prisma.$transaction(async (tx) => {
+      const area = await tx.workspaceArea.findUnique({
+        where: { id: Number(areaId) },
+        include: {
+          sessions: {
+            where: { status: 'ACTIVE' },
+          },
+        },
+      });
 
-    if (active) {
-      throw new Error('Area ini sedang terisi sesi aktif lain');
-    }
+      if (!area) {
+        throw new Error('Area workspace tidak ditemukan');
+      }
 
-    const session = await prisma.workspaceSession.create({
-      data: {
-        areaId: Number(areaId),
-        packageId: Number(packageId),
-        customerName: customerName.trim(),
-        phone: phone || null,
-        status: 'ACTIVE',
-      },
-      include: {
-        area: true,
-        package: true,
-      },
+      if (!area.isActive) {
+        throw new Error('Area workspace sedang nonaktif');
+      }
+
+      const maxCapacity = area.capacity || 1;
+      if (area.sessions.length >= maxCapacity) {
+        throw new Error('Area ini sedang terisi sesi aktif lain');
+      }
+
+      return tx.workspaceSession.create({
+        data: {
+          areaId: Number(areaId),
+          packageId: Number(packageId),
+          customerName: customerName.trim(),
+          phone: phone || null,
+          status: 'ACTIVE',
+        },
+        include: {
+          area: true,
+          package: true,
+        },
+      });
     });
 
     const endsAt = new Date(new Date(session.checkInAt).getTime() + session.package.durationMin * 60000);

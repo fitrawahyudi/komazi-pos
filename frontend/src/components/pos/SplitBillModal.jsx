@@ -112,25 +112,30 @@ export default function SplitBillModal({ onClose, onProceedPayment }) {
   const equalAmount = Math.ceil(summary.grandTotal / count);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-komazi-border">
-          <div className="flex items-center gap-2">
-            <Split className="w-5 h-5 text-komazi-coral" />
-            <h3 className="font-bold text-base text-komazi-text">Pisah Tagihan (Split Bill)</h3>
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150"
+    >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
+            <div className="flex items-center gap-2">
+              <Split className="w-5 h-5 text-komazi-coral" />
+              <h3 className="font-bold text-base text-komazi-text">Pisah Tagihan (Split Bill)</h3>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Mode Selector */}
-        <div className="flex border-b border-komazi-border bg-komazi-surface-2/50 p-2 gap-2">
+          {/* Mode Selector */}
+          <div className="flex border-b border-komazi-border bg-komazi-surface-2/50 p-2 gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setMode('items')}
@@ -303,5 +308,6 @@ export default function SplitBillModal({ onClose, onProceedPayment }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }

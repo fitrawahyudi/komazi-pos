@@ -48,17 +48,27 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
     setLoading(true);
 
     const now = new Date();
-    let startDate = '';
-    let endDate = now.toISOString().slice(0, 10);
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    let startDate = todayStr;
+    let endDate = todayStr;
 
     if (dateRange === 'TODAY') {
-      startDate = now.toISOString().slice(0, 10);
+      startDate = todayStr;
+      endDate = todayStr;
     } else if (dateRange === 'WEEK') {
-      const past = new Date(now.getTime() - 7 * 86400000);
-      startDate = past.toISOString().slice(0, 10);
+      const past = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+      const py = past.getFullYear();
+      const pm = String(past.getMonth() + 1).padStart(2, '0');
+      const pd = String(past.getDate()).padStart(2, '0');
+      startDate = `${py}-${pm}-${pd}`;
+      endDate = todayStr;
     } else if (dateRange === 'MONTH') {
-      const past = new Date(now.getTime() - 30 * 86400000);
-      startDate = past.toISOString().slice(0, 10);
+      startDate = `${y}-${m}-01`;
+      endDate = todayStr;
     }
 
     api.reports.getCogs({ startDate, endDate })
@@ -80,9 +90,29 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
     };
   }, [dateRange]);
 
-  // Client-side fallback calculation based on valid orders
+  // Client-side fallback calculation based on valid orders filtered by dateRange
   const clientCalculated = useMemo(() => {
-    const validOrders = orders.filter((o) => o.status === 'PAID');
+    const now = new Date();
+    const validOrders = (orders || []).filter((o) => {
+      if (o.status !== 'PAID') return false;
+      const orderDate = new Date(o.createdAt);
+      if (dateRange === 'TODAY') {
+        return (
+          orderDate.getFullYear() === now.getFullYear() &&
+          orderDate.getMonth() === now.getMonth() &&
+          orderDate.getDate() === now.getDate()
+        );
+      }
+      if (dateRange === 'WEEK') {
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        return orderDate.getTime() >= startOfWeek.getTime();
+      }
+      if (dateRange === 'MONTH') {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        return orderDate.getTime() >= startOfMonth.getTime();
+      }
+      return true;
+    });
 
     let totalRevenue = 0;
     let totalCogs = 0;
@@ -232,39 +262,11 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
           <div>
             <h3 className="text-sm font-bold text-komazi-text flex items-center gap-2">
               <span>Laporan Laba Kotor & Analisis Margin HPP (COGS)</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                Akses Khusus Owner
-              </span>
             </h3>
             <p className="text-xs text-komazi-muted mt-0.5">
               Perhitungan laba bersih kotor otomatis berdasarkan takaran resep (BOM) dan snapshot modal setiap transaksi.
             </p>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {onExportExcel && (
-            <button
-              type="button"
-              onClick={onExportExcel}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 shrink-0"
-              title="Unduh Spreadsheet Excel (.xlsx) Resmi & Rapi"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Export Excel</span>
-            </button>
-          )}
-          {onExportCSV && (
-            <button
-              type="button"
-              onClick={onExportCSV}
-              className="px-3.5 py-2 rounded-xl bg-komazi-teal hover:bg-komazi-teal-light text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 shrink-0"
-              title="Unduh File CSV Kompatibel Excel Indonesia"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export CSV</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -279,10 +281,10 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-text tabular-nums font-mono">
-            {formatRupiah(totalRevenue || 1392400)}
+            {formatRupiah(totalRevenue)}
           </p>
           <span className="text-[10px] text-komazi-muted font-medium mt-1 inline-block">
-            Gross Revenue periode terpilih
+            {totalRevenue === 0 ? 'Belum ada omzet pada periode ini' : 'Gross Revenue periode terpilih'}
           </span>
         </div>
 
@@ -295,10 +297,10 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-coral tabular-nums font-mono">
-            {formatRupiah(totalCogs || 485000)}
+            {formatRupiah(totalCogs)}
           </p>
           <span className="text-[10px] text-komazi-coral/80 font-medium mt-1 inline-block">
-            Biaya bahan baku terpakai (COGS)
+            {totalCogs === 0 ? '0 beban HPP terpakai' : 'Biaya bahan baku terpakai (COGS)'}
           </span>
         </div>
 
@@ -311,10 +313,10 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
             </div>
           </div>
           <p className="font-display font-black text-2xl text-emerald-400 tabular-nums font-mono">
-            {formatRupiah(grossProfit || 907400)}
+            {formatRupiah(grossProfit)}
           </p>
           <span className="text-[10px] text-emerald-400/80 font-medium mt-1 inline-block">
-            Omzet dikurangi HPP bahan
+            {grossProfit === 0 ? '0 laba kotor' : 'Omzet dikurangi HPP bahan'}
           </span>
         </div>
 
@@ -327,10 +329,12 @@ export default function CogsReportView({ dateRange = 'TODAY', onExportCSV, onExp
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-text tabular-nums font-mono">
-            {grossMargin || 65.2}%
+            {totalRevenue > 0 ? `${grossMargin}%` : '0%'}
           </p>
-          <span className="text-[10px] text-emerald-400 font-semibold mt-1 inline-block">
-            Kategori Sehat (&gt; 60% Standar Cafe)
+          <span className="text-[10px] text-komazi-muted font-semibold mt-1 inline-block">
+            {totalRevenue > 0
+              ? (grossMargin >= 60 ? 'Kategori Sehat (> 60% Standar Cafe)' : 'Margin Terbatas')
+              : 'Belum ada data penjualan'}
           </span>
         </div>
       </div>

@@ -1,6 +1,22 @@
 import { successResponse, errorResponse } from '../utils/response.js';
 import { getTodayTopSellingData, getRoleScopedBusinessContext } from '../services/salesAnalyticsEngine.js';
 import { generateSalesAnalyticsNarrative, getAiSettings } from '../services/aiService.js';
+import {
+  calculateStockRunoutForecast,
+  calculatePeakHourAndRevenueForecast,
+  generateClosingComparison,
+} from '../services/aiPredictiveEngine.js';
+import {
+  dispatchMorningBriefing,
+  dispatchEveningWrapup,
+  dispatchStockoutAlert,
+} from '../services/aiProactiveScheduler.js';
+import {
+  classifyIntent,
+  resolveActionHint,
+  composeUnifiedSystemPrompt,
+} from '../services/ai/aiPromptComposer.js';
+import { getUnifiedAiContext } from '../services/ai/komaziAiContextAggregator.js';
 
 // In-memory cache: queryKey -> { data, timestamp }
 const analyticsCache = new Map();
@@ -18,9 +34,10 @@ function getCacheKey(query, role, userId) {
  */
 export async function askAi(req, res) {
   try {
-    const { query = 'Menu apa yang paling laku hari ini?', history = [] } = req.body || {};
+    const { query = 'Menu apa yang paling laku hari ini?', history = [], userName: bodyUserName } = req.body || {};
     const userRole = (req.user?.role || 'CASHIER').toUpperCase();
     const userId = req.user?.id || null;
+    const userName = req.user?.name || req.user?.username || bodyUserName || '';
 
     const isMultiTurn = Array.isArray(history) && history.length > 0;
     const cacheKey = isMultiTurn
@@ -39,11 +56,39 @@ export async function askAi(req, res) {
       }
     }
 
-    // 2. Ambil data konteks bisnis yang telah difilter ketat per role (Zero Data Leakage)
-    const businessContext = await getRoleScopedBusinessContext({ role: userRole, userId });
+    // 2. Klasifikasi intent pertanyaan dan pemetaan Action Hint
+    const classification = classifyIntent(query);
+    const actionHint = resolveActionHint({
+      intent: classification.intent,
+      matchedSop: classification.matchedSop,
+      query,
+    });
 
-    // 3. Panggil AI Service dengan system prompt dinamis per role
-    const aiResult = await generateSalesAnalyticsNarrative(query, businessContext, history, userRole);
+    // 3. Ambil data konteks operasional terpadu (Role-Scoped Zero Data Leakage)
+    const unifiedContext = await getUnifiedAiContext({
+      user: { id: userId, role: userRole, name: userName },
+      userQuery: query,
+    });
+    const businessContext = unifiedContext.businessContext;
+
+    // 4. Susun system prompt terpadu (Unified System Prompt)
+    const systemPrompt = composeUnifiedSystemPrompt({
+      user: { id: userId, role: userRole, name: userName },
+      userQuery: query,
+      unifiedContext,
+      intent: classification.intent,
+      matchedSop: classification.matchedSop,
+    });
+
+    // 5. Panggil AI Service dengan multi-tier fallback
+    const aiResult = await generateSalesAnalyticsNarrative(
+      query,
+      businessContext,
+      history,
+      userRole,
+      userName,
+      { systemPrompt, matchedSop: classification.matchedSop }
+    );
 
     const todaySales = businessContext.salesSummary?.today || {};
     const yesterdaySales = businessContext.salesSummary?.yesterday || {};
@@ -57,6 +102,12 @@ export async function askAi(req, res) {
       provider: aiResult.provider,
       model: aiResult.model || 'Komazi AI',
       latencyTier: aiResult.latencyTier || 'Komazi AI',
+      intent: classification.intent,
+      intentMeta: classification.meta,
+      actionHint: actionHint || null,
+      matchedSop: classification.matchedSop
+        ? { id: classification.matchedSop.id, title: classification.matchedSop.title }
+        : null,
       metrics: {
         todayTotalOrders: todaySales.totalOrders || 0,
         todayTotalRevenue: todaySales.totalRevenue || 0,
@@ -101,13 +152,14 @@ export async function askAi(req, res) {
 export async function getQuickSalesInsight(req, res) {
   try {
     const metricsData = await getTodayTopSellingData(3);
-    const top1 = metricsData.topProducts?.[0] || null;
+    const isFallback = Boolean(metricsData.isFallbackToRecent);
+    const top1 = (!isFallback && metricsData.topProducts?.[0]) ? metricsData.topProducts[0] : null;
 
     const summary = {
-      hasSales: metricsData.todayTotalOrders > 0,
-      isFallbackToRecent: metricsData.isFallbackToRecent,
-      todayRevenue: metricsData.todayTotalRevenueFormatted,
-      todayOrders: metricsData.todayTotalOrders,
+      hasSales: !isFallback && metricsData.todayTotalOrders > 0,
+      isFallbackToRecent: isFallback,
+      todayRevenue: isFallback ? 'Rp 0' : metricsData.todayTotalRevenueFormatted,
+      todayOrders: isFallback ? 0 : metricsData.todayTotalOrders,
       topProduct: top1 ? {
         id: top1.productId,
         name: top1.productName,
@@ -148,6 +200,57 @@ export async function testAiConnection(req, res) {
     };
 
     return successResponse(res, result, 'Status konfigurasi AI provider via .env');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+/**
+ * Mendapatkan data kalkulasi analitik prediktif & stok runout secara lengkap
+ */
+export async function getAiForecast(req, res) {
+  try {
+    const [stockRunout, peakForecast, closingWrapup] = await Promise.all([
+      calculateStockRunoutForecast(),
+      calculatePeakHourAndRevenueForecast(),
+      generateClosingComparison(),
+    ]);
+
+    const result = {
+      stockRunout,
+      peakForecast,
+      closingWrapup,
+    };
+
+    return successResponse(res, result, 'Data analitik prediktif dan estimasi stok berhasil diambil');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+/**
+ * Memicu pengiriman kartu visual notifikasi proaktif Telegram secara instan (Testing / Manual Action)
+ */
+export async function triggerProactiveTelegram(req, res) {
+  try {
+    const { type = 'morning', targetChatId = null, force = true } = req.body || {};
+
+    let result = null;
+    if (type === 'morning') {
+      result = await dispatchMorningBriefing(targetChatId);
+    } else if (type === 'evening') {
+      result = await dispatchEveningWrapup(targetChatId);
+    } else if (type === 'stockout') {
+      result = await dispatchStockoutAlert(force, targetChatId);
+    } else {
+      return errorResponse(res, `Tipe trigger '${type}' tidak valid. Gunakan 'morning', 'evening', atau 'stockout'.`, 400);
+    }
+
+    if (!result.success) {
+      return errorResponse(res, result.error || 'Gagal mengirim notifikasi proaktif', 500);
+    }
+
+    return successResponse(res, result, `Pemicu notifikasi proaktif (${type}) berhasil dikirim ke Telegram`);
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }

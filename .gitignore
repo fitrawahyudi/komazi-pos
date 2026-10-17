@@ -65,3 +65,29 @@ scratch/
 .tempmediaStorage/
 *.tmp
 *.bak
+backend/storage/ai_memories/*.md
+!backend/storage/ai_memories/.gitkeep
+
+# 8. Dynamic User Uploads & Media
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep
+backend/public/uploads/attendance/*
+!backend/public/uploads/attendance/.gitkeep
+
+# 9. Archives, Zips & Temporary Exports
+*.zip
+*.tar.gz
+*.rar
+*.7z
+*.xlsx
+*.xls
+*.csv
+!templates/*.xlsx
+!frontend/public/templates/*.xlsx
+
+# 10. Local AI Assistant Tooling & Customizations
+.agents/
+skills-lock.json
+
+
+

@@ -111,35 +111,53 @@ export async function checkIn(req, res) {
   try {
     const { areaId, packageId, customerName, phone } = req.body;
 
-    // Check if area is already occupied
-    const active = await prisma.workspaceSession.findFirst({
-      where: {
-        areaId: parseInt(areaId),
-        status: 'ACTIVE',
-      },
-    });
+    const session = await prisma.$transaction(async (tx) => {
+      const area = await tx.workspaceArea.findUnique({
+        where: { id: parseInt(areaId) },
+        include: {
+          sessions: {
+            where: { status: 'ACTIVE' },
+          },
+        },
+      });
 
-    if (active) {
-      return errorResponse(res, 'Area ini sedang terisi oleh sesi aktif lain', 400);
-    }
+      if (!area) {
+        const notFoundErr = new Error('Area workspace tidak ditemukan');
+        notFoundErr.statusCode = 404;
+        throw notFoundErr;
+      }
 
-    const session = await prisma.workspaceSession.create({
-      data: {
-        areaId: parseInt(areaId),
-        packageId: parseInt(packageId),
-        customerName,
-        phone: phone || null,
-        status: 'ACTIVE',
-      },
-      include: {
-        area: true,
-        package: true,
-      },
+      if (!area.isActive) {
+        const inactiveErr = new Error('Area workspace sedang nonaktif');
+        inactiveErr.statusCode = 400;
+        throw inactiveErr;
+      }
+
+      const maxCapacity = area.capacity || 1;
+      if (area.sessions.length >= maxCapacity) {
+        const conflictErr = new Error('Area ini sedang terisi oleh sesi aktif lain');
+        conflictErr.statusCode = 400;
+        throw conflictErr;
+      }
+
+      return tx.workspaceSession.create({
+        data: {
+          areaId: parseInt(areaId),
+          packageId: parseInt(packageId),
+          customerName: customerName ? String(customerName).trim() : 'Guest',
+          phone: phone || null,
+          status: 'ACTIVE',
+        },
+        include: {
+          area: true,
+          package: true,
+        },
+      });
     });
 
     return successResponse(res, session, 'Check-in berhasil, timer berjalan', 201);
   } catch (err) {
-    return errorResponse(res, err.message, 500);
+    return errorResponse(res, err.message, err.statusCode || 500);
   }
 }
 

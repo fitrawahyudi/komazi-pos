@@ -1,5 +1,11 @@
 import prisma from '../config/db.js';
 import { successResponse, errorResponse } from '../utils/response.js';
+import { deltaInventoryService } from '../services/deltaInventoryService.js';
+import { emitOrderEvent, emitToStation } from '../config/socket.js';
+import { notifyPaidTransaction } from '../services/telegramService.js';
+import { dispatchNotification } from '../services/notification.service.js';
+import { isDrinkItemHelper } from '../services/kdsService.js';
+import logger from '../utils/logger.js';
 
 /**
  * Handle incoming Payment Webhooks from:
@@ -44,7 +50,6 @@ export async function handlePaymentWebhook(req, res) {
     }
     // 3. DANA / Android Notification Forwarder
     else if (payload.source === 'DANA' || payload.rawText) {
-      isSuccess = true;
       if (!amount && payload.rawText) {
         // Extract "Rp 45.000" or similar from notification text
         const match = payload.rawText.match(/Rp\s*([\d\.,]+)/i);
@@ -52,10 +57,17 @@ export async function handlePaymentWebhook(req, res) {
           amount = parseFloat(match[1].replace(/\./g, '').replace(/,/g, '.'));
         }
       }
+      if (amount > 0) {
+        isSuccess = true;
+      }
     }
-    // 4. Generic fallback: if amount > 0, assume incoming payment notification
-    else if (amount > 0) {
-      isSuccess = true;
+
+    // Verifikasi webhook auth token jika PAYMENT_WEBHOOK_SECRET dikonfigurasi
+    const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+    const incomingToken = req.headers['x-callback-token'] || req.headers['x-webhook-secret'] || req.query.secret;
+    if (webhookSecret && incomingToken !== webhookSecret) {
+      console.warn('[Payment Webhook] Unauthorized webhook callback: secret mismatch');
+      return errorResponse(res, 'Unauthorized webhook callback', 401);
     }
 
     if (!isSuccess) {
@@ -73,19 +85,31 @@ export async function handlePaymentWebhook(req, res) {
     }
 
     // Fallback: If not found by invoiceNo (e.g. DANA app notification only carries amount):
-    // Match the most recent OPEN order within last 30 minutes matching the amount
+    // Match only if there is EXACTLY ONE unambiguous open order matching this exact amount in the last 15 minutes.
+    // If there are multiple candidates with the identical amount, reject to avoid crediting the wrong customer!
     if (!order && amount > 0) {
-      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
       const candidates = await prisma.order.findMany({
         where: {
           status: 'OPEN',
-          createdAt: { gte: thirtyMinutesAgo },
+          createdAt: { gte: fifteenMinutesAgo },
         },
         include: { items: true, payments: true },
         orderBy: { createdAt: 'desc' },
       });
 
-      order = candidates.find((c) => Math.round(parseFloat(c.total)) === Math.round(amount));
+      const matchedCandidates = candidates.filter((c) => Math.round(parseFloat(c.total)) === Math.round(amount));
+      if (matchedCandidates.length === 1) {
+        order = matchedCandidates[0];
+      } else if (matchedCandidates.length > 1) {
+        logger.payment.warn(`[Payment Webhook] Ambiguous payment: multiple OPEN orders (${matchedCandidates.length}) match amount Rp ${amount}. Rejecting auto-match to avoid wrong customer crediting.`);
+        return successResponse(
+          res,
+          { matched: false, reason: 'Ambiguous candidates' },
+          'Terdapat lebih dari satu pesanan aktif dengan nominal yang sama. Mohon konfirmasi manual dari kasir.',
+          200
+        );
+      }
     }
 
     if (!order) {
@@ -107,7 +131,7 @@ export async function handlePaymentWebhook(req, res) {
       );
     }
 
-    // 3. Update Order to PAID
+    // 3. Update Order to PAID with inventory deduction in transaction
     const updatedOrder = await prisma.$transaction(async (tx) => {
       await tx.payment.create({
         data: {
@@ -118,17 +142,84 @@ export async function handlePaymentWebhook(req, res) {
         },
       });
 
-      return await tx.order.update({
+      const updated = await tx.order.update({
         where: { id: order.id },
         data: {
           status: 'PAID',
           paidAt: new Date(),
         },
-        include: { items: true, payments: true },
+        include: {
+          items: {
+            include: {
+              station: true,
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  categoryId: true,
+                  stationId: true,
+                  category: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+          payments: true,
+          cashier: { select: { id: true, name: true, username: true } },
+          customer: { select: { id: true, name: true, phone: true, tier: true, points: true } },
+        },
       });
+
+      // Cek apakah stok sudah pernah dipotong (BOM deduction)
+      const existingSaleMovement = await tx.stockMovement.findFirst({
+        where: {
+          note: { contains: `Order #${order.id}` },
+          type: 'SALE',
+        },
+      });
+
+      if (!existingSaleMovement) {
+        const activeItems = (order.items || []).filter((i) => i.status !== 'CANCELLED');
+        await deltaInventoryService.deductNewOrderStock(
+          tx,
+          order.id,
+          order.invoiceNo,
+          activeItems
+        );
+      }
+
+      return updated;
     });
 
-    console.log(`[Payment Webhook] ✓ Order ${updatedOrder.invoiceNo} successfully updated to PAID!`);
+    logger.payment.success(`[Payment Webhook] Order #${updatedOrder.invoiceNo} marked PAID via Webhook!`);
+
+    // Broadcast realtime event ke POS dan KDS stasiun dapur/bar
+    try {
+      const hasKitchen = (updatedOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
+      const hasBar = (updatedOrder.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
+      if (hasKitchen) emitToStation('KITCHEN_MAIN', 'order:updated', updatedOrder);
+      if (hasBar) emitToStation('BAR_MAIN', 'order:updated', updatedOrder);
+      emitOrderEvent('order:updated', updatedOrder);
+      emitOrderEvent('order:paid', updatedOrder);
+    } catch (e) {
+      console.warn('[Payment Webhook] Socket emit error:', e);
+    }
+
+    // Telegram Bot notification
+    notifyPaidTransaction(updatedOrder).catch(() => {});
+
+    // Android push notification
+    dispatchNotification({
+      event: 'ORDER_PAID',
+      category: 'ORDERS',
+      title: `💰 Pembayaran QRIS Lunas: #${updatedOrder.invoiceNo}`,
+      body: `Total Rp${Number(updatedOrder.total).toLocaleString('id-ID')} via QRIS Webhook`,
+      data: {
+        orderId: updatedOrder.id,
+        invoiceNo: updatedOrder.invoiceNo,
+        total: String(updatedOrder.total),
+        url: '/orders',
+      },
+    }).catch(() => {});
 
     return successResponse(
       res,
@@ -153,30 +244,21 @@ export async function handlePaymentWebhook(req, res) {
 export async function checkPaymentStatus(req, res) {
   try {
     const { invoiceNo } = req.params;
-    const amount = req.query.amount ? parseFloat(req.query.amount) : null;
 
-    let order = null;
-
-    if (invoiceNo && invoiceNo !== 'undefined' && invoiceNo !== 'null') {
-      order = await prisma.order.findUnique({
-        where: { invoiceNo },
-        include: { items: true, payments: true },
-      });
+    if (!invoiceNo || invoiceNo === 'undefined' || invoiceNo === 'null') {
+      return successResponse(res, { isPaid: false, status: 'OPEN' }, 'Menunggu nomor faktur');
     }
 
-    // Fallback search by recent order with same amount
-    if (!order && amount) {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-      const recent = await prisma.order.findMany({
-        where: {
-          createdAt: { gte: tenMinutesAgo },
-        },
-        include: { items: true, payments: true },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      order = recent.find((r) => Math.round(parseFloat(r.total)) === Math.round(amount));
-    }
+    const order = await prisma.order.findUnique({
+      where: { invoiceNo },
+      select: {
+        id: true,
+        invoiceNo: true,
+        status: true,
+        total: true,
+        paidAt: true,
+      },
+    });
 
     if (!order) {
       return successResponse(res, { isPaid: false, status: 'OPEN' }, 'Pesanan sedang berlangsung');
@@ -185,7 +267,9 @@ export async function checkPaymentStatus(req, res) {
     return successResponse(res, {
       isPaid: order.status === 'PAID',
       status: order.status,
-      order,
+      invoiceNo: order.invoiceNo,
+      total: order.total,
+      paidAt: order.paidAt,
     });
   } catch (err) {
     return errorResponse(res, err.message, 500);

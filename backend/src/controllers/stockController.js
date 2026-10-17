@@ -1,4 +1,5 @@
 import prisma from '../config/db.js';
+import { stockService } from '../services/stock.service.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 
 function canViewCost(role) {
@@ -94,7 +95,7 @@ export async function getIngredients(req, res) {
 
 export async function createIngredient(req, res) {
   try {
-    const { name, unit, stock = 0, minStock = 0, costPerUnit = 0 } = req.body;
+    const { name, unit, stock = 0, minStock = 0, costPerUnit = 0, supplierName = null, supplierPhone = null } = req.body;
     const canCost = canViewCost(req.user?.role);
 
     const ingredient = await prisma.ingredient.create({
@@ -104,6 +105,8 @@ export async function createIngredient(req, res) {
         stock,
         minStock,
         costPerUnit: canCost ? (parseFloat(costPerUnit) || 0) : 0,
+        supplierName: supplierName ? supplierName.trim() : null,
+        supplierPhone: supplierPhone ? supplierPhone.trim() : null,
       },
     });
 
@@ -121,7 +124,7 @@ export async function createIngredient(req, res) {
 export async function updateIngredient(req, res) {
   try {
     const id = parseInt(req.params.id);
-    const { name, unit, minStock, costPerUnit } = req.body;
+    const { name, unit, minStock, costPerUnit, supplierName, supplierPhone } = req.body;
     const canCost = canViewCost(req.user?.role);
 
     const existing = await prisma.ingredient.findUnique({ where: { id } });
@@ -135,6 +138,12 @@ export async function updateIngredient(req, res) {
     if (minStock !== undefined) data.minStock = parseFloat(minStock);
     if (costPerUnit !== undefined && canCost) {
       data.costPerUnit = parseFloat(costPerUnit);
+    }
+    if (supplierName !== undefined) {
+      data.supplierName = supplierName ? supplierName.trim() : null;
+    }
+    if (supplierPhone !== undefined) {
+      data.supplierPhone = supplierPhone ? supplierPhone.trim() : null;
     }
 
     const updated = await prisma.ingredient.update({
@@ -155,7 +164,7 @@ export async function updateIngredient(req, res) {
 export async function recordMovement(req, res) {
   try {
     const ingredientId = parseInt(req.params.id);
-    const { type, qty, note, unitCost } = req.body;
+    const { type, qty, note, unitCost, recordedBy } = req.body;
     const canCost = canViewCost(req.user?.role);
 
     const ingredient = await prisma.ingredient.findUnique({
@@ -183,12 +192,16 @@ export async function recordMovement(req, res) {
       newStock = Math.max(0, numQty);
     }
 
+    const ingredientCost = parseFloat(ingredient.costPerUnit || 0);
     const parsedUnitCost = (type === 'PURCHASE' && unitCost !== undefined && canCost)
       ? parseFloat(unitCost)
-      : null;
+      : (type === 'WASTE' ? ingredientCost : null);
+
     const totalCost = (parsedUnitCost !== null)
-      ? Math.round(parsedUnitCost * delta * 100) / 100
+      ? Math.round(parsedUnitCost * Math.abs(delta) * 100) / 100
       : null;
+
+    const recordedByName = recordedBy || req.user?.name || (req.user?.role ? `${req.user.role}` : 'Staff');
 
     const result = await prisma.$transaction(async (tx) => {
       const movement = await tx.stockMovement.create({
@@ -199,12 +212,13 @@ export async function recordMovement(req, res) {
           unitCost: parsedUnitCost,
           totalCost,
           note: note || null,
+          recordedBy: recordedByName,
         },
       });
 
       const updateData = { stock: newStock };
       // If purchase has unit cost, update ingredient's standard cost
-      if (parsedUnitCost !== null && parsedUnitCost > 0) {
+      if (parsedUnitCost !== null && parsedUnitCost > 0 && type === 'PURCHASE') {
         updateData.costPerUnit = parsedUnitCost;
       }
 
@@ -234,27 +248,198 @@ export async function deleteIngredient(req, res) {
     const id = parseInt(req.params.id);
     const existing = await prisma.ingredient.findUnique({
       where: { id },
-      include: {
-        recipeItems: true,
-        movements: true,
-      },
     });
 
     if (!existing) {
       return errorResponse(res, 'Bahan baku tidak ditemukan', 404);
     }
 
-    if (existing.recipeItems.length > 0) {
-      return errorResponse(res, 'Bahan baku tidak dapat dihapus karena masih digunakan dalam resep produk', 400);
-    }
+    await prisma.$transaction(async (tx) => {
+      // 1. Bersihkan referensi resep produk untuk bahan ini
+      await tx.productRecipeItem.deleteMany({
+        where: { ingredientId: id },
+      });
+      // 2. Bersihkan riwayat mutasi stok untuk bahan ini
+      await tx.stockMovement.deleteMany({
+        where: { ingredientId: id },
+      });
+      // 3. Hapus data bahan baku
+      await tx.ingredient.delete({
+        where: { id },
+      });
+    });
 
-    if (existing.movements.length > 0) {
-      return errorResponse(res, 'Bahan baku tidak dapat dihapus karena memiliki riwayat mutasi stok', 400);
-    }
-
-    await prisma.ingredient.delete({ where: { id } });
-    return successResponse(res, null, 'Bahan baku berhasil dihapus');
+    return successResponse(res, { id }, 'Bahan baku berhasil dihapus');
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }
 }
+
+export async function bulkDeleteIngredients(req, res) {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Daftar ID bahan baku harus berupa array dan tidak boleh kosong', 400);
+    }
+
+    const numericIds = ids.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+    if (numericIds.length === 0) {
+      return errorResponse(res, 'Tidak ada ID bahan baku yang valid', 400);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.productRecipeItem.deleteMany({
+        where: { ingredientId: { in: numericIds } },
+      });
+      await tx.stockMovement.deleteMany({
+        where: { ingredientId: { in: numericIds } },
+      });
+      await tx.ingredient.deleteMany({
+        where: { id: { in: numericIds } },
+      });
+    });
+
+    return successResponse(
+      res,
+      { count: numericIds.length, deletedIds: numericIds },
+      `${numericIds.length} bahan baku berhasil dihapus`
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function bulkCreateIngredients(req, res) {
+  try {
+    const { ingredients = [] } = req.body;
+    if (!Array.isArray(ingredients) || ingredients.length === 0) {
+      return errorResponse(res, 'Daftar bahan baku tidak valid atau kosong', 400);
+    }
+
+    const createdList = [];
+    await prisma.$transaction(async (tx) => {
+      for (const item of ingredients) {
+        if (!item.name || !item.name.trim()) continue;
+
+        const stock = Math.max(0, parseFloat(item.stock) || 0);
+        const minStock = Math.max(0, parseFloat(item.minStock) || 0);
+        const costPerUnit = Math.max(0, parseFloat(item.costPerUnit) || 0);
+
+        const ing = await tx.ingredient.create({
+          data: {
+            name: item.name.trim(),
+            unit: item.unit ? item.unit.trim().toLowerCase() : 'pcs',
+            stock,
+            minStock,
+            costPerUnit,
+          },
+        });
+
+        // Record initial stock movement if initial stock > 0
+        if (stock > 0) {
+          await tx.stockMovement.create({
+            data: {
+              ingredientId: ing.id,
+              type: 'IN',
+              amount: stock,
+              unitCost: costPerUnit,
+              totalCost: stock * costPerUnit,
+              reason: 'Stok Awal Import Excel',
+            },
+          });
+        }
+
+        createdList.push(ing);
+      }
+    });
+
+    return successResponse(res, createdList, `${createdList.length} bahan baku berhasil diimpor`, 201);
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function recordWaste(req, res) {
+  try {
+    const ingredientId = parseInt(req.params.id);
+    const { qty, reason, recordedBy } = req.body;
+    const canCost = canViewCost(req.user?.role);
+
+    if (!qty || parseFloat(qty) <= 0) {
+      return errorResponse(res, 'Jumlah bahan terbuang (qty) harus lebih besar dari 0', 400);
+    }
+
+    const staffName = recordedBy || req.user?.name || (req.user?.role ? `${req.user.role}` : 'Staff');
+
+    const result = await stockService.recordWaste({
+      ingredientId,
+      qty,
+      reason: reason || 'Waste / Kalibrasi',
+      recordedBy: staffName,
+    });
+
+    return successResponse(
+      res,
+      {
+        movement: canCost ? result.movement : (({ unitCost, totalCost, ...rest }) => rest)(result.movement),
+        ingredient: sanitizeIngredient(result.ingredient, canCost),
+        totalCost: canCost ? result.totalCost : null,
+      },
+      'Pencatatan waste berhasil disimpan',
+      201
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function getWasteAnalytics(req, res) {
+  try {
+    const { startDate, endDate, limit } = req.query;
+    const summary = await stockService.getWasteSummary({
+      startDate,
+      endDate,
+      limit: limit ? parseInt(limit) : 50,
+    });
+
+    return successResponse(res, summary, 'Data analitik waste berhasil diambil');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function getWhatsAppRestockUrl(req, res) {
+  try {
+    const ingredientId = parseInt(req.params.id);
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id: ingredientId },
+    });
+
+    if (!ingredient) {
+      return errorResponse(res, 'Bahan baku tidak ditemukan', 404);
+    }
+
+    if (!ingredient.supplierPhone) {
+      return errorResponse(res, 'Bahan baku ini belum memiliki nomor kontak supplier', 400);
+    }
+
+    const url = stockService.formatWhatsAppUrl(
+      ingredient.supplierPhone,
+      ingredient.name,
+      ingredient.unit,
+      parseFloat(ingredient.stock || 0),
+      ingredient.supplierName
+    );
+
+    return successResponse(
+      res,
+      { url, supplierName: ingredient.supplierName, supplierPhone: ingredient.supplierPhone },
+      'Link WhatsApp berhasil dibuat'
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+
+

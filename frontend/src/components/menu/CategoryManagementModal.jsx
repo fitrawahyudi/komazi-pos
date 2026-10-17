@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { usePosStore } from '../../store/posStore';
 import { toast } from '../../store/toastStore';
+import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 import {
   Tag,
   Plus,
@@ -133,10 +134,15 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 select-none">
-      <div className="w-full max-w-2xl bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-komazi-border bg-komazi-surface-2/40">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 select-none"
+    >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-2xl bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-komazi-border bg-komazi-surface-2/40 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral">
               <Layers className="w-5 h-5 stroke-[2.2]" />
@@ -144,9 +150,6 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
             <div>
               <h2 className="font-bold text-base text-komazi-text flex items-center gap-2">
                 <span>Kelola Kategori Menu</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30">
-                  {editableCategories.length} Kategori
-                </span>
               </h2>
               <p className="text-xs text-komazi-muted">
                 Atur nama kelompok menu, urutan tampil pada kasir & POS
@@ -179,6 +182,7 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
                   placeholder="Nama Kategori (contoh: Mocktail, Pastry, Signature...)"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
+                  onFocus={scrollInputIntoViewOnFocus}
                   className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted focus:border-komazi-coral focus:outline-none"
                 />
               </div>
@@ -190,6 +194,7 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
                   placeholder="Urutan (opsional)"
                   value={newSortOrder}
                   onChange={(e) => setNewSortOrder(e.target.value)}
+                  onFocus={scrollInputIntoViewOnFocus}
                   className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted focus:border-komazi-coral focus:outline-none text-center font-mono"
                   title="Nomor urut tampilan di POS"
                 />
@@ -247,6 +252,7 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
                               type="text"
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
+                              onFocus={scrollInputIntoViewOnFocus}
                               className="w-full px-3 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-coral text-xs text-komazi-text font-bold focus:outline-none"
                               autoFocus
                             />
@@ -258,6 +264,7 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
                               placeholder="Urutan"
                               value={editSortOrder}
                               onChange={(e) => setEditSortOrder(e.target.value)}
+                              onFocus={scrollInputIntoViewOnFocus}
                               className="w-full px-3 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-mono text-center focus:border-komazi-coral focus:outline-none"
                               title="Nomor urut kategori"
                             />
@@ -383,20 +390,13 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-komazi-border bg-komazi-surface flex items-center justify-between gap-2">
+        <div className="p-4 border-t border-komazi-border bg-komazi-surface flex items-center justify-between gap-2 shrink-0">
           <p className="text-[11px] text-komazi-muted">
             * Perubahan kategori otomatis tersinkronisasi ke katalog kasir POS & laporan penjualan.
           </p>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-komazi-surface-2 text-komazi-text hover:bg-komazi-border text-xs font-semibold transition-colors"
-          >
-            Tutup
-          </button>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

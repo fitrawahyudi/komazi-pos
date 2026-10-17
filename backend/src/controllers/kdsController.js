@@ -6,6 +6,7 @@ import {
   bumpOrderItem,
   bumpTicket,
 } from '../services/kdsService.js';
+import logger from '../utils/logger.js';
 
 // ─── KDS Controllers (Kitchen Display System) ─────────────────────────────────
 export async function getKdsOrders(req, res) {
@@ -58,6 +59,7 @@ export async function bumpItem(req, res) {
     const userId = req.user?.id;
 
     const result = await bumpOrderItem({ itemId, userId });
+    logger.kds.info(`Item bumped | itemId=${itemId} status=${result?.status || 'UPDATED'}`, { itemId, status: result?.status });
     return successResponse(res, result, 'Item berhasil di-bump ke status berikutnya');
   } catch (err) {
     return errorResponse(res, err.message, 500);
@@ -70,6 +72,7 @@ export async function bumpKdsTicket(req, res) {
     const userId = req.user?.id;
 
     const result = await bumpTicket({ orderId, stationType: 'KITCHEN', userId });
+    logger.kds.info(`Kitchen ticket bumped | orderId=${orderId}`, { orderId });
     return successResponse(res, result, 'Tiket Kitchen berhasil di-bump');
   } catch (err) {
     return errorResponse(res, err.message, 500);
@@ -82,6 +85,7 @@ export async function bumpBdsTicket(req, res) {
     const userId = req.user?.id;
 
     const result = await bumpTicket({ orderId, stationType: 'BAR', userId });
+    logger.bds.info(`Bar ticket bumped | orderId=${orderId}`, { orderId });
     return successResponse(res, result, 'Tiket Barista berhasil di-bump');
   } catch (err) {
     return errorResponse(res, err.message, 500);

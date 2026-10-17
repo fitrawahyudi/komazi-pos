@@ -21,47 +21,57 @@ import { formatRupiah } from '../../utils/format';
 import { toast } from '../../store/toastStore';
 
 export default function RecipeModal({ isOpen, onClose, product }) {
-  const { fetchRecipe, saveRecipe, recipes } = useRecipeStore();
-  const { ingredients } = useStockStore();
+  const { fetchRecipe, saveRecipe } = useRecipeStore();
+  const { ingredients, fetchIngredients } = useStockStore();
 
   const [recipeItems, setRecipeItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Load existing recipe when modal opens or product changes
+  // Load existing recipe and ingredients when modal opens or product changes
   useEffect(() => {
-    if (!isOpen || !product) return;
+    if (!isOpen || !product?.id) {
+      setRecipeItems([]);
+      setLoading(false);
+      return;
+    }
 
     let isMounted = true;
     setLoading(true);
 
-    fetchRecipe(product.id)
-      .then((data) => {
+    const productId = product.id;
+
+    Promise.all([
+      fetchRecipe(productId),
+      fetchIngredients(),
+    ])
+      .then(([recipeData]) => {
         if (!isMounted) return;
-        if (data && data.recipeItems && data.recipeItems.length > 0) {
+
+        if (recipeData && Array.isArray(recipeData.recipeItems) && recipeData.recipeItems.length > 0) {
           setRecipeItems(
-            data.recipeItems.map((item) => ({
+            recipeData.recipeItems.map((item) => ({
               id: item.id || Date.now() + Math.random(),
-              ingredientId: item.ingredientId,
-              quantity: item.quantity,
-              variantId: item.variantId || null,
+              ingredientId: Number(item.ingredientId),
+              quantity: Number(item.quantity) || 1,
+              variantId: item.variantId ? Number(item.variantId) : null,
             }))
           );
         } else {
           // Check local recipe store fallback
-          const local = recipes[product.id] || [];
+          const local = useRecipeStore.getState().recipes[productId] || [];
           setRecipeItems(
             local.map((item) => ({
               id: item.id || Date.now() + Math.random(),
-              ingredientId: item.ingredientId,
-              quantity: item.quantity,
-              variantId: item.variantId || null,
+              ingredientId: Number(item.ingredientId),
+              quantity: Number(item.quantity) || 1,
+              variantId: item.variantId ? Number(item.variantId) : null,
             }))
           );
         }
       })
       .catch((err) => {
-        console.error('Failed to load recipe:', err);
+        console.error('Failed to load recipe or ingredients:', err);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -70,7 +80,7 @@ export default function RecipeModal({ isOpen, onClose, product }) {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, product, fetchRecipe, recipes]);
+  }, [isOpen, product?.id]);
 
   // Ingredients lookup map for live cost calculation
   const ingredientsMap = useMemo(() => {
@@ -148,13 +158,13 @@ export default function RecipeModal({ isOpen, onClose, product }) {
 
   // Handler: Add new row
   const handleAddRow = () => {
-    // Pick first available ingredient that isn't already added, or just first ingredient
-    const firstIng = ingredients[0];
+    const stockList = ingredients.length > 0 ? ingredients : useStockStore.getState().ingredients;
+    const firstIng = stockList[0];
     setRecipeItems((prev) => [
       ...prev,
       {
         id: Date.now() + Math.random(),
-        ingredientId: firstIng ? firstIng.id : '',
+        ingredientId: firstIng ? Number(firstIng.id) : '',
         quantity: 1,
         variantId: null,
       },
@@ -207,10 +217,15 @@ export default function RecipeModal({ isOpen, onClose, product }) {
   if (!isOpen || !product) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="bg-komazi-surface border border-komazi-border w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* 1. Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-komazi-border bg-komazi-surface-2 flex items-center justify-between gap-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+    >
+      <div className="min-h-full flex items-center justify-center">
+        <div className="bg-komazi-surface border border-komazi-border w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
+          {/* 1. Modal Header */}
+          <div className="p-4 sm:p-5 border-b border-komazi-border bg-komazi-surface-2 flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral shrink-0">
               <Calculator className="w-5 h-5" />
@@ -229,13 +244,6 @@ export default function RecipeModal({ isOpen, onClose, product }) {
               </p>
             </div>
           </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-border transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* 2. Live Cost & Margin Cards */}
@@ -330,6 +338,15 @@ export default function RecipeModal({ isOpen, onClose, product }) {
             </button>
           </div>
 
+          {ingredients.length === 0 && !loading && (
+            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>
+                Master bahan baku belum tersedia di sistem. Tambahkan data bahan baku pada menu <strong>Bahan & Stok</strong> terlebih dahulu agar harga modal dapat dikalkulasikan.
+              </span>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-12 text-center text-komazi-muted text-xs animate-pulse">
               Memuat data resep & harga bahan...
@@ -375,13 +392,13 @@ export default function RecipeModal({ isOpen, onClose, product }) {
                         {/* 1. Ingredient Selector */}
                         <td className="py-2.5 px-3">
                           <select
-                            value={item.ingredientId}
+                            value={item.ingredientId || ''}
                             onChange={(e) => handleUpdateRow(index, 'ingredientId', Number(e.target.value))}
                             className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
                           >
                             <option value="" disabled>-- Pilih Bahan Baku --</option>
                             {ingredients.map((ingItem) => (
-                              <option key={ingItem.id} value={ingItem.id}>
+                              <option key={ingItem.id} value={Number(ingItem.id)}>
                                 {ingItem.name} ({ingItem.unit}) - {formatRupiah(ingItem.costPerUnit || 0)}/{ingItem.unit}
                               </option>
                             ))}
@@ -498,5 +515,6 @@ export default function RecipeModal({ isOpen, onClose, product }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }

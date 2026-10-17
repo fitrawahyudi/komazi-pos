@@ -3,15 +3,27 @@ import { useHasPhysicalKeyboard } from '../hooks/useHasPhysicalKeyboard';
 import { usePosStore } from '../store/posStore';
 import { useCartStore } from '../store/cartStore';
 import { useUiStore } from '../store/uiStore';
+import { useOrdersStore } from '../store/ordersStore';
 import { formatRupiah } from '../utils/format';
 import ProductCard from '../components/pos/ProductCard';
 import ProductVariantModal from '../components/pos/ProductVariantModal';
+import DynamicPriceModal from '../components/pos/DynamicPriceModal';
 import CartSidebar from '../components/pos/CartSidebar';
 import PaymentModal from '../components/pos/PaymentModal';
 import ThermalReceiptModal from '../components/pos/ThermalReceiptModal';
 import SplitBillModal from '../components/pos/SplitBillModal';
 import OpenBillsModal from '../components/pos/OpenBillsModal';
-import { Search, Sparkles, Filter, X, ShoppingBag, ArrowRight, FileText } from 'lucide-react';
+import MergeBillModal from '../components/pos/MergeBillModal';
+import PosMenuSkeleton from '../components/ui/loading/skeletons/PosMenuSkeleton';
+import OpenShiftGateModal from '../components/shift/OpenShiftGateModal';
+import ShiftModal from '../components/shift/ShiftModal';
+import ActiveShiftAttendanceGateModal from '../components/shift/ActiveShiftAttendanceGateModal';
+import AttendanceVerificationModal from '../components/hris/AttendanceVerificationModal';
+import { Search, Sparkles, X, ShoppingBag, ArrowRight, RefreshCw, UtensilsCrossed, AlertCircle, Clock, ShieldAlert } from 'lucide-react';
+import { useShiftStore } from '../store/shiftStore';
+import { useAuthStore } from '../store/authStore';
+import { useHrisStore } from '../store/hrisStore';
+import { toast } from '../store/toastStore';
 
 export default function PosPage() {
   const {
@@ -21,22 +33,83 @@ export default function PosPage() {
     searchQuery,
     setSelectedCategoryId,
     setSearchQuery,
+    isLoading,
   } = usePosStore();
 
-  const { items, addItem, getCartSummary, attachedWorkspaceSession, openBills, syncOpenBillsWithBackendOrders } = useCartStore();
+  const { addItem, getCartSummary, attachedWorkspaceSession, syncOpenBillsWithBackendOrders } = useCartStore();
   const { isMobileCartOpen, setMobileCartOpen, toggleMobileCart } = useUiStore();
+  const { activeShift, fetchActiveShift } = useShiftStore();
+  const { user } = useAuthStore();
+  const { myTodaySchedule, fetchMyTodaySchedule, myTodayAttendance, fetchTodayAttendance } = useHrisStore();
+
+  const hasActiveShift = Boolean(activeShift && !activeShift.isClosed);
+  const isOwner = user?.role === 'OWNER';
+  const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
+  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
 
   const [activeModalProduct, setActiveModalProduct] = useState(null);
+  const [activeDynamicProduct, setActiveDynamicProduct] = useState(null);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isSplitBillOpen, setIsSplitBillOpen] = useState(false);
   const [isOpenBillsOpen, setIsOpenBillsOpen] = useState(false);
+  const [isMergeBillOpen, setIsMergeBillOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [completedOrderReceipt, setCompletedOrderReceipt] = useState(null);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [isAttendanceGateDismissed, setIsAttendanceGateDismissed] = useState(false);
 
   useEffect(() => {
-    if (typeof syncOpenBillsWithBackendOrders === 'function') {
-      syncOpenBillsWithBackendOrders();
+    let lastSync = Date.now();
+    // Sinkronisasi pesanan tertahan dengan backend MySQL
+    const sync = async () => {
+      try {
+        await useOrdersStore.getState().fetchOrders?.();
+        if (typeof syncOpenBillsWithBackendOrders === 'function') {
+          syncOpenBillsWithBackendOrders(false);
+        }
+      } catch (e) {
+        console.warn('POS initial orders sync warning:', e);
+      }
+    };
+    sync();
+    fetchActiveShift?.();
+    fetchMyTodaySchedule?.();
+    if (user?.id) {
+      fetchTodayAttendance?.(user.id);
     }
-  }, [syncOpenBillsWithBackendOrders]);
+
+    // Pastikan katalog menu dan kategori terisi
+    const { products: curProds, categories: curCats, fetchProducts, fetchCategories } = usePosStore.getState();
+    if (!curProds || curProds.length === 0) {
+      fetchProducts?.();
+    }
+    if (!curCats || curCats.length === 0) {
+      fetchCategories?.();
+    }
+
+    // Auto-sync saat window/tab kembali aktif (dibatasi minimal selisih 4 detik)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastSync > 4000) {
+        lastSync = Date.now();
+        sync();
+        fetchActiveShift?.();
+        const pState = usePosStore.getState();
+        if (!pState.products || pState.products.length === 0) {
+          pState.fetchProducts?.();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [syncOpenBillsWithBackendOrders, fetchActiveShift]);
+
+
 
   const searchInputRef = useRef(null);
   const summary = getCartSummary();
@@ -54,6 +127,15 @@ export default function PosPage() {
       }
       if (e.key === 'F9') {
         e.preventDefault();
+        if (isScheduleBlocked) {
+          toast.error('Jadwal kerja Anda belum diatur untuk hari ini. Anda tidak dapat melakukan transaksi.');
+          return;
+        }
+        if (isAttendanceBlocked) {
+          toast.error('Anda wajib melakukan presensi terlebih dahulu sebelum dapat bertransaksi pada sesi ini.');
+          setShowVerifyModal(true);
+          return;
+        }
         if (summary.grandTotal > 0) {
           setIsPaymentOpen(true);
         }
@@ -62,10 +144,29 @@ export default function PosPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [summary.grandTotal, hasKeyboard]);
+  }, [summary.grandTotal, hasKeyboard, isScheduleBlocked, isAttendanceBlocked]);
 
   // Handle product click
   const handleSelectProduct = (product) => {
+    if (isScheduleBlocked) {
+      toast.error('Jadwal kerja Anda belum diatur untuk hari ini. Anda tidak dapat melakukan transaksi.');
+      return;
+    }
+    if (isAttendanceBlocked) {
+      toast.error('Anda wajib melakukan presensi terlebih dahulu sebelum dapat bertransaksi pada sesi ini.');
+      setShowVerifyModal(true);
+      return;
+    }
+    if (!hasActiveShift) {
+      toast.error('Wajib membuka sesi kasir terlebih dahulu sebelum menambahkan menu');
+      return;
+    }
+
+    if (product.isDynamicPrice) {
+      setActiveDynamicProduct(product);
+      return;
+    }
+
     const hasOptions =
       (product.variants && product.variants.length > 0) ||
       (product.modifiers && product.modifiers.length > 0);
@@ -97,6 +198,19 @@ export default function PosPage() {
     <div className="flex h-full w-full overflow-hidden select-none relative">
       {/* LEFT: Menu Catalog & Categories */}
       <div className="flex-1 flex flex-col h-full overflow-hidden p-3 sm:p-4 space-y-3 sm:space-y-4">
+        {/* Schedule Blocked Alert */}
+        {isScheduleBlocked && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center gap-3 text-amber-300 text-xs shadow-sm animate-in fade-in duration-200">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-400" />
+            <div>
+              <strong className="block text-amber-200">Jadwal Kerja Belum Diatur</strong>
+              <span>
+                Jadwal kerja Anda belum diatur untuk hari ini. Anda tidak dapat membuka sesi kasir ataupun melakukan transaksi hingga jadwal dibuat oleh Owner atau Manajer.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Search Bar & Mobile Cart Toggle */}
         <div className="flex items-center gap-2">
           {/* Search Input */}
@@ -120,28 +234,28 @@ export default function PosPage() {
             )}
           </div>
 
-          {/* Quick Hold Bill button for mobile header */}
-          <button
-            type="button"
-            onClick={() => setIsOpenBillsOpen(true)}
-            className={`lg:hidden flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-bold shrink-0 relative active:scale-95 transition-all ${
-              openBills.length > 0
-                ? 'bg-komazi-coral-soft border-komazi-coral/40 text-komazi-coral animate-pulse'
-                : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white'
-            }`}
-            title="Daftar Pesanan Tertahan (Hold Bill)"
-          >
-            <FileText className="w-4 h-4 shrink-0" />
-            <span className="hidden sm:inline">Hold</span>
-            {openBills.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-komazi-coral text-white text-[10px] font-black flex items-center justify-center">
-                {openBills.length}
-              </span>
-            )}
-          </button>
+          {/* Active Register & Sesi Kasir Status Badge */}
+          {hasActiveShift && (
+            <button
+              type="button"
+              onClick={() => setIsShiftModalOpen(true)}
+              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border hover:border-komazi-coral text-xs transition-colors shrink-0 shadow-sm"
+              title="Kelola laci kas & sesi register"
+            >
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
+              <div className="text-left font-sans">
+                <span className="text-[10px] text-komazi-muted uppercase font-bold block leading-none">
+                  {activeShift.registerName || 'Kasir Utama'}
+                </span>
+                <span className="font-bold text-komazi-text text-[11px] block leading-tight mt-0.5">
+                  {activeShift.cashierName || 'Kasir'}
+                </span>
+              </div>
+            </button>
+          )}
 
           {/* Quick Cart button for mobile header */}
-          <button
+          {/* <button
             type="button"
             onClick={toggleMobileCart}
             className="lg:hidden flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-md shrink-0 relative active:scale-95"
@@ -153,7 +267,7 @@ export default function PosPage() {
                 {summary.totalQty}
               </span>
             )}
-          </button>
+          </button> */}
 
           {/* Quick Counter (desktop) */}
           <div className="hidden xl:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-muted shrink-0">
@@ -166,15 +280,19 @@ export default function PosPage() {
 
         {/* Categories Bar */}
         <div
-          className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar shrink-0"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          className="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar shrink-0 scroll-smooth touch-pan-x"
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
         >
           <button
             type="button"
             onClick={() => setSelectedCategoryId('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 min-h-[38px] ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 min-h-[38px] cursor-pointer ${
               selectedCategoryId === 'all'
-                ? 'bg-komazi-coral text-white shadow-md shadow-komazi-coral/20'
+                ? 'bg-komazi-coral text-white shadow-md shadow-komazi-coral/25 font-bold'
                 : 'bg-komazi-surface text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 border border-komazi-border'
             }`}
           >
@@ -187,9 +305,9 @@ export default function PosPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategoryId(cat.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 min-h-[38px] ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 min-h-[38px] cursor-pointer ${
                   isSelected
-                    ? 'bg-komazi-coral text-white shadow-md shadow-komazi-coral/20'
+                    ? 'bg-komazi-coral text-white shadow-md shadow-komazi-coral/25 font-bold'
                     : 'bg-komazi-surface text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 border border-komazi-border'
                 }`}
               >
@@ -199,16 +317,68 @@ export default function PosPage() {
           })}
         </div>
 
-        {/* Product Cards Grid */}
+        {/* Product Cards Grid with Dynamic Safe Bottom Spacing */}
         <div
-          className="flex-1 overflow-y-auto pr-1 pb-24 lg:pb-6 no-scrollbar"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          className={`flex-1 overflow-y-auto pr-1 no-scrollbar transition-all ${
+            hasCartItems
+              ? 'pb-40 sm:pb-36 lg:pb-8'
+              : 'pb-24 sm:pb-20 lg:pb-8'
+          }`}
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
         >
-          {filteredProducts.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center text-center text-komazi-muted space-y-2">
-              <Search className="w-10 h-10 text-komazi-muted/40" />
-              <p className="font-semibold text-sm text-komazi-text">Menu Tidak Ditemukan</p>
-              <p className="text-xs">Coba kata kunci lain atau pilih kategori Semua.</p>
+          {isLoading && products.length === 0 ? (
+            <PosMenuSkeleton count={8} />
+          ) : products.length === 0 ? (
+            /* Catalog is empty */
+            <div className="h-64 sm:h-72 flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-center text-komazi-coral shadow-inner">
+                <UtensilsCrossed className="w-7 h-7 opacity-80" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-bold text-sm sm:text-base text-komazi-text">Katalog Menu Belum Tersedia</p>
+                <p className="text-xs text-komazi-muted max-w-xs leading-relaxed">
+                  Belum ada menu yang dapat ditampilkan. Silakan segarkan halaman atau periksa pengaturan menu.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => usePosStore.getState().fetchProducts?.()}
+                className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Muat Ulang Menu</span>
+              </button>
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            /* Search / Filter yields no results */
+            <div className="h-64 sm:h-72 flex flex-col items-center justify-center text-center p-6 space-y-3 text-komazi-muted">
+              <div className="w-14 h-14 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-center text-komazi-muted">
+                <Search className="w-7 h-7 opacity-60" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-bold text-sm sm:text-base text-komazi-text">Menu Tidak Ditemukan</p>
+                <p className="text-xs text-komazi-muted max-w-xs leading-relaxed">
+                  {searchQuery
+                    ? `Tidak ada menu yang sesuai dengan "${searchQuery}".`
+                    : 'Tidak ada menu yang tersedia pada kategori ini.'}
+                </p>
+              </div>
+              {(searchQuery || selectedCategoryId !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategoryId('all');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border hover:border-komazi-coral text-komazi-text font-semibold text-xs active:scale-95 transition-all"
+                >
+                  Tampilkan Semua Menu
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5">
@@ -224,21 +394,21 @@ export default function PosPage() {
         </div>
       </div>
 
-      {/* Floating Bottom Cart Bar for Mobile & Tablet Portrait */}
+      {/* Floating Bottom Cart Bar for Mobile & Tablet Portrait (Floats safely above BottomNav) */}
       {hasCartItems && !isMobileCartOpen && (
-        <div className="lg:hidden fixed bottom-14 left-3 right-3 z-20 animate-in slide-in-from-bottom duration-200">
+        <div className="lg:hidden fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] left-3 right-3 z-30 animate-in slide-in-from-bottom duration-200">
           <button
             type="button"
             onClick={() => setMobileCartOpen(true)}
-            className="w-full p-3.5 rounded-2xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs flex items-center justify-between shadow-2xl shadow-komazi-coral/30 border border-white/20 active:scale-[0.99] transition-transform"
+            className="w-full p-3 sm:p-3.5 rounded-2xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs flex items-center justify-between shadow-2xl shadow-komazi-coral/30 border border-white/20 active:scale-[0.99] transition-transform"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center text-white">
+              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
                 <ShoppingBag className="w-4 h-4" />
               </div>
               <div className="text-left">
-                <p className="text-[11px] opacity-90">{summary.totalQty} Produk Dipilih</p>
-                <p className="font-mono text-sm font-black tracking-wide">
+                <p className="text-[11px] opacity-90">{summary.totalQty} Menu di Keranjang</p>
+                <p className="font-mono text-sm sm:text-base font-black tracking-wide">
                   {formatRupiah(summary.grandTotal)}
                 </p>
               </div>
@@ -255,9 +425,16 @@ export default function PosPage() {
       {/* RIGHT: Cart Sidebar (Desktop DOCKED) */}
       <div className="hidden lg:flex h-full">
         <CartSidebar
-          onOpenPayment={() => setIsPaymentOpen(true)}
+          onOpenPayment={() => {
+            if (isScheduleBlocked) {
+              toast.error('Jadwal kerja Anda belum diatur untuk hari ini. Anda tidak dapat melakukan transaksi.');
+              return;
+            }
+            setIsPaymentOpen(true);
+          }}
           onOpenSplitBill={() => setIsSplitBillOpen(true)}
           onOpenOpenBills={() => setIsOpenBillsOpen(true)}
+          onOpenMergeBill={() => setIsMergeBillOpen(true)}
         />
       </div>
 
@@ -276,6 +453,10 @@ export default function PosPage() {
               onCloseMobile={() => setMobileCartOpen(false)}
               onOpenPayment={() => {
                 setMobileCartOpen(false);
+                if (isScheduleBlocked) {
+                  toast.error('Jadwal kerja Anda belum diatur untuk hari ini. Anda tidak dapat melakukan transaksi.');
+                  return;
+                }
                 setIsPaymentOpen(true);
               }}
               onOpenSplitBill={() => {
@@ -286,12 +467,27 @@ export default function PosPage() {
                 setMobileCartOpen(false);
                 setIsOpenBillsOpen(true);
               }}
+              onOpenMergeBill={() => {
+                setMobileCartOpen(false);
+                setIsMergeBillOpen(true);
+              }}
             />
           </div>
         </div>
       )}
 
       {/* Modals */}
+      {activeDynamicProduct && (
+        <DynamicPriceModal
+          product={activeDynamicProduct}
+          onClose={() => setActiveDynamicProduct(null)}
+          onSubmit={({ product, customPrice, selectedVariant, selectedModifiers, note }) => {
+            addItem(product, selectedVariant, selectedModifiers, note, customPrice);
+            setActiveDynamicProduct(null);
+          }}
+        />
+      )}
+
       {activeModalProduct && (
         <ProductVariantModal
           product={activeModalProduct}
@@ -328,12 +524,57 @@ export default function PosPage() {
         />
       )}
 
+      {isMergeBillOpen && (
+        <MergeBillModal
+          onClose={() => setIsMergeBillOpen(false)}
+        />
+      )}
+
       {completedOrderReceipt && (
         <ThermalReceiptModal
           order={completedOrderReceipt}
           onClose={() => setCompletedOrderReceipt(null)}
         />
       )}
+
+      {/* Shift Management Modal */}
+      {isShiftModalOpen && (
+        <ShiftModal
+          onClose={() => {
+            setIsShiftModalOpen(false);
+            fetchActiveShift?.();
+          }}
+        />
+      )}
+
+      {/* Mandatory Open Shift Gate Modal (Saat belum ada shift aktif) */}
+      <OpenShiftGateModal
+        isOpen={!hasActiveShift}
+        onClose={() => {
+          fetchActiveShift?.();
+        }}
+      />
+
+      {/* Active Shift Attendance Gate Modal (Saat sesi sudah dibuka staf lain tapi staf ini belum presensi) */}
+      <ActiveShiftAttendanceGateModal
+        isOpen={hasActiveShift && isAttendanceBlocked && !isAttendanceGateDismissed}
+        onClose={() => setIsAttendanceGateDismissed(true)}
+        onTriggerVerify={() => setShowVerifyModal(true)}
+        activeShift={activeShift}
+      />
+
+      {/* Verification Modal: Kamera Selfie & GPS */}
+      <AttendanceVerificationModal
+        isOpen={showVerifyModal}
+        onClose={() => setShowVerifyModal(false)}
+        onSuccess={async () => {
+          setShowVerifyModal(false);
+          setIsAttendanceGateDismissed(false);
+          await fetchMyTodaySchedule?.();
+          if (user?.id) await fetchTodayAttendance?.(user.id);
+          toast.success('Presensi berhasil diverifikasi! Sesi kasir siap digunakan.');
+        }}
+      />
     </div>
   );
 }

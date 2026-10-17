@@ -6,7 +6,10 @@ import { formatRupiah, formatDateTime } from '../utils/format';
 import ThermalReceiptModal from '../components/pos/ThermalReceiptModal';
 import ShiftModal from '../components/shift/ShiftModal';
 import Pagination from '../components/ui/Pagination';
+import OrdersTableSkeleton from '../components/ui/loading/skeletons/OrdersTableSkeleton';
 import { toast } from '../store/toastStore';
+import { api } from '../services/api';
+import { exportOrdersToExcel } from '../utils/excel';
 import {
   Receipt,
   Search,
@@ -25,23 +28,55 @@ import {
   Banknote,
   Calendar,
   Users,
+  Undo2,
   Layers,
   ShieldCheck,
   Eye,
   Clock,
   Sparkles,
   CreditCard,
+  ChevronDown,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export default function OrdersPage() {
-  const { orders, voidOrder, refundOrder } = useOrdersStore();
-  const { user } = useAuthStore();
-  const { activeShift, shiftHistory, fetchActiveShift, fetchShiftHistory } = useShiftStore();
+  const orders = useOrdersStore((s) => s.orders);
+  const fetchOrders = useOrdersStore((s) => s.fetchOrders);
+  const voidOrder = useOrdersStore((s) => s.voidOrder);
+  const refundOrder = useOrdersStore((s) => s.refundOrder);
+  const isLoading = useOrdersStore((s) => s.isLoading);
+
+  const user = useAuthStore((s) => s.user);
+
+  const activeShift = useShiftStore((s) => s.activeShift);
+  const shiftHistory = useShiftStore((s) => s.shiftHistory);
+  const fetchActiveShift = useShiftStore((s) => s.fetchActiveShift);
+  const fetchShiftHistory = useShiftStore((s) => s.fetchShiftHistory);
 
   useEffect(() => {
+    let lastFetched = Date.now();
+    // 1. Fetch fresh orders immediately upon mounting
+    fetchOrders?.();
     fetchActiveShift?.();
     fetchShiftHistory?.();
-  }, [fetchActiveShift, fetchShiftHistory]);
+
+    // 2. Auto-sync silently when window / tab regains focus or visibility (throttled)
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetched > 10000) {
+        lastFetched = Date.now();
+        fetchOrders?.();
+        fetchActiveShift?.();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, []);
 
   const role = user?.role || 'CASHIER';
   const isOwner = role === 'OWNER';
@@ -52,12 +87,14 @@ export default function OrdersPage() {
   // Check if there is an active shift running
   const hasActiveShift = Boolean(activeShift && !activeShift.isClosed);
 
-  // Filter States
+  // Filter States (Matching requested filter design)
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PAID' | 'VOIDED' | 'REFUNDED'
+  const [methodFilter, setMethodFilter] = useState('ALL'); // 'ALL' | 'CASH' | 'QRIS' | 'TRANSFER'
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [shiftFilter, setShiftFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | specific shiftId
   const [cashierFilter, setCashierFilter] = useState('ALL'); // 'ALL' | cashierName
-  const [dateFilter, setDateFilter] = useState('ALL'); // 'ALL' | 'TODAY' | '7DAYS' | '30DAYS'
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -77,7 +114,8 @@ export default function OrdersPage() {
   const distinctCashiers = useMemo(() => {
     const names = new Set();
     orders.forEach((o) => {
-      if (o.cashierName) names.add(o.cashierName);
+      const name = o.cashierName || o.cashier?.name || o.shift?.cashier?.name;
+      if (name) names.add(name);
     });
     return Array.from(names);
   }, [orders]);
@@ -105,63 +143,56 @@ export default function OrdersPage() {
   // Main Filter Algorithm
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // 1. ROLE ISOLATION:
-      // If CASHIER: Strictly only orders belonging to cashier's active shift
-      if (isCashier) {
-        if (!hasActiveShift) return false;
-
-        const isCurrentShiftOrder =
+      // 1. Shift filter (if active shift filter selected)
+      if (shiftFilter === 'ACTIVE') {
+        if (!activeShift) return false;
+        const isAct =
           order.shiftId === activeShift.id ||
-          ((order.cashierId === user?.id || order.cashierName === user?.name) &&
-            new Date(order.createdAt).getTime() >= new Date(activeShift.openedAt).getTime());
-
-        if (!isCurrentShiftOrder) return false;
+          new Date(order.createdAt).getTime() >= new Date(activeShift.openedAt).getTime();
+        if (!isAct) return false;
+      } else if (shiftFilter !== 'ALL') {
+        if (String(order.shiftId) !== String(shiftFilter)) return false;
       }
 
-      // If OWNER or MANAGER: Apply Manager Supervisory Filters
-      if (isManagerOrOwner) {
-        // Shift Filter
-        if (shiftFilter === 'ACTIVE') {
-          if (!activeShift) return false;
-          const isAct =
-            order.shiftId === activeShift.id ||
-            new Date(order.createdAt).getTime() >= new Date(activeShift.openedAt).getTime();
-          if (!isAct) return false;
-        } else if (shiftFilter !== 'ALL') {
-          if (String(order.shiftId) !== String(shiftFilter)) return false;
-        }
-
-        // Cashier Filter
-        if (cashierFilter !== 'ALL') {
-          if (order.cashierName !== cashierFilter) return false;
-        }
-
-        // Date Filter
-        if (dateFilter === 'TODAY') {
-          const orderDate = new Date(order.createdAt).toDateString();
-          const today = new Date().toDateString();
-          if (orderDate !== today) return false;
-        } else if (dateFilter === '7DAYS') {
-          const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
-          if (new Date(order.createdAt).getTime() < sevenDaysAgo) return false;
-        } else if (dateFilter === '30DAYS') {
-          const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
-          if (new Date(order.createdAt).getTime() < thirtyDaysAgo) return false;
-        }
+      // 2. Cashier filter
+      if (isManagerOrOwner && cashierFilter !== 'ALL') {
+        const orderCashier = order.cashierName || order.cashier?.name || order.shift?.cashier?.name;
+        if (orderCashier !== cashierFilter) return false;
       }
 
-      // Status Filter
+      // 3. Status filter
       if (statusFilter !== 'ALL' && order.status !== statusFilter) {
         return false;
       }
 
-      // Search Query Filter
+      // 4. Payment Method filter
+      if (methodFilter !== 'ALL') {
+        const orderMethod = (order.payments?.[0]?.method || order.paymentMethod || 'CASH').toUpperCase();
+        if (orderMethod !== methodFilter.toUpperCase()) {
+          return false;
+        }
+      }
+
+      // 5. Date Range filter (startDate & endDate)
+      if (startDate || endDate) {
+        const localDate = new Date(order.createdAt);
+        const y = localDate.getFullYear();
+        const m = String(localDate.getMonth() + 1).padStart(2, '0');
+        const d = String(localDate.getDate()).padStart(2, '0');
+        const orderDateStr = `${y}-${m}-${d}`;
+
+        if (startDate && orderDateStr < startDate) return false;
+        if (endDate && orderDateStr > endDate) return false;
+      }
+
+      // 6. Search query filter (no. invoice, nama pelanggan, meja, kasir)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchInvoice = order.invoiceNo?.toLowerCase().includes(q);
         const matchCustomer = order.customerName && order.customerName.toLowerCase().includes(q);
         const matchTable = order.tableNo && String(order.tableNo).toLowerCase().includes(q);
-        const matchCashier = order.cashierName && order.cashierName.toLowerCase().includes(q);
+        const orderCashier = order.cashierName || order.cashier?.name || order.shift?.cashier?.name;
+        const matchCashier = orderCashier && orderCashier.toLowerCase().includes(q);
         if (!matchInvoice && !matchCustomer && !matchTable && !matchCashier) {
           return false;
         }
@@ -171,15 +202,14 @@ export default function OrdersPage() {
     });
   }, [
     orders,
-    isCashier,
     isManagerOrOwner,
-    hasActiveShift,
     activeShift,
-    user,
     shiftFilter,
     cashierFilter,
-    dateFilter,
     statusFilter,
+    methodFilter,
+    startDate,
+    endDate,
     searchQuery,
   ]);
 
@@ -190,7 +220,29 @@ export default function OrdersPage() {
   // Reset ke halaman pertama saat filter atau pencarian berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, shiftFilter, cashierFilter, dateFilter]);
+  }, [searchQuery, statusFilter, methodFilter, startDate, endDate, shiftFilter, cashierFilter]);
+
+  // Status apakah ada filter yang sedang aktif
+  const isFiltered = Boolean(
+    searchQuery.trim() ||
+    statusFilter !== 'ALL' ||
+    methodFilter !== 'ALL' ||
+    startDate ||
+    endDate ||
+    shiftFilter !== 'ALL' ||
+    cashierFilter !== 'ALL'
+  );
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setMethodFilter('ALL');
+    setStartDate('');
+    setEndDate('');
+    setShiftFilter('ALL');
+    setCashierFilter('ALL');
+    setCurrentPage(1);
+  };
 
   // Paginated Orders Sliced
   const paginatedOrders = useMemo(() => {
@@ -278,34 +330,72 @@ export default function OrdersPage() {
     e.preventDefault();
     if (!refundReason.trim()) return;
 
-    if (!isManagerOrOwner) {
-      if (!managerPin.trim()) {
-        toast.error('Masukkan PIN Otorisasi Manager/Supervisor.');
-        return;
+    try {
+      const res = await refundOrder(
+        refundTargetOrder.id,
+        refundReason,
+        refundAmount,
+        user?.name || (isManagerOrOwner ? 'Owner' : 'Kasir')
+      );
+      if (res?.pendingApproval) {
+        toast.info(res.message || 'Permintaan refund berhasil diajukan! Menunggu persetujuan Owner.');
+      } else {
+        toast.success(`Pengembalian dana senilai ${formatRupiah(refundAmount)} berhasil diproses`);
       }
-      try {
-        const check = await api.settings.verifyPin(managerPin.trim());
-        if (!check || !check.success) {
-          toast.error(check?.message || 'PIN Otorisasi Manager/Supervisor salah.');
-          return;
-        }
-      } catch (err) {
-        toast.error('Gagal memverifikasi PIN: ' + err.message);
-        return;
-      }
+      setRefundTargetOrder(null);
+      setRefundReason('');
+      fetchOrders?.();
+    } catch (err) {
+      toast.error(err?.message || 'Gagal memproses refund');
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (!filteredOrders || filteredOrders.length === 0) {
+      toast.warning('Tidak ada data pesanan untuk diekspor pada filter ini.');
+      return;
     }
 
-    await refundOrder(
-      refundTargetOrder.id,
-      refundReason,
-      refundAmount,
-      user?.name || (isManagerOrOwner ? 'Owner' : 'Manager'),
-      managerPin.trim()
-    );
-    toast.success(`Pengembalian dana senilai ${formatRupiah(refundAmount)} berhasil diproses`);
-    setRefundTargetOrder(null);
-    setRefundReason('');
-    setManagerPin('');
+    try {
+      // Siapkan label shift yang sedang difilter
+      let shiftLabel = 'Semua';
+      if (shiftFilter === 'ACTIVE') {
+        shiftLabel = activeShift ? `Shift Aktif (${activeShift.cashierName})` : 'Shift Aktif';
+      } else if (shiftFilter !== 'ALL') {
+        const found = (shiftHistory || []).find((s) => String(s.id) === String(shiftFilter));
+        shiftLabel = found ? `Shift #${found.id} - ${found.cashierName}` : `Shift #${shiftFilter}`;
+      }
+
+      // Format label rentang tanggal
+      let dateRangeLabel = 'Semua Tanggal';
+      if (startDate && endDate) {
+        dateRangeLabel = `${startDate} s/d ${endDate}`;
+      } else if (startDate) {
+        dateRangeLabel = `Mulai ${startDate}`;
+      } else if (endDate) {
+        dateRangeLabel = `Sampai ${endDate}`;
+      }
+
+      const res = exportOrdersToExcel({
+        orders: filteredOrders,
+        filterMeta: {
+          status: statusFilter,
+          method: methodFilter,
+          dateRange: dateRangeLabel,
+          cashier: cashierFilter,
+          shift: shiftLabel,
+          search: searchQuery.trim(),
+        },
+      });
+
+      toast.success(
+        `Berhasil mengekspor ${res.count} transaksi ke file ${res.fileName}`,
+        'Ekspor Excel'
+      );
+    } catch (err) {
+      console.error('[ExportOrdersExcel]', err);
+      toast.error(err?.message || 'Gagal mengekspor riwayat pesanan ke Excel');
+    }
   };
 
   return (
@@ -316,20 +406,8 @@ export default function OrdersPage() {
           <div className="flex items-center gap-2.5">
             <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
               <Receipt className="w-6 h-6 text-komazi-coral" />
-              <span>Riwayat Transaksi Penjualan</span>
+              <span>Riwayat Pesanan</span>
             </h1>
-
-            {isCashier ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-komazi-teal/15 border border-komazi-teal/30 text-komazi-teal-light">
-                <CircleDot className="w-3 h-3 text-komazi-teal-light animate-pulse" />
-                Mode Kasir: Shift Berjalan
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-komazi-coral/15 border border-komazi-coral/30 text-komazi-coral">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Mode Pengawasan: Akses Penuh ({user?.role === 'OWNER' ? 'Owner' : 'Manager'})
-              </span>
-            )}
           </div>
 
           <p className="text-xs text-komazi-muted mt-1">
@@ -339,17 +417,36 @@ export default function OrdersPage() {
           </p>
         </div>
 
-        {/* Action Button: Buka Shift jika belum ada shift */}
-        {isCashier && !hasActiveShift && (
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={() => setIsShiftModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md shadow-komazi-coral/20 transition-all active:scale-95"
+            onClick={handleExportExcel}
+            disabled={filteredOrders.length === 0}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Ekspor riwayat pesanan (mengikuti filter aktif) ke Excel (.xlsx)"
           >
-            <CircleDot className="w-4 h-4 animate-pulse" />
-            <span>Buka Shift Kasir</span>
+            <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+            <span className="hidden sm:inline">Ekspor Excel</span>
+            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-900/40 text-emerald-100 font-mono font-bold">
+              {filteredOrders.length}
+            </span>
           </button>
-        )}
+
+          <button
+            type="button"
+            onClick={async () => {
+              await fetchOrders?.();
+              await fetchActiveShift?.();
+              toast.info('Data riwayat pesanan disinkronkan dengan server', 'Sinkronisasi');
+            }}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-komazi-surface border border-komazi-border hover:bg-komazi-surface-2 text-komazi-text font-bold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50"
+            title="Segarkan riwayat pesanan dari server"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-komazi-coral' : 'text-komazi-muted'}`} />
+          </button>
+        </div>
       </div>
 
       {/* 2. ROLE-SPECIFIC BANNER / STATS CARDS */}
@@ -379,12 +476,16 @@ export default function OrdersPage() {
 
             <div className="flex items-center gap-4 bg-komazi-surface/80 p-2.5 rounded-xl border border-komazi-border shrink-0">
               <div>
-                <span className="text-[10px] uppercase font-bold text-komazi-muted block">Transaksi Shift Ini</span>
+                <span className="text-[10px] uppercase font-bold text-komazi-muted block">
+                  {isFiltered ? 'Transaksi Terfilter' : 'Transaksi Shift Ini'}
+                </span>
                 <span className="text-base font-black text-komazi-text">{stats.paidCount} Transaksi</span>
               </div>
               <div className="h-8 w-px bg-komazi-border"></div>
               <div>
-                <span className="text-[10px] uppercase font-bold text-komazi-muted block">Omzet Shift Ini</span>
+                <span className="text-[10px] uppercase font-bold text-komazi-muted block">
+                  {isFiltered ? 'Omzet Terfilter' : 'Omzet Shift Ini'}
+                </span>
                 <span className="text-base font-black text-komazi-coral font-mono">
                   {formatRupiah(stats.totalOmzet)}
                 </span>
@@ -392,24 +493,29 @@ export default function OrdersPage() {
             </div>
           </div>
         ) : (
-          /* Empty Shift State for Cashier */
-          <div className="p-8 sm:p-12 rounded-3xl bg-komazi-surface border-2 border-dashed border-komazi-border text-center space-y-4">
-            <div className="w-16 h-16 rounded-3xl bg-danger/15 border border-danger/30 text-danger flex items-center justify-center mx-auto shadow-lg">
-              <Lock className="w-8 h-8" />
+          /* Informative Shift Status Banner for Cashier */
+          <div className="p-4 sm:p-5 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-sm text-komazi-text">
+                  Shift Kasir Belum Dibuka
+                </h3>
+                <p className="text-xs text-komazi-muted">
+                  Buka shift kasir untuk melayani transaksi baru. Anda tetap dapat mencari dan memfilter riwayat pesanan berdasarkan tanggal di bawah ini.
+                </p>
+              </div>
             </div>
-            <div className="max-w-md mx-auto space-y-1.5">
-              <h2 className="text-lg font-bold text-komazi-text">Shift Kasir Belum Dibuka</h2>
-              <p className="text-xs text-komazi-muted leading-relaxed">
-                Sebagai kasir, riwayat pesanan Anda diisolasi per shift demi keamanan pencatatan finansial. Buka shift kasir terlebih dahulu untuk mulai melayani transaksi baru dan melihat riwayat penjualan shift Anda.
-              </p>
-            </div>
+
             <button
               type="button"
               onClick={() => setIsShiftModalOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95 shrink-0"
             >
               <CircleDot className="w-4 h-4" />
-              <span>Buka Shift Kasir Sekarang</span>
+              <span>Buka Shift Kasir</span>
             </button>
           </div>
         )
@@ -438,7 +544,7 @@ export default function OrdersPage() {
           <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border shadow-sm flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase text-komazi-muted tracking-wider">
-                Volume Transaksi
+                Jumlah Transaksi
               </span>
               <p className="font-black text-lg text-komazi-text">
                 {stats.totalOrders} Transaksi
@@ -490,47 +596,128 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* 3. FILTER BAR */}
-      {(!isCashier || hasActiveShift) && (
-        <div className="p-3 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
-          {/* Search box */}
-          <div className="relative flex-1 max-w-sm">
-            <Search className="w-4 h-4 text-komazi-muted absolute left-3 top-2.5" />
+      {/* 3. FILTER BAR (Exact match to requested UI layout) */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-komazi-surface border border-komazi-border shadow-sm flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Input 1: Cari no. pesanan atau pelanggan... */}
+          <div className="relative flex-1 min-w-[240px]">
             <input
               type="text"
-              placeholder={isCashier ? 'Cari no. invoice, meja...' : 'Cari invoice, kasir, pelanggan...'}
+              placeholder="Cari no. pesanan atau pelanggan..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+              className="w-full px-3.5 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted/70 focus:border-komazi-coral focus:outline-none transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-2.5 text-komazi-muted hover:text-white transition-colors"
+                title="Hapus pencarian"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Dropdown 2: Semua Status */}
+          <div className="relative min-w-[140px]">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full appearance-none pl-3.5 pr-8 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-medium focus:border-komazi-coral focus:outline-none cursor-pointer transition-colors"
+            >
+              <option value="ALL">Semua Status</option>
+              <option value="PAID">Berhasil (PAID)</option>
+              <option value="VOIDED">Dibatalkan (VOID)</option>
+              <option value="REFUNDED">Dikembalikan (REFUND)</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-3 pointer-events-none" />
+          </div>
+
+          {/* Dropdown 3: Semua Metode */}
+          <div className="relative min-w-[145px]">
+            <select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              className="w-full appearance-none pl-3.5 pr-8 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-medium focus:border-komazi-coral focus:outline-none cursor-pointer transition-colors"
+            >
+              <option value="ALL">Semua Metode</option>
+              <option value="CASH">Tunai (Cash)</option>
+              <option value="QRIS">QRIS Dinamis</option>
+              <option value="TRANSFER">Transfer Bank</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-3 pointer-events-none" />
+          </div>
+
+          {/* Date Range 4 & 5: [ dd/mm/tttt 📅 ] hingga [ dd/mm/tttt 📅 ] */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-medium focus:border-komazi-coral focus:outline-none [color-scheme:dark] cursor-pointer"
+              title="Dari tanggal"
+            />
+            <span className="text-xs text-komazi-muted font-medium px-0.5 select-none">
+              hingga
+            </span>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-medium focus:border-komazi-coral focus:outline-none [color-scheme:dark] cursor-pointer"
+              title="Sampai tanggal"
             />
           </div>
 
-          {/* Filter Dropdowns */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Owner & Manager: Filter Sesi Shift */}
-            {isManagerOrOwner && (
+          {/* Tombol Reset Filter */}
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-komazi-coral hover:bg-komazi-coral/10 border border-komazi-coral/30 transition-all active:scale-95 shrink-0"
+              title="Reset semua filter ke kondisi awal"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
+
+        {/* Filter Khusus Supervisor (Hanya Owner & Manager) */}
+        {isManagerOrOwner && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-komazi-border/50 text-xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-1">
+              Opsi:
+            </span>
+
+            {/* Filter Shift */}
+            <div className="relative">
               <select
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan sesi shift"
+                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+                title="Filter berdasarkan shift"
               >
-                <option value="ALL">Semua Sesi Shift</option>
+                <option value="ALL">Semua Shift</option>
                 {shiftList.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label}
                   </option>
                 ))}
               </select>
-            )}
+              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+            </div>
 
-            {/* Owner & Manager: Filter Staf Kasir */}
-            {isManagerOrOwner && (
+            {/* Filter Kasir */}
+            <div className="relative">
               <select
                 value={cashierFilter}
                 onChange={(e) => setCashierFilter(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan nama kasir"
+                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+                title="Filter berdasarkan kasir"
               >
                 <option value="ALL">Semua Kasir</option>
                 {distinctCashiers.map((name) => (
@@ -539,47 +726,21 @@ export default function OrdersPage() {
                   </option>
                 ))}
               </select>
-            )}
-
-            {/* Owner & Manager: Filter Rentang Waktu */}
-            {isManagerOrOwner && (
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-              >
-                <option value="ALL">Semua Tanggal</option>
-                <option value="TODAY">Hari Ini</option>
-                <option value="7DAYS">7 Hari Terakhir</option>
-                <option value="30DAYS">30 Hari Terakhir</option>
-              </select>
-            )}
-
-            {/* Status Filter (Available to all) */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="py-2 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-            >
-              <option value="ALL">Semua Status</option>
-              <option value="PAID">Berhasil (PAID)</option>
-              <option value="VOIDED">Dibatalkan (VOIDED)</option>
-              <option value="REFUNDED">Dikembalikan (REFUNDED)</option>
-            </select>
+              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 4. ORDERS TABLE */}
-      {(!isCashier || hasActiveShift) && (
-        <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden shadow-sm">
+      <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-komazi-border bg-komazi-surface-2 text-komazi-muted font-bold uppercase tracking-wider">
                 <tr>
                   <th className="py-3 px-4">No. Invoice</th>
                   <th className="py-3 px-4">Waktu Transaksi</th>
-                  {isManagerOrOwner && <th className="py-3 px-4">Kasir & Shift</th>}
+                  {isManagerOrOwner && <th className="py-3 px-4">Kasir</th>}
                   <th className="py-3 px-4">Pelanggan / Meja</th>
                   <th className="py-3 px-4">Item Pesanan</th>
                   <th className="py-3 px-4">Metode Bayar</th>
@@ -589,7 +750,13 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-komazi-border">
-                {filteredOrders.length === 0 ? (
+                {isLoading && orders.length === 0 ? (
+                  <tr>
+                    <td colSpan={isManagerOrOwner ? 9 : 8} className="p-4 sm:p-6 bg-komazi-black/40">
+                      <OrdersTableSkeleton rows={5} />
+                    </td>
+                  </tr>
+                ) : filteredOrders.length === 0 ? (
                   <tr>
                     <td
                       colSpan={isManagerOrOwner ? 9 : 8}
@@ -630,11 +797,8 @@ export default function OrdersPage() {
                         {isManagerOrOwner && (
                           <td className="py-3.5 px-4">
                             <div className="font-bold text-komazi-text">
-                              {order.cashierName || 'Kasir'}
+                              {order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir'}
                             </div>
-                            <span className="inline-block mt-0.5 px-2 py-0.2 rounded text-[10px] font-mono font-semibold bg-komazi-surface-2 border border-komazi-border text-komazi-muted">
-                              {order.shiftId ? `Shift #${order.shiftId}` : 'Shift Berjalan'}
-                            </span>
                           </td>
                         )}
 
@@ -748,7 +912,7 @@ export default function OrdersPage() {
                                 title="Refund / Pengembalian Dana"
                                 className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-warning hover:text-black text-komazi-muted transition-colors"
                               >
-                                <RotateCcw className="w-3.5 h-3.5" />
+                                <Undo2 className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
@@ -771,7 +935,6 @@ export default function OrdersPage() {
             itemLabel="transaksi"
           />
         </div>
-      )}
 
       {/* Modal: Receipt Preview */}
       {selectedReceipt && (
@@ -795,12 +958,6 @@ export default function OrdersPage() {
                 <Ban className="w-5 h-5" />
                 <h3 className="font-bold text-base">Void Transaksi: {voidTargetOrder.invoiceNo}</h3>
               </div>
-              <button
-                onClick={() => setVoidTargetOrder(null)}
-                className="text-komazi-muted hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             <form onSubmit={handleConfirmVoid} className="p-5 space-y-4">
@@ -875,12 +1032,6 @@ export default function OrdersPage() {
                 <RotateCcw className="w-5 h-5" />
                 <h3 className="font-bold text-base">Refund Transaksi: {refundTargetOrder.invoiceNo}</h3>
               </div>
-              <button
-                onClick={() => setRefundTargetOrder(null)}
-                className="text-komazi-muted hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             <form onSubmit={handleConfirmRefund} className="p-5 space-y-4">
@@ -913,24 +1064,19 @@ export default function OrdersPage() {
               </div>
 
               {!isManagerOrOwner ? (
-                <div>
-                  <label className="block text-xs font-bold uppercase text-komazi-muted mb-1.5 flex items-center gap-1">
-                    <Lock className="w-3.5 h-3.5 text-warning" />
-                    <span>PIN Otorisasi Manager:</span>
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Masukkan PIN Supervisor (4-6 digit)"
-                    value={managerPin}
-                    onChange={(e) => setManagerPin(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-warning focus:outline-none"
-                    required
-                  />
+                <div className="p-3 rounded-xl bg-komazi-coral/10 border border-komazi-coral/20 flex items-start gap-2.5 text-xs text-komazi-coral">
+                  <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-komazi-text">Pengajuan Refund Tanpa Otorisasi PIN</p>
+                    <p className="text-[11px] text-komazi-muted mt-0.5">
+                      Permintaan refund akan langsung dikirimkan ke Owner untuk disetujui tanpa perlu memasukkan PIN otorisasi.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-success/10 border border-success/30 text-success text-[11px] font-semibold flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span>Akses Langsung: Anda memiliki otorisasi penuh sebagai {user?.role}.</span>
+                  <span>Akses Langsung: Anda memiliki otorisasi penuh sebagai {user?.role}. Refund langsung diproses.</span>
                 </div>
               )}
 
@@ -938,15 +1084,15 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   onClick={() => setRefundTargetOrder(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white font-semibold text-xs"
+                  className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white font-semibold text-xs transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-warning hover:bg-warning/90 text-black font-bold text-xs shadow-md"
+                  className="flex-1 py-2.5 rounded-xl bg-warning hover:bg-warning/90 text-black font-bold text-xs shadow-md transition-all active:scale-95"
                 >
-                  Konfirmasi Refund
+                  {isManagerOrOwner ? 'Konfirmasi Refund' : 'Ajukan Refund ke Owner'}
                 </button>
               </div>
             </form>

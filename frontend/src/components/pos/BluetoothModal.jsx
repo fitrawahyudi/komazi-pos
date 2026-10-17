@@ -19,39 +19,6 @@ import { usePrinterStore } from '../../store/printerStore';
 import { toast } from '../../store/toastStore';
 import { isAndroid, isNative } from '../../services/platform';
 
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-function StatusBadge({ status }) {
-  const map = {
-    idle: {
-      label: 'Siap',
-      cls: 'bg-komazi-surface-2 text-komazi-muted border-komazi-border',
-      dot: 'bg-komazi-muted',
-    },
-    connecting: {
-      label: 'Menghubungkan...',
-      cls: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-      dot: 'bg-amber-400 animate-ping',
-    },
-    connected: {
-      label: 'Terhubung',
-      cls: 'bg-success/10 text-success border-success/30',
-      dot: 'bg-success',
-    },
-    error: {
-      label: 'Gagal',
-      cls: 'bg-danger/10 text-danger border-danger/30',
-      dot: 'bg-danger',
-    },
-  };
-  const s = map[status] || map.idle;
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${s.cls}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-      {s.label}
-    </span>
-  );
-}
-
 export default function BluetoothModal({ onClose }) {
   const {
     isConnected,
@@ -140,10 +107,13 @@ export default function BluetoothModal({ onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn select-none"
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn select-none"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-md bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="min-h-full flex items-center justify-center">
+        <div className="w-full max-w-md bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[calc(100dvh-1.5rem)] my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-komazi-border bg-komazi-surface-2 shrink-0">
           <div className="flex items-center gap-3">
@@ -158,7 +128,6 @@ export default function BluetoothModal({ onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={status} />
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-border transition-colors"
@@ -434,26 +403,8 @@ export default function BluetoothModal({ onClose }) {
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3.5 border-t border-komazi-border bg-komazi-surface-2 flex items-center justify-between gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={handleUseBrowserDriver}
-            className="text-xs text-komazi-muted hover:text-komazi-coral transition-colors font-medium underline"
-          >
-            Mode Driver Dialog
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-komazi-text bg-komazi-surface border border-komazi-border hover:bg-komazi-surface-2 transition-all active:scale-95"
-          >
-            Tutup
-          </button>
-        </div>
       </div>
     </div>
+  </div>
   );
 }

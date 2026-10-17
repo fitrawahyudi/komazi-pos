@@ -29,8 +29,8 @@ router.put('/:id', validate(createOrderSchema), updateOrder);
 router.post('/:id/pay', payOrder);
 router.patch('/:id/kitchen-status', updateKitchenStatus);
 
-// Void & Refund (Void for PAID requires MANAGER or OWNER; OPEN orders can be voided by CASHIER)
-router.post('/:id/void', validate(voidOrderSchema), voidOrder);
-router.post('/:id/refund', requireRole(['MANAGER', 'OWNER']), validate(refundOrderSchema), refundOrder);
+// Void & Refund (Void/Refund pesanan PAID memerlukan MANAGER/OWNER atau otorisasi PIN Supervisor jika oleh CASHIER)
+router.post('/:id/void', requireRole(['OWNER', 'MANAGER', 'CASHIER']), validate(voidOrderSchema), voidOrder);
+router.post('/:id/refund', requireRole(['OWNER', 'MANAGER', 'CASHIER']), validate(refundOrderSchema), refundOrder);
 
 export default router;

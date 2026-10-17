@@ -1,8 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Pagination from '../ui/Pagination';
+import LoadingButton from '../ui/loading/LoadingButton';
 import { useShiftStore } from '../../store/shiftStore';
 import { useAuthStore } from '../../store/authStore';
+import { useHrisStore } from '../../store/hrisStore';
 import { formatRupiah, formatDateTime } from '../../utils/format';
+import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
+import DenominationCounter from './DenominationCounter';
+import CloseSessionReportModal from './CloseSessionReportModal';
+import AttendanceVerificationModal from '../hris/AttendanceVerificationModal';
 import {
   X,
   CircleDot,
@@ -11,39 +17,80 @@ import {
   Lock,
   Unlock,
   AlertTriangle,
+  AlertCircle,
+  Clock,
   CheckCircle2,
   ArrowDownLeft,
   ArrowUpRight,
   Plus,
   History,
   Coins,
+  ShieldCheck,
+  User,
+  Receipt,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
 
 export default function ShiftModal({ onClose }) {
-  const { activeShift, openShift, closeShift, addCashMovement, fetchActiveShift } = useShiftStore();
+  const {
+    activeShift,
+    registers,
+    selectedRegisterId,
+    fetchRegisters,
+    fetchActiveShift,
+    openShift,
+    closeShift,
+    addCashMovement,
+  } = useShiftStore();
   const { user } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'movement'
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'movement' | 'cashiers'
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [showDenomCounter, setShowDenomCounter] = useState(false);
+  const [closedSessionReport, setClosedSessionReport] = useState(null);
+
+  const myTodaySchedule = useHrisStore((state) => state.myTodaySchedule);
+  const fetchMyTodaySchedule = useHrisStore((state) => state.fetchMyTodaySchedule);
+  const myTodayAttendance = useHrisStore((state) => state.myTodayAttendance);
+  const fetchTodayAttendance = useHrisStore((state) => state.fetchTodayAttendance);
+
+  useEffect(() => {
+    fetchMyTodaySchedule?.();
+    if (user?.id) fetchTodayAttendance?.(user.id);
+  }, [fetchMyTodaySchedule, fetchTodayAttendance, user?.id]);
+
+  const isOwner = user?.role === 'OWNER';
+  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
+  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && !hasClockedIn;
+  const isBlocked = isScheduleBlocked || isAttendanceBlocked;
+
+  const handleAttendanceSuccess = async () => {
+    setShowVerifyModal(false);
+    await fetchMyTodaySchedule?.();
+    if (user?.id) await fetchTodayAttendance?.(user.id);
+    toast.success('Presensi berhasil diverifikasi! Sesi kasir siap dibuka.');
+  };
 
   // Opening / Closing inputs
   const [openingCashInput, setOpeningCashInput] = useState(200000);
   const [shiftNote, setShiftNote] = useState('');
 
-  // Sinkronkan data shift aktif terbaru dari database saat modal dibuka
-  React.useEffect(() => {
-    fetchActiveShift?.();
-  }, [fetchActiveShift]);
-
   // Cash Movement inputs
-  const [movementType, setMovementType] = useState('OUT'); // 'OUT' | 'IN'
+  const [movementType, setMovementType] = useState('OUT'); // 'OUT' | 'IN' | 'DROP'
   const [movementAmount, setMovementAmount] = useState(25000);
   const [movementReason, setMovementReason] = useState('Beli Es Batu Darurat');
 
   // Pagination for Cash Movements
   const [movementPage, setMovementPage] = useState(1);
   const [movementsPerPage, setMovementsPerPage] = useState(10);
+
+  useEffect(() => {
+    fetchRegisters?.();
+    fetchActiveShift?.();
+  }, [fetchRegisters, fetchActiveShift]);
 
   const cashMovements = activeShift?.cashMovements || [];
   const paginatedMovements = useMemo(() => {
@@ -53,29 +100,62 @@ export default function ShiftModal({ onClose }) {
 
   const openingCash = Number(activeShift?.openingCash || 0);
   const totalCashSales = Number(activeShift?.totalCashSales || 0);
+  const totalNonCashSales = Number(activeShift?.totalNonCashSales || 0);
+  const totalSales = Number(activeShift?.totalSales || totalCashSales + totalNonCashSales);
   const totalCashIn = Number(activeShift?.totalCashIn || 0);
   const totalCashOut = Number(activeShift?.totalCashOut || 0);
+  const totalCashDrop = Number(activeShift?.totalCashDrop || 0);
+  const totalCashRefund = Number(activeShift?.totalCashRefund || 0);
+
+  const activeDurationFormatted = useMemo(() => {
+    if (!activeShift?.openedAt) return '-';
+    const start = new Date(activeShift.openedAt).getTime();
+    const now = Date.now();
+    const diffMin = Math.max(0, Math.floor((now - start) / 60000));
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    return `${h} jam ${m} menit`;
+  }, [activeShift]);
 
   const expectedCash = activeShift
-    ? openingCash + totalCashSales + totalCashIn - totalCashOut
+    ? openingCash + totalCashSales + totalCashIn - totalCashOut - totalCashDrop - totalCashRefund
     : 0;
 
   const [closingCashInput, setClosingCashInput] = useState(expectedCash);
+
+  // Sync default closing cash when expectedCash updates
+  useEffect(() => {
+    if (activeShift && closingCashInput === 0) {
+      setClosingCashInput(expectedCash);
+    }
+  }, [expectedCash, activeShift, closingCashInput]);
+
   const difference = Number(closingCashInput) - expectedCash;
 
   const handleOpenShift = async (e) => {
     e.preventDefault();
+    if (isScheduleBlocked) {
+      toast.error('Jadwal kerja Anda belum diatur untuk hari ini. Silakan hubungi Owner atau Manajer.');
+      return;
+    }
+    if (isAttendanceBlocked) {
+      toast.error('Anda wajib melakukan presensi terlebih dahulu sebelum membuka sesi kasir.');
+      return;
+    }
     if (openingCashInput < 0) {
       toast.error('Modal awal kasir tidak boleh bernilai negatif');
       return;
     }
     try {
       setIsSubmitting(true);
-      await openShift(user || { id: 1, name: 'Kasir' }, openingCashInput);
-      toast.success(`Shift kasir dibuka dengan modal ${formatRupiah(openingCashInput)}`);
+      await openShift({
+        openingCash: openingCashInput,
+        registerId: selectedRegisterId,
+      });
+      toast.success(`Sesi kasir dibuka dengan modal awal ${formatRupiah(openingCashInput)}`);
       onClose();
     } catch (err) {
-      toast.error(err?.message || 'Gagal membuka shift di database');
+      toast.error(err?.message || 'Gagal membuka sesi kasir');
     } finally {
       setIsSubmitting(false);
     }
@@ -85,49 +165,81 @@ export default function ShiftModal({ onClose }) {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      await closeShift(closingCashInput, shiftNote);
-      toast.success('Shift kasir berhasil ditutup dan direkonsiliasi ke database!');
-      onClose();
+      const completed = await closeShift(closingCashInput, shiftNote, activeShift?.id);
+      toast.success('Sesi kasir berhasil ditutup dan direkonsiliasi!');
+      setClosedSessionReport(completed);
     } catch (err) {
-      toast.error(err?.message || 'Gagal menutup shift di database');
+      toast.error(err?.message || 'Gagal menutup sesi kasir');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleAddMovement = (e) => {
+  const handleAddMovement = async (e) => {
     e.preventDefault();
     if (!movementAmount || Number(movementAmount) <= 0) {
       toast.error('Masukkan nominal kas masuk/keluar yang valid');
       return;
     }
     if (!movementReason.trim()) {
-      toast.error('Masukkan alasan kas masuk/keluar');
+      toast.error('Masukkan keterangan / alasan arus kas');
       return;
     }
 
-    addCashMovement(movementType, movementAmount, movementReason);
-    toast.success(
-      `Kas ${movementType === 'IN' ? 'Masuk' : 'Keluar'} ${formatRupiah(movementAmount)} dicatat!`
-    );
-    setMovementReason('');
-    // Auto-update closing cash input to match expected
-    const newExpected = expectedCash + (movementType === 'IN' ? Number(movementAmount) : -Number(movementAmount));
-    setClosingCashInput(newExpected);
+    try {
+      setIsSubmitting(true);
+      await addCashMovement({
+        type: movementType,
+        amount: movementAmount,
+        reason: movementReason.trim(),
+        shiftId: activeShift?.id,
+      });
+      toast.success(
+        `Arus kas ${movementType === 'IN' ? 'Masuk' : movementType === 'DROP' ? 'Setor Brankas' : 'Keluar'} ${formatRupiah(movementAmount)} dicatat!`
+      );
+      setMovementReason('');
+    } catch (err) {
+      toast.error(err?.message || 'Gagal mencatat arus kas');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  if (closedSessionReport) {
+    return (
+      <CloseSessionReportModal
+        session={closedSessionReport}
+        onClose={() => {
+          setClosedSessionReport(null);
+          onClose();
+        }}
+      />
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200"
+    >
+      <div className="w-full max-w-xl rounded-3xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-komazi-border">
-          <div className="flex items-center gap-2">
-            <CircleDot
-              className={`w-5 h-5 ${activeShift ? 'text-success' : 'text-danger'}`}
-            />
-            <h2 className="font-bold text-base text-komazi-text">
-              {activeShift ? 'Manajemen Shift & Rekonsiliasi Kas' : 'Buka Shift Baru'}
-            </h2>
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-komazi-border shrink-0 bg-komazi-surface">
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-xl ${activeShift ? 'bg-success/20 text-success' : 'bg-komazi-coral/20 text-komazi-coral'}`}>
+              <CircleDot className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-base text-komazi-text flex items-center gap-2">
+                <span>{activeShift ? 'Manajemen Sesi Kasir' : 'Buka Sesi Kasir Baru'}</span>
+              </h2>
+              <p className="text-xs text-komazi-muted">
+                {activeShift
+                  ? `${activeShift.registerName || 'Kasir Utama'} • Dibuka oleh ${activeShift.cashierName || 'Kasir'}`
+                  : 'Daftarkan modal awal fisik untuk memulai transaksi'}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -139,358 +251,468 @@ export default function ShiftModal({ onClose }) {
 
         {/* Tab Selector (Only if active shift exists) */}
         {activeShift && (
-          <div className="flex border-b border-komazi-border bg-komazi-surface-2/60 p-2 gap-2">
+          <div className="flex border-b border-komazi-border bg-komazi-surface-2/60 p-2 gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('summary')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                 activeTab === 'summary'
-                  ? 'bg-komazi-coral text-white shadow-sm'
+                  ? 'bg-komazi-surface text-komazi-text shadow-sm border border-komazi-border'
                   : 'text-komazi-muted hover:text-white'
               }`}
             >
-              Ringkasan & Tutup Shift
+              <Banknote className="w-3.5 h-3.5 text-komazi-coral" />
+              <span>Ringkasan &amp; Tutup Sesi</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('movement')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                 activeTab === 'movement'
-                  ? 'bg-komazi-coral text-white shadow-sm'
+                  ? 'bg-komazi-surface text-komazi-text shadow-sm border border-komazi-border'
                   : 'text-komazi-muted hover:text-white'
               }`}
             >
-              <Coins className="w-3.5 h-3.5" />
-              <span>Kas Masuk / Keluar ({activeShift.cashMovements?.length || 0})</span>
+              <Coins className="w-3.5 h-3.5 text-blue-400" />
+              <span>Arus Kas Laci ({cashMovements.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('cashiers')}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === 'cashiers'
+                  ? 'bg-komazi-surface text-komazi-text shadow-sm border border-komazi-border'
+                  : 'text-komazi-muted hover:text-white'
+              }`}
+            >
+              <User className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Kasir Bertugas</span>
             </button>
           </div>
         )}
 
-        {/* Content */}
-        <div className="p-5 space-y-4 overflow-y-auto flex-1">
-          {activeShift ? (
-            activeTab === 'summary' ? (
-              /* TAB 1: SUMMARY & CLOSE SHIFT */
-              <form onSubmit={handleCloseShift} className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-komazi-muted">Kasir Bertugas:</span>
-                    <span className="font-bold text-komazi-text">{activeShift.cashierName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-komazi-muted">Waktu Buka Shift:</span>
-                    <span className="font-mono text-komazi-text">
-                      {formatDateTime(activeShift.openedAt)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t border-komazi-border/50 pt-2">
-                    <span className="text-komazi-muted">Modal Awal Kas:</span>
-                    <span className="font-mono font-bold text-komazi-text">
-                      {formatRupiah(openingCash)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-komazi-muted">Penjualan Tunai (Cash):</span>
-                    <span className="font-mono font-bold text-success">
-                      +{formatRupiah(totalCashSales)}
-                    </span>
-                  </div>
-                  {totalCashIn > 0 && (
-                    <div className="flex justify-between text-success">
-                      <span>Kas Masuk (Petty Cash):</span>
-                      <span className="font-mono font-bold">+{formatRupiah(totalCashIn)}</span>
-                    </div>
-                  )}
-                  {totalCashOut > 0 && (
-                    <div className="flex justify-between text-danger">
-                      <span>Kas Keluar (Operasional):</span>
-                      <span className="font-mono font-bold">-{formatRupiah(totalCashOut)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-komazi-muted">
-                    <span>Non-Tunai (QRIS/Transfer):</span>
-                    <span className="font-mono font-bold text-komazi-teal-light">
-                      +{formatRupiah(activeShift.totalNonCashSales || 0)}
-                    </span>
-                  </div>
-                  <div className="pt-2 border-t border-komazi-border flex justify-between font-bold text-sm">
-                    <span className="text-komazi-text">Kas Fisik Seharusnya:</span>
-                    <span className="font-mono text-komazi-coral">
-                      {formatRupiah(expectedCash)}
+        {/* Content Body */}
+        <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-5 flex-1 text-xs">
+          {!activeShift ? (
+            /* ================= OPEN SHIFT FORM ================= */
+            <form onSubmit={handleOpenShift} className="space-y-4">
+              {isScheduleBlocked && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <strong className="block text-amber-200">Jadwal Kerja Belum Diatur</strong>
+                    <span className="leading-relaxed text-[11px] block mt-0.5">
+                      Anda belum memiliki jadwal kerja untuk hari ini. Silakan hubungi Owner atau Manajer untuk mengatur jadwal kerja sebelum Anda dapat membuka sesi kasir.
                     </span>
                   </div>
                 </div>
+              )}
 
-                {/* Input Actual Physical Cash */}
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1.5">
-                    Hitungan Uang Fisik Aktual di Laci Kasir:
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2.5 text-xs font-bold text-komazi-muted font-mono">
-                      Rp
-                    </span>
-                    <input
-                      type="number"
-                      step="1000"
-                      value={closingCashInput}
-                      onChange={(e) => setClosingCashInput(Number(e.target.value))}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-base font-bold font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
-                    />
+              {isAttendanceBlocked && (
+                <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs space-y-3">
+                  <div className="flex items-start gap-2.5 text-amber-300">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <strong className="block text-amber-200 font-bold">Presensi Wajib Dilakukan</strong>
+                      <span className="leading-relaxed text-[11px] block mt-0.5 text-amber-300/90">
+                        Anda belum melakukan presensi hari ini. Silakan lakukan kehadiran terlebih dahulu sebelum membuka sesi kasir dan bertransaksi.
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowVerifyModal(true)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                  >
+                    <Clock className="w-4 h-4 stroke-[2.5]" />
+                    <span>Lakukan Presensi & Verifikasi (Selfie & GPS)</span>
+                  </button>
                 </div>
+              )}
 
-                {/* Live Reconciliation Difference Card */}
-                <div
-                  className={`p-3 rounded-xl border flex items-center justify-between text-xs font-semibold ${
-                    difference === 0
-                      ? 'bg-success/10 border-success/30 text-success'
-                      : difference < 0
-                      ? 'bg-danger/10 border-danger/30 text-danger'
-                      : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {difference === 0 ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                    )}
-                    <span>
-                      {difference === 0
-                        ? 'Kas Seimbang (Sesuai 100%)'
-                        : difference < 0
-                        ? `Kas Kurang (Minus ${formatRupiah(Math.abs(difference))})`
-                        : `Kas Lebih (+${formatRupiah(difference)})`}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-sm">
-                    {difference === 0 ? 'Rp 0' : formatRupiah(difference)}
+              <div className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-komazi-muted font-semibold">Kasir Bertugas:</span>
+                  <span className="font-bold text-komazi-text">{user?.name || 'Kasir'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-komazi-muted font-semibold">Terminal POS:</span>
+                  <span className="font-bold text-komazi-text">
+                    {registers.find((r) => r.id === selectedRegisterId)?.name || 'Kasir Utama'}
                   </span>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1.5">
-                    Catatan Kasir / Alasan Selisih:
-                  </label>
-                  <input
-                    type="text"
-                    value={shiftNote}
-                    onChange={(e) => setShiftNote(e.target.value)}
-                    placeholder="Contoh: Uang pecahan koin kurang 500 perak..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted/60 focus:border-komazi-coral focus:outline-none"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-danger hover:bg-danger/90 text-white font-bold text-sm shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Lock className={`w-4 h-4 ${isSubmitting ? 'animate-spin' : ''}`} />
-                    <span>{isSubmitting ? 'Menyimpan ke Database...' : 'Tutup Shift Sekarang'}</span>
-                  </button>
-                </div>
-              </form>
-            ) : (
-              /* TAB 2: PETTY CASH (KAS MASUK & KAS KELUAR) */
-              <div className="space-y-4">
-                <form onSubmit={handleAddMovement} className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-                  <p className="font-bold text-xs text-komazi-text">Catat Kas Masuk / Kas Keluar:</p>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMovementType('OUT')}
-                      className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                        movementType === 'OUT'
-                          ? 'bg-danger/20 border-danger text-danger'
-                          : 'bg-komazi-surface border-komazi-border text-komazi-muted'
-                      }`}
-                    >
-                      <ArrowUpRight className="w-4 h-4" />
-                      <span>Kas Keluar (Beli Barang)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMovementType('IN')}
-                      className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                        movementType === 'IN'
-                          ? 'bg-success/20 border-success text-success'
-                          : 'bg-komazi-surface border-komazi-border text-komazi-muted'
-                      }`}
-                    >
-                      <ArrowDownLeft className="w-4 h-4" />
-                      <span>Kas Masuk (Tambah Modal)</span>
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-komazi-muted mb-1">
-                      Nominal (Rp):
-                    </label>
-                    <input
-                      type="number"
-                      step="1000"
-                      min="1000"
-                      value={movementAmount}
-                      onChange={(e) => setMovementAmount(e.target.value)}
-                      className="w-full p-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono font-bold text-komazi-text focus:border-komazi-coral outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-komazi-muted mb-1">
-                      Keterangan / Alasan:
-                    </label>
-                    <input
-                      type="text"
-                      value={movementReason}
-                      onChange={(e) => setMovementReason(e.target.value)}
-                      placeholder="Contoh: Beli es batu kristal 2 kantong..."
-                      className="w-full p-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-sm transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                    <span>Simpan Mutasi Kas</span>
-                  </button>
-                </form>
-
-                {/* Movement History */}
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase text-komazi-muted flex items-center gap-1.5">
-                    <History className="w-3.5 h-3.5" />
-                    <span>Riwayat Kas Masuk/Keluar Shift Ini:</span>
-                  </p>
-
-                  {(!cashMovements || cashMovements.length === 0) ? (
-                    <div className="p-4 text-center border border-dashed border-komazi-border rounded-xl text-xs text-komazi-muted">
-                      Belum ada kas masuk/keluar yang dicatat di shift ini.
-                    </div>
-                  ) : (
-                    <>
-                      {paginatedMovements.map((m) => (
-                        <div
-                          key={m.id}
-                          className="p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                                m.type === 'IN'
-                                  ? 'bg-success/20 text-success'
-                                  : 'bg-danger/20 text-danger'
-                              }`}
-                            >
-                              {m.type === 'IN' ? (
-                                <ArrowDownLeft className="w-3.5 h-3.5" />
-                              ) : (
-                                <ArrowUpRight className="w-3.5 h-3.5" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-komazi-text">{m.reason}</p>
-                              <p className="text-[10px] text-komazi-muted">
-                                {formatDateTime(m.timestamp)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <span
-                            className={`font-mono font-bold ${
-                              m.type === 'IN' ? 'text-success' : 'text-danger'
-                            }`}
-                          >
-                            {m.type === 'IN' ? '+' : '-'}{formatRupiah(m.amount)}
-                          </span>
-                        </div>
-                      ))}
-
-                      {cashMovements.length > 0 && (
-                        <div className="pt-2">
-                          <Pagination
-                            currentPage={movementPage}
-                            totalItems={cashMovements.length}
-                            itemsPerPage={movementsPerPage}
-                            onPageChange={setMovementPage}
-                            onItemsPerPageChange={(newLimit) => {
-                              setMovementsPerPage(newLimit);
-                              setMovementPage(1);
-                            }}
-                            itemLabel="mutasi kas"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          ) : (
-            /* OPEN SHIFT FORM */
-            <form onSubmit={handleOpenShift} className="space-y-4">
-              <div className="p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2 text-xs">
-                <p className="text-komazi-muted leading-relaxed">
-                  Buka shift kasir sebelum memulai transaksi. Masukkan uang modal awal
-                  (uang pecahan di laci kasir untuk uang kembalian).
-                </p>
-                <div className="flex justify-between font-bold text-komazi-text pt-2 border-t border-komazi-border">
-                  <span>Kasir yang Masuk:</span>
-                  <span>{user?.name || 'Kasir Bertugas'}</span>
-                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1.5">
-                  Modal Awal Kasir (Cash Float):
+              <div className="space-y-2">
+                <label className="block font-bold text-komazi-muted uppercase tracking-wider text-[11px]">
+                  Modal Awal Kasir:
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-2.5 text-xs font-bold text-komazi-muted font-mono">
+                  <span className="absolute left-3.5 top-3 text-sm font-bold text-komazi-muted font-mono">
                     Rp
                   </span>
                   <input
                     type="number"
-                    step="10000"
                     min="0"
+                    step="10000"
+                    required
                     value={openingCashInput}
                     onChange={(e) => setOpeningCashInput(Number(e.target.value))}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-base font-bold font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    onFocus={scrollInputIntoViewOnFocus}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-base font-black font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                    placeholder="200000"
                   />
                 </div>
-                <div className="flex gap-2 mt-2">
-                  {[100000, 200000, 300000, 500000].map((amt) => (
+                <div className="grid grid-cols-4 gap-2 pt-1">
+                  {[100000, 200000, 300000, 500000].map((preset) => (
                     <button
-                      key={amt}
+                      key={preset}
                       type="button"
-                      onClick={() => setOpeningCashInput(amt)}
-                      className="flex-1 py-1 rounded-lg bg-komazi-surface-2 hover:bg-komazi-border text-[11px] font-mono text-komazi-muted hover:text-white border border-komazi-border transition-colors"
+                      onClick={() => setOpeningCashInput(preset)}
+                      className="py-1.5 rounded-lg text-xs font-mono font-bold bg-komazi-surface-2 border border-komazi-border text-komazi-muted hover:text-white hover:border-komazi-coral transition-colors"
                     >
-                      {amt / 1000}k
+                      {preset / 1000}k
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="pt-2">
-                <button
+                <LoadingButton
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-sm shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  isLoading={isSubmitting}
+                  disabled={isBlocked}
+                  loadingText="Membuka Sesi..."
+                  variant="primary"
+                  size="lg"
+                  icon={Unlock}
+                  className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-lg ${
+                    isBlocked
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'shadow-komazi-coral/20'
+                  }`}
                 >
-                  <Unlock className={`w-4 h-4 ${isSubmitting ? 'animate-spin' : ''}`} />
-                  <span>{isSubmitting ? 'Membuka di Database...' : 'Buka Shift Sekarang'}</span>
-                </button>
+                  {isScheduleBlocked
+                    ? 'Jadwal Kerja Belum Diatur'
+                    : isAttendanceBlocked
+                    ? 'Presensi Diperlukan Terlebih Dahulu'
+                    : 'Buka Sesi Kasir Sekarang'}
+                </LoadingButton>
               </div>
             </form>
+          ) : activeTab === 'summary' ? (
+            /* ================= ACTIVE SHIFT SUMMARY & CLOSE FORM ================= */
+            <div className="space-y-5">
+              {/* Financial Dashboard Tiles */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+                  <span className="text-[10px] text-komazi-muted uppercase font-bold block">Modal Awal</span>
+                  <span className="font-mono font-bold text-sm text-komazi-text">
+                    {formatRupiah(openingCash)}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+                  <span className="text-[10px] text-komazi-muted uppercase font-bold block">Penjualan Tunai</span>
+                  <span className="font-mono font-bold text-sm text-emerald-400">
+                    +{formatRupiah(totalCashSales)}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+                  <span className="text-[10px] text-komazi-muted uppercase font-bold block">Arus Kas Masuk</span>
+                  <span className="font-mono font-bold text-sm text-blue-400">
+                    +{formatRupiah(totalCashIn)}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+                  <span className="text-[10px] text-komazi-muted uppercase font-bold block">Kas Keluar / Drop</span>
+                  <span className="font-mono font-bold text-sm text-amber-400">
+                    -{formatRupiah(totalCashOut + totalCashDrop)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Expected Cash in Drawer Tile */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-komazi-surface-2 via-neutral-900 to-komazi-surface-2 border border-komazi-border flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-komazi-muted block">
+                    Total Kas yang Diharapkan di Laci:
+                  </span>
+                  <span className="font-display font-black text-2xl text-komazi-coral font-mono">
+                    {formatRupiah(expectedCash)}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-komazi-muted block">Durasi Sesi</span>
+                  <span className="font-bold text-komazi-text">{activeDurationFormatted}</span>
+                </div>
+              </div>
+
+              {/* Close Shift Form */}
+              <form onSubmit={handleCloseShift} className="space-y-4 pt-2 border-t border-komazi-border">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-komazi-text text-xs uppercase tracking-wider">
+                    Uang Fisik Hasil Hitung (Counted Cash):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowDenomCounter(!showDenomCounter)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-komazi-coral hover:underline"
+                  >
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span>{showDenomCounter ? 'Tutup Kalkulator' : 'Buka Kalkulator Pecahan'}</span>
+                  </button>
+                </div>
+
+                {showDenomCounter && (
+                  <DenominationCounter
+                    onApply={(total) => {
+                      setClosingCashInput(total);
+                      setShowDenomCounter(false);
+                      toast.info(`Kas fisik diperbarui ke ${formatRupiah(total)}`);
+                    }}
+                    currentCounted={closingCashInput}
+                  />
+                )}
+
+                <div className="relative">
+                  <span className="absolute left-3.5 top-3 text-sm font-bold text-komazi-muted font-mono">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    required
+                    value={closingCashInput}
+                    onChange={(e) => setClosingCashInput(Number(e.target.value))}
+                    onFocus={scrollInputIntoViewOnFocus}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-base font-black font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                    placeholder="Hitung uang di laci..."
+                  />
+                </div>
+
+                {/* Selisih Indicator */}
+                <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                  difference === 0
+                    ? 'bg-success/10 border-success/30 text-success'
+                    : difference > 0
+                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                    : 'bg-danger/10 border-danger/30 text-danger'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {difference === 0 ? (
+                      <CheckCircle2 className="w-4 h-4 text-success" />
+                    ) : difference > 0 ? (
+                      <ArrowUpRight className="w-4 h-4 text-blue-400" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-danger" />
+                    )}
+                    <span className="font-bold text-xs">
+                      {difference === 0
+                        ? 'Kas Seimbang (Sesuai Rp 0)'
+                        : difference > 0
+                        ? 'Kas Lebih (Surplus)'
+                        : 'Kas Kurang (Defisit)'}
+                    </span>
+                  </div>
+                  <span className="font-mono font-black text-sm">
+                    {difference > 0 ? `+${formatRupiah(difference)}` : formatRupiah(difference)}
+                  </span>
+                </div>
+
+                {/* Closing Notes */}
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-komazi-muted">
+                    Catatan Penutupan / Alasan Selisih (Opsional):
+                  </label>
+                  <input
+                    type="text"
+                    value={shiftNote}
+                    onChange={(e) => setShiftNote(e.target.value)}
+                    placeholder="Contoh: Kas seimbang, serah terima lancar"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted focus:border-komazi-coral outline-none"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <LoadingButton
+                    type="submit"
+                    isLoading={isSubmitting}
+                    loadingText="Menutup Sesi..."
+                    variant="danger"
+                    size="lg"
+                    icon={Lock}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-danger/20"
+                  >
+                    Tutup Sesi 
+                  </LoadingButton>
+                </div>
+              </form>
+            </div>
+          ) : activeTab === 'movement' ? (
+            /* ================= CASH MOVEMENT TAB ================= */
+            <div className="space-y-5">
+              <form onSubmit={handleAddMovement} className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
+                <h4 className="font-bold text-xs text-komazi-text uppercase tracking-wider">
+                  Catat Arus Kas Fisik Laci
+                </h4>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMovementType('OUT')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      movementType === 'OUT'
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                    }`}
+                  >
+                    Kas Keluar (Out)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMovementType('IN')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      movementType === 'IN'
+                        ? 'bg-blue-500/20 border-blue-500 text-blue-300'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                    }`}
+                  >
+                    Kas Masuk (In)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMovementType('DROP')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      movementType === 'DROP'
+                        ? 'bg-purple-500/20 border-purple-500 text-purple-300'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                    }`}
+                  >
+                    Setor Brankas (Drop)
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-komazi-muted font-bold uppercase">Nominal (Rp):</label>
+                  <input
+                    type="number"
+                    min="1000"
+                    step="5000"
+                    required
+                    value={movementAmount}
+                    onChange={(e) => setMovementAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border font-mono font-bold text-sm text-komazi-text focus:border-komazi-coral outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-komazi-muted font-bold uppercase">Keterangan / Alasan:</label>
+                  <input
+                    type="text"
+                    required
+                    value={movementReason}
+                    onChange={(e) => setMovementReason(e.target.value)}
+                    placeholder="Contoh: Beli es batu darurat, setor aman ke brankas"
+                    className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
+                  />
+                </div>
+
+                <LoadingButton
+                  type="submit"
+                  isLoading={isSubmitting}
+                  loadingText="Menyimpan Arus Kas..."
+                  variant="primary"
+                  className="w-full py-2.5 rounded-xl font-bold text-xs"
+                >
+                  Simpan Arus Kas
+                </LoadingButton>
+              </form>
+
+              {/* Movements List */}
+              <div className="space-y-2">
+                <h4 className="font-bold text-xs text-komazi-text">Riwayat Arus Kas Sesi Ini</h4>
+                {cashMovements.length === 0 ? (
+                  <p className="text-center py-6 text-komazi-muted italic">Belum ada catatan arus kas pada sesi ini.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {paginatedMovements.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            m.type === 'IN' || m.type === 'CASH_IN'
+                              ? 'bg-blue-500/20 text-blue-400'
+                              : m.type === 'DROP' || m.type === 'CASH_DROP'
+                              ? 'bg-purple-500/20 text-purple-400'
+                              : 'bg-amber-500/20 text-amber-400'
+                          }`}>
+                            {m.type}
+                          </span>
+                          <div>
+                            <span className="font-bold text-komazi-text block">{m.reason}</span>
+                            <span className="text-[10px] text-komazi-muted">{formatDateTime(m.createdAt)} • oleh {m.userName || 'Kasir'}</span>
+                          </div>
+                        </div>
+                        <span className="font-mono font-bold text-sm text-komazi-text">
+                          {formatRupiah(m.amount)}
+                        </span>
+                      </div>
+                    ))}
+
+                    <Pagination
+                      currentPage={movementPage}
+                      totalItems={cashMovements.length}
+                      itemsPerPage={movementsPerPage}
+                      onPageChange={setMovementPage}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* ================= CASHIERS TAB ================= */
+            <div className="space-y-4">
+              <p className="text-komazi-muted">
+                Daftar kasir yang bertransaksi menggunakan sesi laci kas ini:
+              </p>
+              {activeShift.cashiers && activeShift.cashiers.length > 0 ? (
+                <div className="space-y-2">
+                  {activeShift.cashiers.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-komazi-coral/20 text-komazi-coral flex items-center justify-center font-bold">
+                          {c.name?.[0] || 'K'}
+                        </div>
+                        <div>
+                          <span className="font-bold text-komazi-text block">{c.name}</span>
+                          <span className="text-[10px] text-komazi-muted">{c.ordersCount} pesanan diproses</span>
+                        </div>
+                      </div>
+                      <span className="font-mono font-bold text-sm text-komazi-text">
+                        {formatRupiah(c.totalSales || 0)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center py-8 text-komazi-muted italic">Belum ada transaksi penjualan pada sesi ini.</p>
+              )}
+            </div>
           )}
         </div>
       </div>
+
+      <AttendanceVerificationModal
+        isOpen={showVerifyModal}
+        onClose={() => setShowVerifyModal(false)}
+        onSuccess={handleAttendanceSuccess}
+      />
     </div>
   );
 }

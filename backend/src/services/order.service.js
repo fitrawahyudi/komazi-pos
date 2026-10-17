@@ -3,16 +3,33 @@ import { generateInvoiceNo } from '../utils/invoice.js';
 import { calculateProductCogs } from './cogsService.js';
 import { events } from '../bot/events.js';
 import { emitOrderEvent } from '../config/socket.js';
+import { isDrinkItemHelper, isItemForStation } from './kdsService.js';
+import { deltaInventoryService } from './deltaInventoryService.js';
+import { checkStaffShiftEligibility } from './scheduleGuard.service.js';
+import { getSettingsMap } from './settingsCache.service.js';
 
 async function resolveStationId(product) {
-  if (product?.stationId) return product.stationId;
-  const catName = (product?.category?.name || '').toLowerCase();
-  const isDrink =
-    catName.includes('kopi') ||
-    catName.includes('drink') ||
-    catName.includes('beverage') ||
-    catName.includes('minuman') ||
-    catName.includes('bar');
+  const isDrink = isDrinkItemHelper(product);
+
+  if (product?.stationId) {
+    if (product.station?.type) {
+      if (isDrink && product.station.type === 'KITCHEN') {
+        // Redirection needed to BAR
+      } else {
+        return product.stationId;
+      }
+    } else {
+      const existingStation = await prisma.station.findUnique({ where: { id: product.stationId } });
+      if (existingStation) {
+        if (isDrink && existingStation.type === 'KITCHEN') {
+          // Redirection needed to BAR
+        } else {
+          return existingStation.id;
+        }
+      }
+    }
+  }
+
   const targetCode = isDrink ? 'BAR_MAIN' : 'KITCHEN_MAIN';
   const targetType = isDrink ? 'BAR' : 'KITCHEN';
   const station = await prisma.station.findFirst({
@@ -29,11 +46,7 @@ export const orderService = {
   },
 
   async preview({ items = [], type = 'DINE_IN', discount = 0 }) {
-    const settings = await prisma.setting.findMany();
-    const settingsMap = settings.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {});
+    const settingsMap = await getSettingsMap();
 
     const taxEnabled = settingsMap['taxEnabled'] === 'true' || settingsMap['taxEnabled'] === true;
     const taxPercentage = taxEnabled ? parseFloat(settingsMap['taxPercentage'] || '10') : 0;
@@ -72,6 +85,18 @@ export const orderService = {
   },
 
   async createFromBot({ cashierId, shiftId, items = [], type = 'DINE_IN', payment = 'CASH', tableNo = null, customerName = null }) {
+    // Validasi jadwal kerja staf (Kecuali OWNER)
+    const cashierUser = await prisma.user.findUnique({
+      where: { id: parseInt(cashierId) },
+      select: { role: true },
+    });
+    if (cashierUser && cashierUser.role !== 'OWNER') {
+      const eligibility = await checkStaffShiftEligibility(cashierId, cashierUser.role);
+      if (!eligibility.eligible) {
+        throw new Error(eligibility.message);
+      }
+    }
+
     const preview = await this.preview({ items, type });
     const invoiceNo = await generateInvoiceNo();
     const isPaid = payment !== 'OPEN';
@@ -154,6 +179,10 @@ export const orderService = {
         },
       });
 
+      if (isPaid) {
+        await deltaInventoryService.deductNewOrderStock(tx, created.id, created.invoiceNo, items);
+      }
+
       return created;
     });
 
@@ -221,21 +250,78 @@ export const orderService = {
     });
   },
 
-  async listQueue() {
-    return prisma.order.findMany({
-      where: {
-        status: { in: ['PAID', 'OPEN', 'IN_PROGRESS', 'PREPARING'] },
-        barStatus: { not: 'READY' },
-      },
+  async listQueue(roleScope = 'ALL') {
+    const normalizedRole = (roleScope || 'ALL').toUpperCase();
+
+    // 1. Tentukan filter status Prisma
+    const whereClause = {
+      status: { in: ['PAID', 'OPEN', 'IN_PROGRESS', 'PREPARING'] },
+    };
+
+    if (normalizedRole === 'BARISTA' || normalizedRole === 'BAR') {
+      whereClause.barStatus = { not: 'READY' };
+    } else if (normalizedRole === 'KITCHEN') {
+      whereClause.kitchenStatus = { not: 'READY' };
+    } else {
+      // MANAGER, OWNER, CASHIER, ALL: tampilkan tiket yang belum tuntas di salah satu stasiun
+      whereClause.OR = [
+        { barStatus: { not: 'READY' } },
+        { kitchenStatus: { not: 'READY' } },
+      ];
+    }
+
+    const orders = await prisma.order.findMany({
+      where: whereClause,
       include: {
         items: {
-          include: { station: true },
+          include: {
+            station: true,
+            product: { include: { category: true, station: true } },
+          },
         },
         cashier: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'asc' },
-      take: 15,
+      take: 25,
     });
+
+    // 2. Filter item sesuai station role dan buang order yang tidak memiliki item relevan
+    const scopedOrders = [];
+
+    for (const order of orders) {
+      let filteredItems = order.items.filter((it) => it.status !== 'CANCELLED');
+
+      if (normalizedRole === 'BARISTA' || normalizedRole === 'BAR') {
+        filteredItems = filteredItems.filter((it) => isItemForStation(it, 'BAR'));
+      } else if (normalizedRole === 'KITCHEN') {
+        filteredItems = filteredItems.filter((it) => isItemForStation(it, 'KITCHEN'));
+      }
+
+      // Jika role Barista atau Kitchen dan tidak ada item untuk station mereka, jangan tampilkan tiket
+      if (
+        filteredItems.length === 0 &&
+        (normalizedRole === 'BARISTA' || normalizedRole === 'BAR' || normalizedRole === 'KITCHEN')
+      ) {
+        continue;
+      }
+
+      // Tentukan status representatif per stasiun
+      let stationStatus = order.status;
+      if (normalizedRole === 'BARISTA' || normalizedRole === 'BAR') {
+        stationStatus = order.barStatus;
+      } else if (normalizedRole === 'KITCHEN') {
+        stationStatus = order.kitchenStatus;
+      }
+
+      scopedOrders.push({
+        ...order,
+        status: stationStatus,
+        stationStatus,
+        items: filteredItems,
+      });
+    }
+
+    return scopedOrders;
   },
 
   async getSummary(period = 'today') {

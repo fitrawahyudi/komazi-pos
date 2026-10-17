@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-printer';
 import { toast } from './toastStore';
-import { buildTestReceiptEscPos, buildOrderReceiptEscPos } from '../utils/escpos';
+import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../utils/escpos';
 import { AndroidPrinter } from '../adapters/printer/printer.android';
 import { isAndroid, isNative } from '../services/platform';
+import { api } from '../services/api';
 
 // Known Bluetooth thermal printer service UUIDs (standard & vendor custom)
 export const BT_PRINTER_SERVICES = [
@@ -31,8 +32,38 @@ let activeCharacteristic = null;
 let activeSerialPort = null;
 
 /**
+ * Sanitizes hardware and browser Web Bluetooth/Serial error messages
+ * into user-friendly Indonesian messages for cashier staff.
+ */
+function formatFriendlyPrinterError(err) {
+  if (!err) return 'Terjadi kendala pada printer.';
+  const msg = typeof err === 'string' ? err : err.message || String(err);
+  const name = err.name || '';
+
+  if (name === 'NotFoundError' || msg.includes('cancelled') || msg.includes('User cancelled') || msg.includes('No port selected')) {
+    return 'Pemilihan perangkat printer dibatalkan.';
+  }
+  if (msg.includes('adapter not available') || msg.includes('powered off') || msg.includes('Bluetooth adapter not powered')) {
+    return 'Bluetooth tidak aktif. Silakan nyalakan Bluetooth pada perangkat Anda.';
+  }
+  if (msg.includes('GATT Server is disconnected') || msg.includes('gattserverdisconnected') || msg.includes('Connection failed')) {
+    return 'Koneksi ke printer terputus. Pastikan printer dalam jangkauan dan daya baterai mencukupi.';
+  }
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return 'Batas waktu koneksi terlampaui. Pastikan printer menyala dan tidak sedang terhubung ke perangkat lain.';
+  }
+  if (msg.includes('SPP') || msg.includes('karakteristik tulis BLE')) {
+    return 'Printer tidak mendukung mode transmisi BLE standar. Gunakan kabel USB atau driver sistem.';
+  }
+  if (msg.includes('Access denied') || msg.includes('Failed to open serial port') || msg.includes('device is already open')) {
+    return 'Port printer sedang digunakan aplikasi lain atau akses tidak diizinkan.';
+  }
+
+  return `Kendala printer: ${msg}`;
+}
+
+/**
  * Lazy initialization of WebBluetoothReceiptPrinter singleton
- * Safely guards against non-browser / non-WebBluetooth environments
  */
 function getWebBluetoothPrinter(set, get) {
   if (typeof window === 'undefined' || !navigator?.bluetooth) return null;
@@ -71,10 +102,8 @@ function getWebBluetoothPrinter(set, get) {
 
 /**
  * Robust fallback scanner to resolve writable BLE characteristic
- * on non-standard Chinese thermal printers (SPP/UART)
  */
 async function resolveWritableCharacteristic(server) {
-  // Method 1: Query primary services
   try {
     const services = await server.getPrimaryServices();
     for (const service of services) {
@@ -88,7 +117,6 @@ async function resolveWritableCharacteristic(server) {
     }
   } catch {}
 
-  // Method 2: Try known thermal printer UUID list
   for (const uuid of BT_PRINTER_SERVICES) {
     try {
       const service = await server.getPrimaryService(uuid);
@@ -106,30 +134,387 @@ async function resolveWritableCharacteristic(server) {
 export const usePrinterStore = create(
   persist(
     (set, get) => ({
-      // Printer Configuration
-      connectionType: 'BROWSER', // 'BROWSER' | 'BLUETOOTH' | 'USB'
+      // Local Hardware Configuration & Connection Status
+      connectionType: 'BROWSER', // 'BROWSER' | 'BLUETOOTH' | 'USB' | 'NETWORK'
       paperWidth: '58mm', // '58mm' | '80mm'
       autoPrintOnCheckout: false,
+      autoPrintKitchenOnCheckout: false,
       printCopies: 1,
       kickCashDrawer: true,
 
-      // Connection Status
       isConnected: false,
       isConnecting: false,
       connectedDeviceName: null,
       connectedDeviceAddress: null,
       lastTestedAt: null,
 
-      // Android Paired Devices List
       pairedDevices: [],
       isLoadingPairedDevices: false,
 
-      // Setters
+      // Database Profiles & Settings
+      profiles: [],
+      isLoadingProfiles: false,
+      activeReceiptPrinter: null,
+      activeKitchenPrinter: null,
+
+      receiptSettings: null,
+      isLoadingReceiptSettings: false,
+
+      kitchenRoutes: [],
+      isLoadingKitchenRoutes: false,
+
+      printJobs: [],
+      printJobsMeta: { page: 1, limit: 20, total: 0, totalPages: 1 },
+      isLoadingPrintJobs: false,
+
+      isPrinting: false,
+      error: null,
+
+      // Local Setters
       setPaperWidth: (paperWidth) => set({ paperWidth }),
       setConnectionType: (connectionType) => set({ connectionType }),
       setAutoPrintOnCheckout: (autoPrintOnCheckout) => set({ autoPrintOnCheckout }),
+      setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => set({ autoPrintKitchenOnCheckout }),
       setPrintCopies: (printCopies) => set({ printCopies }),
       setKickCashDrawer: (kickCashDrawer) => set({ kickCashDrawer }),
+
+      // -------------------------------------------------------------
+      // BACKEND API INTEGRATIONS
+      // -------------------------------------------------------------
+
+      // 1. Fetch Printer Profiles
+      fetchProfiles: async () => {
+        try {
+          set({ isLoadingProfiles: true, error: null });
+          const res = await api.printers.getAll();
+          if (res && res.success && Array.isArray(res.data)) {
+            const profiles = res.data;
+            const defaultReceipt = profiles.find((p) => p.isDefaultReceipt && p.isActive);
+            const defaultKitchen = profiles.find((p) => p.isDefaultKitchen && p.isActive);
+
+            set({
+              profiles,
+              activeReceiptPrinter: defaultReceipt || null,
+              activeKitchenPrinter: defaultKitchen || null,
+              isLoadingProfiles: false,
+            });
+
+            // Sync paper width with default receipt profile if present
+            if (defaultReceipt && defaultReceipt.paperWidthMm) {
+              set({ paperWidth: `${defaultReceipt.paperWidthMm}mm` });
+            }
+
+            return profiles;
+          }
+          set({ isLoadingProfiles: false });
+          return get().profiles;
+        } catch (err) {
+          console.error('[PrinterStore] fetchProfiles error:', err);
+          set({ isLoadingProfiles: false, error: err.message });
+          return get().profiles;
+        }
+      },
+
+      // 2. Create Printer Profile
+      createProfile: async (profileData) => {
+        try {
+          set({ isLoadingProfiles: true });
+          const res = await api.printers.create(profileData);
+          if (res && res.success && res.data) {
+            toast.success(`Profil printer "${res.data.name}" berhasil dibuat`);
+            await get().fetchProfiles();
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal menambahkan profil printer');
+        } catch (err) {
+          set({ isLoadingProfiles: false });
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 3. Update Printer Profile
+      updateProfile: async (id, profileData) => {
+        try {
+          set({ isLoadingProfiles: true });
+          const res = await api.printers.update(id, profileData);
+          if (res && res.success && res.data) {
+            toast.success(`Profil printer "${res.data.name}" diperbarui`);
+            await get().fetchProfiles();
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal memperbarui profil printer');
+        } catch (err) {
+          set({ isLoadingProfiles: false });
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 4. Delete Printer Profile
+      deleteProfile: async (id) => {
+        try {
+          set({ isLoadingProfiles: true });
+          const res = await api.printers.delete(id);
+          if (res && res.success) {
+            toast.success('Profil printer berhasil dihapus');
+            await get().fetchProfiles();
+            return true;
+          }
+          throw new Error(res?.message || 'Gagal menghapus profil printer');
+        } catch (err) {
+          set({ isLoadingProfiles: false });
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 5. Fetch Receipt Settings
+      fetchReceiptSettings: async () => {
+        try {
+          set({ isLoadingReceiptSettings: true });
+          const res = await api.printerSettings.getReceipt();
+          if (res && res.success && res.data) {
+            set({ receiptSettings: res.data, isLoadingReceiptSettings: false });
+            return res.data;
+          }
+          set({ isLoadingReceiptSettings: false });
+          return get().receiptSettings;
+        } catch (err) {
+          console.error('[PrinterStore] fetchReceiptSettings error:', err);
+          set({ isLoadingReceiptSettings: false });
+          return get().receiptSettings;
+        }
+      },
+
+      // 6. Save Receipt Settings
+      saveReceiptSettings: async (settingsData) => {
+        try {
+          set({ isLoadingReceiptSettings: true });
+          const res = await api.printerSettings.updateReceipt(settingsData);
+          if (res && res.success && res.data) {
+            set({ receiptSettings: res.data, isLoadingReceiptSettings: false });
+            toast.success('Pengaturan format struk berhasil disimpan');
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal menyimpan pengaturan struk');
+        } catch (err) {
+          set({ isLoadingReceiptSettings: false });
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 7. Fetch Kitchen Routes
+      fetchKitchenRoutes: async () => {
+        try {
+          set({ isLoadingKitchenRoutes: true });
+          const res = await api.kitchenRoutes.getAll();
+          if (res && res.success && Array.isArray(res.data)) {
+            set({ kitchenRoutes: res.data, isLoadingKitchenRoutes: false });
+            return res.data;
+          }
+          set({ isLoadingKitchenRoutes: false });
+          return get().kitchenRoutes;
+        } catch (err) {
+          console.error('[PrinterStore] fetchKitchenRoutes error:', err);
+          set({ isLoadingKitchenRoutes: false });
+          return get().kitchenRoutes;
+        }
+      },
+
+      // 8. Save Kitchen Routes
+      saveKitchenRoutes: async (routes) => {
+        try {
+          set({ isLoadingKitchenRoutes: true });
+          const res = await api.kitchenRoutes.update({ routes });
+          if (res && res.success && Array.isArray(res.data)) {
+            set({ kitchenRoutes: res.data, isLoadingKitchenRoutes: false });
+            toast.success('Rute printer dapur berhasil diperbarui');
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal menyimpan rute printer dapur');
+        } catch (err) {
+          set({ isLoadingKitchenRoutes: false });
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 9. Fetch Print Jobs History
+      fetchPrintJobs: async (params = {}) => {
+        try {
+          set({ isLoadingPrintJobs: true });
+          const res = await api.printJobs.getAll(params);
+          if (res && res.success && res.data) {
+            set({
+              printJobs: res.data.jobs || [],
+              printJobsMeta: res.data.meta || {
+                page: res.data.page || 1,
+                limit: res.data.limit || 20,
+                total: res.data.total ?? (res.data.jobs?.length || 0),
+                totalPages: res.data.totalPages || 1,
+              },
+              isLoadingPrintJobs: false,
+            });
+            return res.data;
+          }
+          set({ isLoadingPrintJobs: false });
+          return { jobs: [], meta: {} };
+        } catch (err) {
+          console.error('[PrinterStore] fetchPrintJobs error:', err);
+          set({ isLoadingPrintJobs: false });
+          return { jobs: [], meta: {} };
+        }
+      },
+
+      // 10. Record Print Job to Backend Audit Log
+      recordPrintJob: async (jobData) => {
+        try {
+          const res = await api.printJobs.create(jobData);
+          if (res && res.success) {
+            return res.data;
+          }
+        } catch (err) {
+          console.warn('[PrinterStore] recordPrintJob warning:', err);
+        }
+        return null;
+      },
+
+      // 11. Retry Print Job
+      retryPrintJob: async (id) => {
+        try {
+          const res = await api.printJobs.retry(id);
+          if (res && res.success) {
+            toast.success('Pekerjaan cetak dijadwalkan ulang');
+            await get().fetchPrintJobs();
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal mencoba kembali cetak');
+        } catch (err) {
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // 12. Reprint Print Job
+      reprintPrintJob: async (id) => {
+        try {
+          const res = await api.printJobs.reprint(id);
+          if (res && res.success) {
+            toast.success('Struk berhasil didaftarkan untuk cetak ulang');
+            await get().fetchPrintJobs();
+            return res.data;
+          }
+          throw new Error(res?.message || 'Gagal mencetak ulang');
+        } catch (err) {
+          toast.error(err.message);
+          throw err;
+        }
+      },
+
+      // -------------------------------------------------------------
+      // TRANSACTIONAL PRINT ACTIONS (RECEIPT & KITCHEN TICKET)
+      // -------------------------------------------------------------
+
+      // Print Receipt For Completed Order
+      printReceiptForOrder: async (order, options = {}) => {
+        if (!order) return { success: false, message: 'Data pesanan kosong' };
+        const { isConnected, paperWidth, sendRawData, activeReceiptPrinter, receiptSettings, recordPrintJob } = get();
+
+        const effectivePaperWidth = activeReceiptPrinter?.paperWidthMm
+          ? `${activeReceiptPrinter.paperWidthMm}mm`
+          : paperWidth;
+
+        let printSuccess = false;
+        let errorMessage = null;
+
+        try {
+          // If direct hardware is connected, build ESC/POS payload & print
+          if (isConnected) {
+            const rawBytes = buildOrderReceiptEscPos(order, {
+              paperWidth: effectivePaperWidth,
+              storeSettings: receiptSettings || {},
+              ...options,
+            });
+
+            printSuccess = await sendRawData(rawBytes);
+          } else {
+            // Not physically connected (browser mode / waiting)
+            printSuccess = false;
+            errorMessage = 'Printer fisik tidak terhubung (Gunakan cetak browser)';
+          }
+        } catch (err) {
+          console.error('[PrinterStore] printReceiptForOrder error:', err);
+          printSuccess = false;
+          errorMessage = err.message || 'Gagal transmisi data cetak';
+        }
+
+        // Always record print job to backend for full audit trail
+        try {
+          await recordPrintJob({
+            printerProfileId: activeReceiptPrinter?.id || null,
+            orderId: order.id,
+            documentType: 'RECEIPT',
+            status: printSuccess ? 'PRINTED' : 'FAILED',
+            errorCode: printSuccess ? null : 'ERR_PRINTER_OFFLINE',
+            errorMessage,
+            requestedBy: options.requestedBy || 'Kasir',
+          });
+        } catch {}
+
+        return { success: printSuccess, message: errorMessage };
+      },
+
+      // Print Kitchen Ticket For Completed Order
+      printKitchenTicketForOrder: async (order, options = {}) => {
+        if (!order) return { success: false, message: 'Data pesanan kosong' };
+        const { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob } = get();
+
+        const effectivePaperWidth = activeKitchenPrinter?.paperWidthMm
+          ? `${activeKitchenPrinter.paperWidthMm}mm`
+          : '58mm';
+
+        let printSuccess = false;
+        let errorMessage = null;
+
+        try {
+          if (isConnected) {
+            const rawBytes = buildKitchenTicketEscPos(order, {
+              paperWidth: effectivePaperWidth,
+              ...options,
+            });
+
+            printSuccess = await sendRawData(rawBytes);
+          } else {
+            printSuccess = false;
+            errorMessage = 'Printer dapur tidak terhubung';
+          }
+        } catch (err) {
+          console.error('[PrinterStore] printKitchenTicketForOrder error:', err);
+          printSuccess = false;
+          errorMessage = err.message || 'Gagal transmisi tiket dapur';
+        }
+
+        // Record print job audit log
+        try {
+          await recordPrintJob({
+            printerProfileId: activeKitchenPrinter?.id || null,
+            orderId: order.id,
+            documentType: 'KITCHEN_TICKET',
+            status: printSuccess ? 'PRINTED' : 'FAILED',
+            errorCode: printSuccess ? null : 'ERR_KITCHEN_PRINTER_OFFLINE',
+            errorMessage,
+            requestedBy: options.requestedBy || 'Sistem POS',
+          });
+        } catch {}
+
+        return { success: printSuccess, message: errorMessage };
+      },
+
+      // -------------------------------------------------------------
+      // HARDWARE CONNECTION METHODS
+      // -------------------------------------------------------------
 
       // Load Paired Bluetooth Devices on Android
       loadPairedDevices: async () => {
@@ -147,7 +532,7 @@ export const usePrinterStore = create(
         return [];
       },
 
-      // 1. Direct Connection (Android Native address or Web GATT device)
+      // Direct Bluetooth Connection
       connectBluetoothDevice: async (device) => {
         if (!device) return { success: false, message: 'Tidak ada perangkat yang dipilih' };
         if (get().isConnecting) return { success: false, message: 'Proses koneksi sedang berjalan' };
@@ -175,8 +560,9 @@ export const usePrinterStore = create(
             return res;
           } catch (err) {
             set({ isConnecting: false });
-            toast.error(`Koneksi Bluetooth gagal: ${err.message}`);
-            return { success: false, message: err.message };
+            const friendly = formatFriendlyPrinterError(err);
+            toast.error(friendly);
+            return { success: false, message: friendly };
           }
         }
 
@@ -242,18 +628,18 @@ export const usePrinterStore = create(
           activeBluetoothDevice = null;
           activeGattServer = null;
           activeCharacteristic = null;
-          toast.error(`Koneksi Bluetooth gagal: ${err.message}`);
-          return { success: false, message: err.message };
+          const friendly = formatFriendlyPrinterError(err);
+          toast.error(friendly);
+          return { success: false, message: friendly };
         }
       },
 
-      // 2. Scan and Connect via Bluetooth
+      // Scan and Connect via Bluetooth
       connectBluetooth: async (options = {}) => {
         // A. Jalur Native Android APK
         if (isAndroid || isNative) {
           if (get().isConnecting) return { success: false, message: 'Sedang menghubungkan...' };
 
-          // Jika ada perangkat spesifik
           if (options.address || options.device) {
             return await get().connectBluetoothDevice(options.device || options.address);
           }
@@ -264,7 +650,6 @@ export const usePrinterStore = create(
             set({ pairedDevices: devices, isConnecting: false });
 
             if (devices.length === 1) {
-              // Jika hanya ada 1 printer yang ter-pair di HP: langsung connect!
               return await get().connectBluetoothDevice(devices[0]);
             }
 
@@ -279,7 +664,6 @@ export const usePrinterStore = create(
               };
             }
 
-            // Lebih dari 1 perangkat, minta user memilih
             return {
               success: false,
               needSelectDevice: true,
@@ -288,8 +672,9 @@ export const usePrinterStore = create(
             };
           } catch (err) {
             set({ isConnecting: false });
-            toast.error(`Gagal mencari perangkat: ${err.message}`);
-            return { success: false, message: err.message };
+            const friendly = formatFriendlyPrinterError(err);
+            toast.error(friendly);
+            return { success: false, message: friendly };
           }
         }
 
@@ -344,15 +729,16 @@ export const usePrinterStore = create(
           return await get().connectBluetoothDevice(device);
         } catch (err) {
           set({ isConnecting: false });
-          if (err.name === 'NotFoundError') {
+          if (err.name === 'NotFoundError' || err.message?.includes('cancelled')) {
             return { success: false, cancelled: true };
           }
-          toast.error(`Gagal menghubungkan printer: ${err.message || 'Periksa koneksi Bluetooth'}`);
-          return { success: false, message: err.message };
+          const friendly = formatFriendlyPrinterError(err);
+          toast.error(friendly);
+          return { success: false, message: friendly };
         }
       },
 
-      // 3. Connect via Web Serial (USB Thermal Printer)
+      // Connect via Web Serial (USB Thermal Printer)
       connectUsb: async () => {
         if (!navigator?.serial) {
           toast.error(
@@ -379,15 +765,17 @@ export const usePrinterStore = create(
           return { success: true };
         } catch (err) {
           set({ isConnecting: false });
-          if (err.name === 'NotFoundError') return { success: false, cancelled: true };
-          toast.error(`Gagal koneksi USB: ${err.message}`);
-          return { success: false, message: err.message };
+          if (err.name === 'NotFoundError' || err.message?.includes('cancelled') || err.message?.includes('No port selected')) {
+            return { success: false, cancelled: true };
+          }
+          const friendly = formatFriendlyPrinterError(err);
+          toast.error(friendly);
+          return { success: false, message: friendly };
         }
       },
 
-      // 4. Disconnect Printer Cleanly
+      // Disconnect Printer Cleanly
       disconnectPrinter: async () => {
-        // Android Native disconnect
         if (isAndroid || isNative) {
           try {
             await AndroidPrinter.disconnect();
@@ -396,7 +784,6 @@ export const usePrinterStore = create(
           }
         }
 
-        // Disconnect WebBluetoothReceiptPrinter package instance if active
         if (receiptPrinterInstance && hasWebBluetoothConnected) {
           try {
             await receiptPrinterInstance.disconnect();
@@ -406,7 +793,6 @@ export const usePrinterStore = create(
         }
         hasWebBluetoothConnected = false;
 
-        // Disconnect direct GATT or USB handles
         try {
           if (activeGattServer && activeGattServer.connected) {
             activeGattServer.disconnect();
@@ -434,7 +820,7 @@ export const usePrinterStore = create(
         toast.info('Printer diputus.');
       },
 
-      // 5. Send Raw Binary ESC/POS Data
+      // Send Raw Binary ESC/POS Data
       sendRawData: async (uint8Data) => {
         const { connectionType } = get();
 
@@ -504,9 +890,9 @@ export const usePrinterStore = create(
         return false;
       },
 
-      // 6. Trigger Test Print (Encodes test receipt with esc-pos-encoder & prints)
+      // Trigger Test Print
       testPrint: async (storeSettings = {}) => {
-        const { connectionType, paperWidth, isConnected, sendRawData } = get();
+        const { connectionType, paperWidth, isConnected, sendRawData, recordPrintJob, activeReceiptPrinter } = get();
 
         if ((connectionType === 'BLUETOOTH' || connectionType === 'USB') && isConnected) {
           try {
@@ -516,10 +902,28 @@ export const usePrinterStore = create(
             if (ok) {
               set({ lastTestedAt: new Date().toISOString() });
               toast.success('Struk uji coba berhasil dicetak ke printer fisik!');
+
+              // Log test print job
+              await recordPrintJob({
+                printerProfileId: activeReceiptPrinter?.id || null,
+                documentType: 'TEST',
+                status: 'PRINTED',
+                requestedBy: 'Pengaturan POS',
+              });
+
               return true;
             }
           } catch (err) {
-            toast.error(`Gagal test print: ${err.message}`);
+            const friendly = formatFriendlyPrinterError(err);
+            toast.error(friendly);
+            await recordPrintJob({
+              printerProfileId: activeReceiptPrinter?.id || null,
+              documentType: 'TEST',
+              status: 'FAILED',
+              errorCode: 'ERR_TEST_PRINT',
+              errorMessage: err.message,
+              requestedBy: 'Pengaturan POS',
+            });
             return false;
           }
         }
@@ -527,14 +931,43 @@ export const usePrinterStore = create(
         return false;
       },
 
-      // 7. Auto-Reconnect to Last Connected Printer (On App Start / App Resume)
+      // Direct Paper Feed (Feed / Test Response)
+      feedPaper: async (lines = 3) => {
+        const { connectionType, isConnected, sendRawData, recordPrintJob, activeReceiptPrinter } = get();
+        if (isConnected) {
+          try {
+            const feedLines = Math.min(Math.max(1, Number(lines) || 3), 10);
+            // ESC d n: Print and feed n lines (0x1B, 0x64, n)
+            const feedBytes = new Uint8Array([0x1B, 0x64, feedLines]);
+            const ok = await sendRawData(feedBytes);
+            if (ok) {
+              set({ lastTestedAt: new Date().toISOString() });
+              toast.success(`Feed kertas (${feedLines} baris) berhasil dikirim ke printer`);
+              await recordPrintJob({
+                printerProfileId: activeReceiptPrinter?.id || null,
+                documentType: 'TEST',
+                status: 'PRINTED',
+                requestedBy: 'Tes Feed Kasir',
+              });
+              return true;
+            }
+          } catch (err) {
+            const friendly = formatFriendlyPrinterError(err);
+            toast.error(friendly);
+            return false;
+          }
+        }
+        toast.warning('Printer fisik belum terhubung. Silakan hubungkan printer atau atur jalur koneksi/port.');
+        return false;
+      },
+
+      // Auto-Reconnect
       autoConnectPrinter: async (silent = true) => {
-        const { isConnected, isConnecting, connectedDeviceAddress, connectionType } = get();
+        const { isConnected, isConnecting, connectedDeviceAddress } = get();
         if (isConnected || isConnecting) return { success: true };
 
         if (isAndroid || isNative) {
           try {
-            // Priority 1: Native plugin auto-connect (reads last saved SharedPreferences MAC)
             const res = await AndroidPrinter.autoConnect();
             if (res && res.success) {
               set({
@@ -548,7 +981,6 @@ export const usePrinterStore = create(
               return { success: true, name: res.name };
             }
 
-            // Priority 2: Direct connection via stored address in zustand state
             if (connectedDeviceAddress) {
               const directRes = await AndroidPrinter.connect(connectedDeviceAddress);
               if (directRes && directRes.success) {
@@ -576,6 +1008,7 @@ export const usePrinterStore = create(
         connectionType: state.connectionType,
         paperWidth: state.paperWidth,
         autoPrintOnCheckout: state.autoPrintOnCheckout,
+        autoPrintKitchenOnCheckout: state.autoPrintKitchenOnCheckout,
         printCopies: state.printCopies,
         kickCashDrawer: state.kickCashDrawer,
         connectedDeviceName: state.connectedDeviceName,

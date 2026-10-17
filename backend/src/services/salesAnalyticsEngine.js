@@ -1,4 +1,5 @@
 import prisma from '../config/db.js';
+import { findPosKnowledge } from './ai/posKnowledgeBase.js';
 
 /**
  * Format currency to Indonesian Rupiah string
@@ -37,10 +38,12 @@ export function getTodayDateRange() {
 export async function getTodayTopSellingData(limit = 5) {
   const { startOfToday, endOfToday, startOfYesterday, endOfYesterday } = getTodayDateRange();
 
+  const PAID_STATUSES = ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'];
+
   // 1. Ambil seluruh order lunas (PAID) hari ini
   let todayOrders = await prisma.order.findMany({
     where: {
-      status: 'PAID',
+      status: { in: PAID_STATUSES },
       createdAt: { gte: startOfToday, lte: endOfToday },
     },
     include: {
@@ -54,7 +57,7 @@ export async function getTodayTopSellingData(limit = 5) {
   let isFallbackToRecent = false;
   if (todayOrders.length === 0) {
     const recentOrders = await prisma.order.findMany({
-      where: { status: 'PAID' },
+      where: { status: { in: PAID_STATUSES } },
       include: { items: true },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -109,7 +112,7 @@ export async function getTodayTopSellingData(limit = 5) {
   if (!isFallbackToRecent) {
     const yesterdayOrders = await prisma.order.findMany({
       where: {
-        status: 'PAID',
+        status: { in: PAID_STATUSES },
         createdAt: { gte: startOfYesterday, lte: endOfYesterday },
       },
       include: { items: true },
@@ -224,7 +227,7 @@ function isFoodItem(name) {
  * - BARISTA: Beverage Bar (beverage ingredients & menu, zero financial/revenue data)
  * - KITCHEN: Food Kitchen (food ingredients & menu, zero financial/revenue data)
  */
-export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = null } = {}) {
+export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = null, userName = '' } = {}) {
   const normalizedRole = (role || 'CASHIER').toUpperCase();
   const { startOfToday, endOfToday, startOfYesterday, endOfYesterday } = getTodayDateRange();
 
@@ -246,6 +249,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       todayPayments,
       recentStockMovements,
       cashierPersonalOrders,
+      customerMembers,
+      publicSettings,
+      pendingApprovalsCount,
     ] = await Promise.all([
       // 1. Metrik penjualan hari ini (top produk & peringatan bahan)
       getTodayTopSellingData(10),
@@ -254,7 +260,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
         ? prisma.order
             .findMany({
-              where: { status: 'PAID', createdAt: { gte: startOfYesterday, lte: endOfYesterday } },
+              where: { status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] }, createdAt: { gte: startOfYesterday, lte: endOfYesterday } },
               select: { id: true, total: true },
             })
             .catch(() => [])
@@ -264,7 +270,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       normalizedRole === 'OWNER'
         ? prisma.order
             .aggregate({
-              where: { status: 'PAID', createdAt: { gte: startOfMonth, lte: endOfToday } },
+              where: { status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] }, createdAt: { gte: startOfMonth, lte: endOfToday } },
               _sum: { total: true },
               _count: { id: true },
             })
@@ -388,14 +394,61 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         ? prisma.order
             .findMany({
               where: {
-                status: 'PAID',
-                userId: Number(userId),
+                status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] },
+                cashierId: Number(userId),
                 createdAt: { gte: startOfToday, lte: endOfToday },
               },
               select: { id: true, total: true },
             })
             .catch(() => [])
         : Promise.resolve([]),
+
+      // 13. Data Member Loyalitas (CRM) - CASHIER, MANAGER, OWNER
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER' || normalizedRole === 'CASHIER')
+        ? prisma.customer
+            .findMany({
+              where: { isActive: true },
+              select: {
+                id: true,
+                name: true,
+                tier: true,
+                points: true,
+                visitCount: true,
+              },
+              orderBy: { points: 'desc' },
+              take: 20,
+            })
+            .catch(() => [])
+        : Promise.resolve([]),
+
+      // 14. Profil Publik Kedai (Pengaturan Toko Non-Sensitif) - CASHIER, MANAGER, OWNER
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER' || normalizedRole === 'CASHIER')
+        ? prisma.setting
+            .findMany({
+              where: {
+                key: {
+                  in: [
+                    'store_name',
+                    'store_address',
+                    'store_phone',
+                    'receipt_footer',
+                    'tax_percentage',
+                    'service_percentage',
+                  ],
+                },
+              },
+            })
+            .catch(() => [])
+        : Promise.resolve([]),
+
+      // 15. Jumlah pengajuan otorisasi pending - MANAGER & OWNER
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
+        ? prisma.approvalRequest
+            .count({
+              where: { status: 'PENDING' },
+            })
+            .catch(() => 0)
+        : Promise.resolve(0),
     ]);
 
     // Format Ingredients
@@ -456,6 +509,27 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         }
       : null;
 
+    // Format Data Member Loyalitas (CRM) - Tanpa mengekspos PII rahasia
+    const customerSummary = (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER' || normalizedRole === 'CASHIER')
+      ? {
+          totalActiveMembers: customerMembers.length,
+          topMembers: customerMembers.slice(0, 10).map((c) => ({
+            name: c.name,
+            tier: c.tier,
+            points: c.points,
+            visitCount: c.visitCount,
+          })),
+        }
+      : null;
+
+    // Format Profil Publik Kedai (Pengaturan Toko Non-Sensitif)
+    const storeProfileObj = {};
+    if (publicSettings && Array.isArray(publicSettings)) {
+      publicSettings.forEach((s) => {
+        storeProfileObj[s.key] = s.value;
+      });
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // PEMBAGIAN KONTEKS DATA SESUAI ROLE (RBAC-AI)
     // ─────────────────────────────────────────────────────────────────────────────
@@ -472,6 +546,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       return {
         roleScope: 'BARISTA',
         roleScopeLabel: 'Asisten Barista / Bar Minuman',
+        currentUser: { name: userName || 'Barista', role: 'BARISTA' },
         salesSummary: {
           note: 'Akses finansial/omset rupiah ditiadakan untuk Barista (Fokus Bar).',
           topBeveragesToday: topBeverages.map((p) => ({
@@ -489,6 +564,8 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         currentShift: null,
         workspace: null,
         staff: null,
+        customerMembersSummary: null,
+        storeProfile: null,
         generatedAt: new Date().toISOString(),
       };
     }
@@ -505,6 +582,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       return {
         roleScope: 'KITCHEN',
         roleScopeLabel: 'Asisten Dapur Makanan / Kitchen',
+        currentUser: { name: userName || 'Kitchen', role: 'KITCHEN' },
         salesSummary: {
           note: 'Akses finansial/omset rupiah ditiadakan untuk Kitchen (Fokus Dapur).',
           topFoodToday: topFood.map((p) => ({
@@ -522,6 +600,8 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         currentShift: null,
         workspace: null,
         staff: null,
+        customerMembersSummary: null,
+        storeProfile: null,
         generatedAt: new Date().toISOString(),
       };
     }
@@ -534,6 +614,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       return {
         roleScope: 'CASHIER',
         roleScopeLabel: 'Asisten Kasir Depan (POS)',
+        currentUser: { name: userName || 'Kasir', role: 'CASHIER' },
         salesSummary: {
           note: 'Omset global kedai bulanan diredact (Fokus Shift & Pelayanan).',
           topProductsForUpsell: todayMetrics.topProducts.map((p) => ({
@@ -566,6 +647,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
           : { isOpen: false, status: 'Belum ada shift kasir yang dibuka' },
         workspace: activeWorkspaceSummary,
         staff: null,
+        customerMembersSummary: customerSummary,
+        storeProfile: storeProfileObj,
+        pendingApprovalsCount,
         generatedAt: new Date().toISOString(),
       };
     }
@@ -582,6 +666,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       return {
         roleScope: 'MANAGER',
         roleScopeLabel: 'Asisten Store Manager (Operasional Kedai)',
+        currentUser: { name: userName || 'Manager', role: 'MANAGER' },
         salesSummary: {
           today: {
             totalOrders: todayMetrics.todayTotalOrders,
@@ -623,6 +708,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
           totalActiveStaff: staffMembers.length,
           staffList: staffMembers.map((u) => `${u.name} (${u.role})`),
         },
+        customerMembersSummary: customerSummary,
+        storeProfile: storeProfileObj,
+        pendingApprovalsCount,
         generatedAt: new Date().toISOString(),
       };
     }
@@ -639,6 +727,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
     return {
       roleScope: 'OWNER',
       roleScopeLabel: 'Asisten Eksekutif Pemilik Kedai (Owner)',
+      currentUser: { name: userName || 'Owner', role: 'OWNER' },
       salesSummary: {
         today: {
           totalOrders: todayMetrics.todayTotalOrders,
@@ -686,6 +775,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         totalActiveStaff: staffMembers.length,
         staffList: staffMembers.map((u) => `${u.name} (${u.role})`),
       },
+      customerMembersSummary: customerSummary,
+      storeProfile: storeProfileObj,
+      pendingApprovalsCount,
       generatedAt: new Date().toISOString(),
     };
   } catch (err) {
@@ -711,9 +803,12 @@ export async function getComprehensiveBusinessContext(options = {}) {
  * Generate accurate rule-based deterministic narrative (Local Fallback)
  * 100% offline, intent-aware, zero-hallucination, and strictly respects role boundaries
  */
-export function generateFallbackNarrative(contextOrMetrics, query = '', userRole = 'CASHIER') {
+export function generateFallbackNarrative(contextOrMetrics, query = '', userRole = 'CASHIER', userName = '') {
   const q = (query || '').toLowerCase().trim();
   const role = (userRole || contextOrMetrics?.roleScope || 'CASHIER').toUpperCase();
+  const effectiveName = userName || contextOrMetrics?.currentUser?.name || '';
+  const displayName = effectiveName ? `Kak ${effectiveName}` : (role === 'OWNER' ? 'Owner' : role === 'MANAGER' ? 'Manager' : 'Rekan Komazi');
+
   const todayMetrics = contextOrMetrics?.salesSummary?.today || contextOrMetrics || {};
   const yesterdayMetrics = contextOrMetrics?.salesSummary?.yesterday || {};
   const inventoryAlerts = contextOrMetrics?.inventory?.criticalLowStockItems || todayMetrics.ingredientAlerts || [];
@@ -723,7 +818,13 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
   const topProducts = todayMetrics.topProducts || [];
   const top1 = topProducts[0] || null;
 
-  // 1. Cek Pelanggaran Batasan Hak Akses (Role Boundary Enforcement)
+  // 1. Perlindungan Informasi Sensitif / Rahasia Kedai
+  const sensitiveKeywords = ['pin', 'supervisor', 'password', 'sandi', 'kunci', 'secret', 'token', 'apikey', 'api key'];
+  if (sensitiveKeywords.some((k) => q.includes(k))) {
+    return `Mohon maaf ${displayName}, demi keamanan operasional dan privasi kedai, informasi rahasia seperti PIN otorisasi supervisor, kata sandi, dan kunci keamanan sistem tidak dapat diakses melalui asisten AI.`;
+  }
+
+  // 2. Cek Pelanggaran Batasan Hak Akses (Role Boundary Enforcement)
   if (role === 'BARISTA' || role === 'KITCHEN') {
     if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('penjualan') || q.includes('transaksi') || q.includes('uang') || q.includes('rupiah') || q.includes('laba') || q.includes('untung')) {
       return `Sebagai asisten operasional **${role === 'BARISTA' ? 'Bar Minuman' : 'Dapur Makanan'}**, saya tidak memiliki akses ke data finansial atau omset rupiah kedai.\n\nSaya dapat membantu Anda memeriksa:\n- Sisa stok bahan ${role === 'BARISTA' ? 'kopi, susu, dan sirup' : 'pastry, makanan, dan bahan dapur'}.\n- Menu ${role === 'BARISTA' ? 'minuman' : 'makanan'} yang paling banyak dipesan untuk persiapan operasional.`;
@@ -736,17 +837,71 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     }
   }
 
-  // 2. Sapaan / Greeting Intent
+  // 2b. Panduan SOP POS Teknis (Knowledge Base Built-in)
+  const matchedSop = findPosKnowledge(q);
+  if (matchedSop) {
+    let sopText = `💡 **${matchedSop.title}**\n\n${matchedSop.summary}\n\n**Langkah-langkah Eksekusi:**\n`;
+    matchedSop.steps.forEach((s, idx) => {
+      sopText += `${idx + 1}. ${s}\n`;
+    });
+    if (matchedSop.troubleshooting) {
+      sopText += `\n📌 **Tips:** ${matchedSop.troubleshooting}`;
+    }
+    return sopText;
+  }
+
+  // 2c. Resep & Komposisi Menu
+  if (q.includes('resep') || q.includes('takaran') || q.includes('komposisi') || q.includes('gramasi')) {
+    const catalog = contextOrMetrics?.menuCatalog || [];
+    const matchedProducts = [];
+    for (const cat of catalog) {
+      for (const p of cat.products || []) {
+        if (
+          p.name &&
+          (q.includes(p.name.toLowerCase()) ||
+            p.name.toLowerCase().split(' ').some((w) => w.length > 3 && q.includes(w)))
+        ) {
+          matchedProducts.push(p);
+        }
+      }
+    }
+    const toShow =
+      matchedProducts.length > 0
+        ? matchedProducts.slice(0, 4)
+        : catalog.flatMap((c) => c.products || []).slice(0, 3);
+
+    if (toShow.length > 0) {
+      let rText = `☕ **Resep & Komposisi Menu:**\n\n`;
+      toShow.forEach((p) => {
+        rText += `• **${p.name}** (${p.priceFormatted || ''}):\n`;
+        if (p.ingredientsUsed && p.ingredientsUsed.length > 0) {
+          p.ingredientsUsed.forEach((ing) => {
+            rText += `  - ${ing}\n`;
+          });
+        } else {
+          rText += `  - (Resep belum terdaftar di sistem)\n`;
+        }
+      });
+      return rText.trim();
+    }
+  }
+
+  // 2d. Pengingat & Jadwal (Scheduler)
+  if (q.includes('ingatkan') || q.includes('pengingat') || q.includes('jadwalkan') || q.includes('cronjob')) {
+    return `⏰ **Sistem Pengingat & Penjadwalan Otomatis Komazi**\n\nPermintaan pengingat operasional Anda telah dipahami oleh sistem. Anda dapat mengonfirmasi pengingat otomatis langsung melalui tombol aksi atau perintah bot Telegram.`;
+  }
+
+  // 3. Sapaan / Greeting Intent
   const greetingWords = ['hi', 'halo', 'hello', 'hey', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum', 'tes', 'test', 'ping', 'bantu'];
   const isGreeting = greetingWords.some((w) => q === w || q.startsWith(`${w} `) || q.endsWith(` ${w}`));
 
   if (isGreeting || !q) {
     if (role === 'BARISTA') {
-      return `Halo! Saya **Komazi AI**, asisten operasional **Bar Minuman** ☕\n\n📌 **Status Bar Saat Ini:**\n- Bahan Menipis: **${lowStock.length > 0 ? `${lowStock.length} bahan bar menipis ⚠️` : 'Stok bahan bar aman ✅'}**\n\nSilakan tanyakan hal seputar bar:\n- *"Berapa sisa stok Fresh Milk dan Biji Kopi?"*\n- *"Minuman apa yang paling banyak dipesan hari ini?"*\n- *"Bahan minuman apa yang perlu di-restock?"*`;
+      return `Halo ${displayName}! Saya **Komazi AI**, asisten operasional **Bar Minuman** ☕\n\n📌 **Status Bar Saat Ini:**\n- Bahan Menipis: **${lowStock.length > 0 ? `${lowStock.length} bahan bar menipis ⚠️` : 'Stok bahan bar aman ✅'}**\n\nSilakan tanyakan hal seputar bar:\n- *"Berapa sisa stok Fresh Milk dan Biji Kopi?"*\n- *"Minuman apa yang paling banyak dipesan hari ini?"*\n- *"Bahan minuman apa yang perlu di-restock?"*`;
     }
 
     if (role === 'KITCHEN') {
-      return `Halo! Saya **Komazi AI**, asisten operasional **Dapur Makanan** 🥐\n\n📌 **Status Dapur Saat Ini:**\n- Bahan Menipis: **${lowStock.length > 0 ? `${lowStock.length} bahan dapur menipis ⚠️` : 'Stok bahan dapur aman ✅'}**\n\nSilakan tanyakan seputar persiapan dapur:\n- *"Bahan dapur apa yang stoknya paling sedikit?"*\n- *"Makanan atau pastry apa yang paling laku hari ini?"*`;
+      return `Halo ${displayName}! Saya **Komazi AI**, asisten operasional **Dapur Makanan** 🥐\n\n📌 **Status Dapur Saat Ini:**\n- Bahan Menipis: **${lowStock.length > 0 ? `${lowStock.length} bahan dapur menipis ⚠️` : 'Stok bahan dapur aman ✅'}**\n\nSilakan tanyakan seputar persiapan dapur:\n- *"Bahan dapur apa yang stoknya paling sedikit?"*\n- *"Makanan atau pastry apa yang paling laku hari ini?"*`;
     }
 
     if (role === 'CASHIER') {
@@ -754,7 +909,7 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
       const personalText = personalShift
         ? `Transaksi yang Anda tangani: **${personalShift.ordersHandledByMe} pesanan** (${personalShift.totalRevenueHandledByMe}).`
         : 'Shift kasir aktif.';
-      return `Halo! Saya **Komazi AI**, asisten kasir POS Anda ☕\n\n📌 **Status Shift Anda:**\n- ${personalText}\n- Bahan Habis/Kritis: **${lowStock.length > 0 ? `${lowStock.length} bahan menipis (perhatikan menu terkait) ⚠️` : 'Semua menu siap jual ✅'}**\n\nSilakan tanyakan:\n- *"Menu apa yang stok bahannya habis?"*\n- *"Menu apa yang paling laku untuk rekomendasi pelanggan?"*\n- *"Berapa sesi workspace yang sedang aktif?"*`;
+      return `Halo ${displayName}! Saya **Komazi AI**, asisten kasir POS Anda ☕\n\n📌 **Status Shift Anda:**\n- ${personalText}\n- Ketersediaan Menu: **${lowStock.length > 0 ? `${lowStock.length} bahan menipis ⚠️` : 'Semua menu siap disajikan ✅'}**\n\nSilakan tanyakan:\n- *"Menu apa yang stok bahannya habis?"*\n- *"Menu apa yang paling laku untuk rekomendasi pelanggan?"*\n- *"Berapa sesi workspace yang sedang aktif?"*`;
     }
 
     // OWNER & MANAGER Greeting
@@ -765,10 +920,45 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
       ? `Omset hari ini sementara tercatat **${todayMetrics.todayTotalRevenueFormatted}** (${todayMetrics.todayTotalOrders || 0} transaksi).`
       : 'Belum ada transaksi hari ini.';
 
-    return `Halo! Selamat datang di **Komazi Coffee & Workspace** ☕\n\nSaya **Komazi AI**, asisten manajemen kedai Anda.\n\n📌 **Status Operasional Hari Ini:**\n- ${revenueText}\n- ${shiftText}\n- Kondisi Bahan Baku: **${lowStock.length > 0 ? `${lowStock.length} bahan menipis ⚠️` : 'Aman terkendali ✅'}**\n\nSilakan tanyakan seputar performa penjualan atau operasional kedai.`;
+    return `Halo ${displayName}! Selamat datang di **Komazi Coffee & Workspace** ☕\n\nSaya **Komazi AI**, asisten manajemen kedai Anda.\n\n📌 **Status Operasional Hari Ini:**\n- ${revenueText}\n- ${shiftText}\n- Kondisi Bahan Baku: **${lowStock.length > 0 ? `${lowStock.length} bahan menipis ⚠️` : 'Aman terkendali ✅'}**\n\nSilakan tanyakan seputar performa penjualan atau operasional kedai.`;
   }
 
-  // 3. Intent Shift / Kasir / Staf
+  // 4. Intent Menu Habis / Bahan Kosong
+  if (q.includes('habis') || q.includes('tidak bisa dipesan') || q.includes('sold out') || q.includes('kosong')) {
+    if (lowStock.length > 0) {
+      let text = `⚠️ Terdapat **${lowStock.length} bahan baku** dengan stok menipis/habis:\n\n`;
+      lowStock.forEach((i) => {
+        const portionText = i.estimatedPortionsLeft ? ` (~${i.estimatedPortionsLeft} porsi lagi)` : '';
+        text += `- **${i.name || i.ingredientName}**: Tersisa **${i.currentStock} ${i.unit}** (Batas aman: ${i.minStock || 0} ${i.unit})${portionText}\n`;
+      });
+      text += `\nDisarankan memeriksa kembali menu yang menggunakan bahan tersebut sebelum ditawarkan ke pelanggan.`;
+      return text;
+    }
+    return `✅ Saat ini seluruh bahan baku dalam kondisi aman dan mencukupi. Semua menu di katalog siap disajikan dan dapat dipesan pelanggan.`;
+  }
+
+  // 5. Intent Member / Loyalitas Pelanggan (CRM)
+  if (q.includes('member') || q.includes('pelanggan') || q.includes('customer') || q.includes('poin') || q.includes('loyalty')) {
+    const memberData = contextOrMetrics?.customerMembersSummary;
+    const topMembers = memberData?.topMembers || [];
+    const total = memberData?.totalActiveMembers || 0;
+    if (topMembers.length > 0) {
+      let text = `Ringkasan Member Loyalitas Kedai (${total} pelanggan terdaftar):\n\n**Pelanggan Teratas Berdasarkan Poin:**\n`;
+      topMembers.slice(0, 5).forEach((m, idx) => {
+        text += `- **#${idx + 1} ${m.name}**: ${m.points} poin (Tier: ${m.tier}, ${m.visitCount} kunjungan)\n`;
+      });
+      return text;
+    }
+    return `Saat ini terdapat ${total} pelanggan terdaftar dalam sistem loyalitas kedai.`;
+  }
+
+  // 6. Intent Profil / Info Kedai
+  if (q.includes('alamat') || q.includes('telepon') || q.includes('profil') || q.includes('pajak') || q.includes('service charge')) {
+    const store = contextOrMetrics?.storeProfile || {};
+    return `Profil & Pengaturan Kedai:\n\n- Nama Kedai: **${store.store_name || 'Komazi Coffee & Workspace'}**\n- Alamat: ${store.store_address || 'Jl. Komazi No. 1'}\n- Kontak: ${store.store_phone || '-'}\n- Tarif Pajak: ${store.tax_percentage || 0}%\n- Service Charge: ${store.service_percentage || 0}%`;
+  }
+
+  // 7. Intent Shift / Kasir / Staf
   if (q.includes('shift') || q.includes('kasir') || q.includes('petugas') || q.includes('staf') || q.includes('pegawai')) {
     if (role === 'CASHIER') {
       const pShift = contextOrMetrics?.salesSummary?.myPersonalShiftToday;
@@ -781,7 +971,7 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return `Saat ini **tidak ada shift kasir yang aktif**. Silakan buka shift kasir di meja kasir untuk mulai mencatat transaksi baru.`;
   }
 
-  // 4. Intent Workspace / Coworking
+  // 8. Intent Workspace / Coworking
   if (q.includes('workspace') || q.includes('co-working') || q.includes('coworking') || q.includes('ruangan') || q.includes('meja') || q.includes('sesi')) {
     const activeCount = workspaceData?.totalActiveSessions || workspaceData?.sessions?.length || 0;
     let text = `Status Area Workspace saat ini:\n\n- Sesi Aktif: **${activeCount} pengunjung/pelanggan**.\n`;
@@ -796,7 +986,7 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return text;
   }
 
-  // 5. Intent Omset / Penjualan (Hanya untuk OWNER & MANAGER)
+  // 9. Intent Omset / Penjualan (Hanya untuk OWNER & MANAGER)
   if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('penjualan') || q.includes('transaksi') || q.includes('kemarin')) {
     if (role === 'CASHIER') {
       const pShift = contextOrMetrics?.salesSummary?.myPersonalShiftToday;
@@ -813,8 +1003,8 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return text;
   }
 
-  // 6. Intent Stok / Bahan Baku
-  if (q.includes('stok') || q.includes('bahan') || q.includes('habis') || q.includes('menipis') || q.includes('restock') || q.includes('baku')) {
+  // 10. Intent Stok / Bahan Baku
+  if (q.includes('stok') || q.includes('bahan') || q.includes('menipis') || q.includes('restock') || q.includes('baku')) {
     if (lowStock.length > 0) {
       let text = `⚠️ **Peringatan Bahan Baku Menipis (${lowStock.length} bahan):**\n\n`;
       lowStock.forEach((i) => {
@@ -827,7 +1017,7 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return `✅ Seluruh stok bahan baku dalam kondisi aman dan mencukupi untuk operasional kedai saat ini.`;
   }
 
-  // 7. Intent Menu / Terlaris
+  // 11. Intent Menu / Terlaris
   if (!top1) {
     return 'Belum ada transaksi berstatus lunas (PAID) tercatat untuk hari ini. Silakan proses transaksi di POS kasir untuk melihat analitik produk.';
   }

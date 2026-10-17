@@ -2,39 +2,116 @@ import prisma from '../config/db.js';
 import { emitToStation, emitOrderEvent } from '../config/socket.js';
 
 /**
+ * Helper: Deteksi apakah item atau produk tergolong kategori Minuman / Bar (BDS)
+ */
+export function isDrinkItemHelper(item) {
+  if (!item) return false;
+  const cat = (
+    item.categoryName ||
+    item.category?.name ||
+    item.product?.category?.name ||
+    item.category ||
+    ''
+  ).toLowerCase();
+  const name = (
+    item.name ||
+    item.productName ||
+    item.product?.name ||
+    ''
+  ).toLowerCase();
+
+  return (
+    cat.includes('kopi') ||
+    cat.includes('coffee') ||
+    cat.includes('non-coffee') ||
+    cat.includes('drink') ||
+    cat.includes('beverage') ||
+    cat.includes('minuman') ||
+    cat.includes('bar') ||
+    cat.includes('barista') ||
+    cat.includes('non-kopi') ||
+    cat.includes('tea') ||
+    cat.includes('teh') ||
+    cat.includes('mocktail') ||
+    name.includes('latte') ||
+    name.includes('espresso') ||
+    name.includes('cappuccino') ||
+    name.includes('americano') ||
+    name.includes('macchiato') ||
+    name.includes('affogato') ||
+    name.includes('frappe') ||
+    name.includes('brew') ||
+    name.includes('tea') ||
+    name.includes('teh') ||
+    name.includes('matcha') ||
+    name.includes('juice') ||
+    name.includes('jus') ||
+    name.includes('smoothie') ||
+    name.includes('milkshake') ||
+    name.includes('kopi') ||
+    name.includes('coffee') ||
+    name.includes('susu') ||
+    name.includes('chocolate') ||
+    name.includes('cokelat') ||
+    name.includes('mocktail') ||
+    name.includes('soda') ||
+    name.includes('lemonade') ||
+    name.includes('air mineral') ||
+    name.includes('taro') ||
+    name.includes('red velvet') ||
+    name.includes('boba') ||
+    name.includes('cincau') ||
+    name.includes('aren') ||
+    name.includes('sanger')
+  );
+}
+
+/**
+ * Helper: Cek apakah item ditujukan untuk station tertentu
+ */
+export function isItemForStation(item, stationType) {
+  if (!stationType || stationType === 'ALL') return true;
+  const stationTypeVal = item.station?.type || item.product?.station?.type;
+  const stationCodeVal = item.station?.code || item.product?.station?.code;
+
+  let isBar = false;
+  if (stationTypeVal === 'BAR' || stationCodeVal === 'BAR_MAIN') {
+    isBar = true;
+  } else if (stationTypeVal === 'KITCHEN' || stationCodeVal === 'KITCHEN_MAIN') {
+    isBar = false;
+  } else {
+    isBar = isDrinkItemHelper(item);
+  }
+
+  if (stationType === 'BAR') return isBar;
+  if (stationType === 'KITCHEN') return !isBar;
+  return true;
+}
+
+/**
  * Section 16: Hitung status order keseluruhan berdasarkan status seluruh item aktif
  */
-export function calculateOrderStatus(items, isPaid = true) {
+export function calculateOrderStatus(itemsOrOrder, isPaid = true) {
+  const items = Array.isArray(itemsOrOrder) ? itemsOrOrder : (itemsOrOrder?.items || []);
+  const paid = Array.isArray(itemsOrOrder) 
+    ? Boolean(isPaid) 
+    : (Boolean(itemsOrOrder?.paidAt) || itemsOrOrder?.status === 'PAID' || Boolean(isPaid));
+
   const activeItems = items.filter((item) => item.status !== 'CANCELLED');
 
   if (activeItems.length === 0) {
     return 'VOIDED';
   }
 
-  if (activeItems.every((item) => item.status === 'SERVED')) {
-    return 'SERVED';
+  // Jika pesanan belum dibayar (Hold Bill / Open Order), status finansial tetap 'OPEN'
+  if (!paid) {
+    return 'OPEN';
   }
 
-  if (activeItems.every((item) => item.status === 'READY')) {
-    return 'READY';
-  }
-
-  if (
-    activeItems.some((item) => item.status === 'READY') &&
-    activeItems.some((item) => item.status !== 'READY' && item.status !== 'SERVED')
-  ) {
-    return 'PARTIALLY_READY';
-  }
-
-  if (
-    activeItems.some(
-      (item) => item.status === 'PREPARING' || item.status === 'ACCEPTED'
-    )
-  ) {
-    return 'IN_PROGRESS';
-  }
-
-  return isPaid ? 'PAID' : 'OPEN';
+  // Status finansial pesanan yang sudah dibayar tetap 'PAID' agar laporan penjualan,
+  // omzet, gross profit, dan rekonsiliasi kas shift selalu akurat.
+  // Progres penyajian dapur dan bar dipantau terpisah di 'kitchenStatus' dan 'barStatus'.
+  return 'PAID';
 }
 
 /**
@@ -80,7 +157,10 @@ export async function updateOrderItemStatus({ itemId, newStatus, userId = null }
     where: { id: parseInt(itemId) },
     include: {
       order: {
-        include: { items: { include: { station: true } } },
+        include: {
+          items: { include: { station: true } },
+          payments: true,
+        },
       },
       station: true,
     },
@@ -114,12 +194,16 @@ export async function updateOrderItemStatus({ itemId, newStatus, userId = null }
       include: { station: true },
     });
 
-    const isPaid = existingItem.order.status !== 'OPEN';
+    const isPaid = Boolean(
+      existingItem.order.paidAt ||
+      (existingItem.order.payments && existingItem.order.payments.length > 0) ||
+      existingItem.order.status === 'PAID'
+    );
     const computedOrderStatus = calculateOrderStatus(allItems, isPaid);
 
     // Hitung status station dapur & bar
-    const kitchenItems = allItems.filter((i) => i.station?.type === 'KITCHEN');
-    const barItems = allItems.filter((i) => i.station?.type === 'BAR');
+    const kitchenItems = allItems.filter((i) => !isItemForStation(i, 'BAR'));
+    const barItems = allItems.filter((i) => isItemForStation(i, 'BAR'));
 
     const newKitchenStatus = kitchenItems.length > 0 ? calculateStationStatus(kitchenItems) : existingItem.order.kitchenStatus;
     const newBarStatus = barItems.length > 0 ? calculateStationStatus(barItems) : existingItem.order.barStatus;
@@ -167,11 +251,17 @@ export async function updateOrderItemStatus({ itemId, newStatus, userId = null }
       });
     }
 
-    return { updatedItem, updatedOrder };
+    return {
+      updatedItem,
+      updatedOrder,
+      item: updatedItem,
+      order: updatedOrder,
+    };
   });
 
   // Emit event realtime via Socket.IO
-  const stationCode = existingItem.station?.code || (existingItem.station?.type === 'BAR' ? 'BAR_MAIN' : 'KITCHEN_MAIN');
+  const isTargetBar = isItemForStation(existingItem, 'BAR');
+  const stationCode = isTargetBar ? 'BAR_MAIN' : 'KITCHEN_MAIN';
   emitToStation(stationCode, 'order:item:updated', {
     orderId: existingItem.orderId,
     item: result.updatedItem,
@@ -202,7 +292,17 @@ export async function bumpOrderItem({ itemId, userId = null }) {
 export async function bumpTicket({ orderId, stationType = null, userId = null }) {
   const order = await prisma.order.findUnique({
     where: { id: parseInt(orderId) },
-    include: { items: { include: { station: true } } },
+    include: {
+      items: {
+        include: {
+          station: true,
+          product: {
+            include: { category: true },
+          },
+        },
+      },
+      payments: true,
+    },
   });
   if (!order) throw new Error('Pesanan tidak ditemukan');
 
@@ -210,7 +310,7 @@ export async function bumpTicket({ orderId, stationType = null, userId = null })
   const targetItems = order.items.filter((item) => {
     if (item.status === 'SERVED' || item.status === 'CANCELLED') return false;
     if (stationType) {
-      return item.station?.type === stationType;
+      return isItemForStation(item, stationType);
     }
     return true;
   });
@@ -240,14 +340,23 @@ export async function bumpTicket({ orderId, stationType = null, userId = null })
 
     const allItems = await tx.orderItem.findMany({
       where: { orderId: parseInt(orderId) },
-      include: { station: true },
+      include: {
+        station: true,
+        product: {
+          include: { category: true },
+        },
+      },
     });
 
-    const isPaid = order.status !== 'OPEN';
+    const isPaid = Boolean(
+      order.paidAt ||
+      (order.payments && order.payments.length > 0) ||
+      order.status === 'PAID'
+    );
     const computedOrderStatus = calculateOrderStatus(allItems, isPaid);
 
-    const kitchenItems = allItems.filter((i) => i.station?.type === 'KITCHEN');
-    const barItems = allItems.filter((i) => i.station?.type === 'BAR');
+    const kitchenItems = allItems.filter((i) => !isItemForStation(i, 'BAR'));
+    const barItems = allItems.filter((i) => isItemForStation(i, 'BAR'));
 
     const newKitchenStatus = kitchenItems.length > 0 ? calculateStationStatus(kitchenItems) : order.kitchenStatus;
     const newBarStatus = barItems.length > 0 ? calculateStationStatus(barItems) : order.barStatus;
@@ -307,25 +416,16 @@ export async function bumpTicket({ orderId, stationType = null, userId = null })
  * Mengambil pesanan aktif untuk Station tertentu (KDS atau BDS)
  */
 export async function getStationOrders({ stationType, status = 'ACTIVE' }) {
-  const whereClause = {
-    status: {
-      in: status === 'ACTIVE' ? ['OPEN', 'PAID', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY'] : ['SERVED', 'COMPLETED'],
-    },
-    items: {
-      some: {
-        station: { type: stationType },
-        ...(status === 'ACTIVE' ? { status: { notIn: ['SERVED', 'CANCELLED'] } } : {}),
-      },
-    },
-  };
+  const isTargetBar = stationType === 'BAR';
 
   const orders = await prisma.order.findMany({
-    where: whereClause,
+    where: {
+      status: {
+        in: status === 'ACTIVE' ? ['OPEN', 'PAID', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY'] : ['SERVED', 'COMPLETED'],
+      },
+    },
     include: {
       items: {
-        where: {
-          station: { type: stationType },
-        },
         include: {
           station: true,
           product: {
@@ -333,6 +433,7 @@ export async function getStationOrders({ stationType, status = 'ACTIVE' }) {
               id: true,
               name: true,
               categoryId: true,
+              stationId: true,
               category: { select: { id: true, name: true } },
             },
           },
@@ -344,5 +445,25 @@ export async function getStationOrders({ stationType, status = 'ACTIVE' }) {
     orderBy: { createdAt: 'asc' },
   });
 
-  return orders;
+  // Filter item pesanan yang sesuai dengan station
+  const stationOrders = orders
+    .map((order) => {
+      const stationItems = (order.items || []).filter((item) => {
+        return isItemForStation(item, stationType);
+      });
+
+      return {
+        ...order,
+        items: stationItems,
+      };
+    })
+    .filter((order) => {
+      if (!order.items || order.items.length === 0) return false;
+      if (status === 'ACTIVE') {
+        return order.items.some((i) => i.status !== 'SERVED' && i.status !== 'CANCELLED');
+      }
+      return true;
+    });
+
+  return stationOrders;
 }

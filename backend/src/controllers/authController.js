@@ -2,6 +2,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/db.js';
 import { successResponse, errorResponse } from '../utils/response.js';
+import { passwordResetService } from '../services/passwordReset.service.js';
+import logger from '../utils/logger.js';
+import { getJwtSecrets } from '../utils/security.js';
 
 export async function login(req, res) {
   try {
@@ -12,27 +15,30 @@ export async function login(req, res) {
     });
 
     if (!user || !user.isActive) {
+      logger.auth.warn(`Login failed | username=${username} reason="User not found or inactive"`, { username });
       return errorResponse(res, 'Username atau password salah', 401);
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      logger.auth.warn(`Login failed | username=${username} reason="Invalid password"`, { username });
       return errorResponse(res, 'Username atau password salah', 401);
     }
 
-    const secret = process.env.JWT_SECRET || 'komazi_pos_jwt_super_secret_key_2026_coffeeworkspace';
-    const refreshSecret = process.env.JWT_REFRESH_SECRET || 'komazi_pos_jwt_refresh_super_secret_key_2026';
+    const { jwtSecret, jwtRefreshSecret } = getJwtSecrets();
 
+    // Sesi persisten (3650 hari / 10 tahun): Sesi tidak expired selama pengguna belum logout
+    // dan akunnya tetap aktif di database (revokasi divalidasi langsung via DB tokenVersion & isActive)
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      secret,
-      { expiresIn: '30d' }
+      { id: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion || 1 },
+      jwtSecret,
+      { expiresIn: '3650d' }
     );
 
     const refreshToken = jwt.sign(
       { id: user.id },
-      refreshSecret,
-      { expiresIn: '7d' }
+      jwtRefreshSecret,
+      { expiresIn: '3650d' }
     );
 
     const userData = {
@@ -42,7 +48,16 @@ export async function login(req, res) {
       role: user.role,
       phone: user.phone || null,
       avatarUrl: user.avatarUrl || null,
+      telegramId: user.telegramId || null,
+      telegramUsername: user.telegramUsername || null,
+      telegramLinkedAt: user.telegramLinkedAt || null,
     };
+
+    logger.auth.success(`Login successful | username=${user.username} role=${user.role}`, {
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+    });
 
     return successResponse(res, { user: userData, token, refreshToken }, 'Login berhasil');
   } catch (err) {
@@ -52,29 +67,102 @@ export async function login(req, res) {
 
 export async function register(req, res) {
   try {
-    const { name, username, password, role = 'CASHIER' } = req.body;
+    const {
+      name,
+      username,
+      password,
+      role = 'CASHIER',
+      phone,
+      department,
+      jobTitle,
+      employmentType,
+      joinDate,
+      baseSalary,
+      dailyAllowance,
+      hourlyOvertimeRate,
+      avatarUrl,
+    } = req.body;
 
-    if (!name || !username || !password) {
-      return errorResponse(res, 'Nama, username, dan password wajib diisi', 400);
+    // 1. Validasi field wajib
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Nama lengkap wajib diisi', 400);
+    }
+    if (!username || !username.trim()) {
+      return errorResponse(res, 'Username login wajib diisi', 400);
+    }
+    if (!password) {
+      return errorResponse(res, 'Kata sandi wajib diisi', 400);
     }
 
+    // 2. Format username: huruf kecil, trim, min 3 karakter, karakter yang diizinkan
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername.length < 3) {
+      return errorResponse(res, 'Username minimal 3 karakter', 400);
+    }
+    if (!/^[a-z0-9_.-]+$/.test(cleanUsername)) {
+      return errorResponse(
+        res,
+        'Username hanya boleh berisi huruf kecil, angka, titik, strip (-), atau garis bawah (_)',
+        400
+      );
+    }
+
+    // 3. Validasi panjang password
+    if (typeof password !== 'string' || password.length < 6) {
+      return errorResponse(res, 'Kata sandi minimal 6 karakter', 400);
+    }
+
+    // 4. Validasi role
+    const validRoles = ['OWNER', 'MANAGER', 'CASHIER', 'KITCHEN', 'BARISTA'];
+    const normalizedRole = String(role || 'CASHIER').toUpperCase().trim();
+    if (!validRoles.includes(normalizedRole)) {
+      return errorResponse(
+        res,
+        `Role "${role}" tidak valid. Pilihan role yang tersedia: ${validRoles.join(', ')}`,
+        400
+      );
+    }
+
+    // 5. Restriksi hak akses: Non-Owner tidak boleh membuat akun dengan role OWNER
+    if (req.user && req.user.role !== 'OWNER' && normalizedRole === 'OWNER') {
+      return errorResponse(res, 'Hanya Owner yang berhak mendaftarkan akun dengan hak akses Owner', 403);
+    }
+
+    // 6. Cek keunikan username
     const existing = await prisma.user.findUnique({
-      where: { username },
+      where: { username: cleanUsername },
     });
-
     if (existing) {
-      return errorResponse(res, 'Username sudah digunakan, silakan pilih username lain', 400);
+      return errorResponse(res, `Username "${cleanUsername}" sudah digunakan, silakan pilih username lain`, 400);
     }
 
+    // 7. Enkripsi password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // 8. Tentukan department default sesuai role jika tidak diisi
+    let defaultDepartment = 'Operasional';
+    if (normalizedRole === 'BARISTA') defaultDepartment = 'Bar & Minuman';
+    else if (normalizedRole === 'KITCHEN') defaultDepartment = 'Dapur & Makanan';
+    else if (normalizedRole === 'CASHIER') defaultDepartment = 'Kasir';
+    else if (normalizedRole === 'MANAGER' || normalizedRole === 'OWNER') defaultDepartment = 'Manajemen';
+
+    // 9. Simpan ke database
     const newUser = await prisma.user.create({
       data: {
-        name,
-        username,
+        name: name.trim(),
+        username: cleanUsername,
         password: hashedPassword,
-        role: role.toUpperCase(),
+        role: normalizedRole,
+        phone: phone ? String(phone).trim() : null,
+        department: department?.trim() || defaultDepartment,
+        jobTitle: jobTitle?.trim() || null,
+        employmentType: employmentType || 'FULL_TIME',
+        joinDate: joinDate || new Date().toISOString().split('T')[0],
+        baseSalary: baseSalary ? Number(baseSalary) : 0,
+        dailyAllowance: dailyAllowance ? Number(dailyAllowance) : 0,
+        hourlyOvertimeRate: hourlyOvertimeRate ? Number(hourlyOvertimeRate) : 0,
+        avatarUrl: avatarUrl || null,
         isActive: true,
       },
       select: {
@@ -82,13 +170,23 @@ export async function register(req, res) {
         name: true,
         username: true,
         role: true,
+        phone: true,
+        department: true,
+        jobTitle: true,
+        employmentType: true,
+        joinDate: true,
         isActive: true,
         createdAt: true,
       },
     });
 
-    return successResponse(res, newUser, 'Akun baru berhasil didaftarkan', 201);
+    logger.auth.info(
+      `Staff registered successfully | id=${newUser.id} username=${newUser.username} role=${newUser.role} by=${req.user?.username || 'system'}`
+    );
+
+    return successResponse(res, newUser, 'Akun staf baru berhasil didaftarkan', 201);
   } catch (err) {
+    logger.auth.error(`Staff registration failed: ${err.message}`, { error: err.stack });
     return errorResponse(res, err.message, 500);
   }
 }
@@ -137,11 +235,13 @@ export async function resetPassword(req, res) {
       return errorResponse(res, 'Password baru minimal 6 karakter', 400);
     }
 
-    // Fetch dynamic PIN otorisasi dari tabel Setting (default: 1234)
+    // Fetch dynamic PIN otorisasi dari tabel Setting
     const pinSetting = await prisma.setting.findUnique({ where: { key: 'supervisorPin' } });
-    const configuredPin = pinSetting?.value ? String(pinSetting.value).trim() : '1234';
-    const validPins = [configuredPin, '1234', '8888', '2026'];
-    if (!validPins.includes(String(securityPin).trim())) {
+    if (!pinSetting || !pinSetting.value) {
+      return errorResponse(res, 'PIN Otorisasi Outlet belum dikonfigurasi. Hubungi Owner', 403);
+    }
+    const configuredPin = String(pinSetting.value).trim();
+    if (String(securityPin).trim() !== configuredPin) {
       return errorResponse(res, 'PIN Otorisasi Outlet tidak valid. Hubungi Manager/Owner', 403);
     }
 
@@ -187,6 +287,9 @@ export async function getProfile(req, res) {
         role: true,
         phone: true,
         avatarUrl: true,
+        telegramId: true,
+        telegramUsername: true,
+        telegramLinkedAt: true,
         isActive: true,
         createdAt: true,
       },
@@ -249,6 +352,9 @@ export async function updateProfile(req, res) {
         role: true,
         phone: true,
         avatarUrl: true,
+        telegramId: true,
+        telegramUsername: true,
+        telegramLinkedAt: true,
         isActive: true,
         updatedAt: true,
       },
@@ -267,26 +373,64 @@ export async function refreshToken(req, res) {
       return errorResponse(res, 'Refresh token wajib diisi', 400);
     }
 
-    const refreshSecret = process.env.JWT_REFRESH_SECRET || 'komazi_pos_jwt_refresh_super_secret_key_2026';
-    const decoded = jwt.verify(refreshToken, refreshSecret);
+    const { jwtSecret, jwtRefreshSecret } = getJwtSecrets();
+    const decoded = jwt.verify(refreshToken, jwtRefreshSecret, { ignoreExpiration: true });
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
     });
 
     if (!user || !user.isActive) {
-      return errorResponse(res, 'User tidak valid', 401);
+      return errorResponse(res, 'User tidak ditemukan atau telah dinonaktifkan', 401);
     }
 
-    const secret = process.env.JWT_SECRET || 'komazi_pos_jwt_super_secret_key_2026_coffeeworkspace';
     const newToken = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      secret,
-      { expiresIn: '12h' }
+      { id: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion || 1 },
+      jwtSecret,
+      { expiresIn: '3650d' }
     );
 
-    return successResponse(res, { token: newToken }, 'Token diperbarui');
+    const newRefreshToken = jwt.sign(
+      { id: user.id },
+      jwtRefreshSecret,
+      { expiresIn: '3650d' }
+    );
+
+    return successResponse(res, { token: newToken, refreshToken: newRefreshToken }, 'Token diperbarui');
   } catch (err) {
-    return errorResponse(res, 'Refresh token tidak valid atau kadaluarsa', 401);
+    return errorResponse(res, 'Refresh token tidak valid', 401);
+  }
+}
+
+/**
+ * Endpoint publik: Verifikasi validitas token reset sebelum user submit form
+ */
+export async function verifyResetToken(req, res) {
+  try {
+    const { token } = req.body;
+    const result = await passwordResetService.verifyToken(token);
+    if (!result.valid) {
+      return errorResponse(res, result.message, 400);
+    }
+    return successResponse(res, result, 'Token valid');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+/**
+ * Endpoint publik: Pengguna menyelesaikan reset password menggunakan token sekali pakai
+ */
+export async function completePasswordReset(req, res) {
+  try {
+    const { token, newPassword, confirmPassword } = req.body;
+    const result = await passwordResetService.completePasswordReset(
+      token,
+      newPassword,
+      confirmPassword
+    );
+    return successResponse(res, result, result.message);
+  } catch (err) {
+    return errorResponse(res, err.message, 400);
   }
 }

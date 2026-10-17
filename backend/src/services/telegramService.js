@@ -2,6 +2,14 @@ import prisma from '../config/db.js';
 import { getTodayTopSellingData, getRoleScopedBusinessContext } from './salesAnalyticsEngine.js';
 import { getAllProductsCogsOverview } from './cogsService.js';
 import { orderService } from './order.service.js';
+import { generateReceiptImageBuffer } from './receiptCanvasService.js';
+import { generateBotImage } from './botImage/index.js';
+import {
+  calculatePeakHourAndRevenueForecast,
+  calculateStockRunoutForecast,
+  generateClosingComparison,
+  generateRealAiPredictionAnalysis,
+} from './aiPredictiveEngine.js';
 
 /**
  * Telegram Notification & Bot Control Service (Section 33 Implementation Guide)
@@ -91,20 +99,84 @@ export async function sendTelegramMessage(text, targetChatId = null) {
   };
 }
 
+async function sendSinglePhoto(botToken, chatId, photoBuffer, caption) {
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('caption', caption);
+    formData.append('parse_mode', 'HTML');
+    const blob = new Blob([photoBuffer], { type: 'image/png' });
+    formData.append('photo', blob, 'struk-komazi.png');
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true, data, chatId };
+    }
+    console.warn(`[TelegramService] Gagal sendPhoto (${chatId}), fallback text:`, data.description);
+    return sendSingleMessage(botToken, chatId, caption);
+  } catch (err) {
+    console.warn(`[TelegramService] Error sendPhoto (${chatId}), fallback text:`, err.message);
+    return sendSingleMessage(botToken, chatId, caption);
+  }
+}
+
+export async function sendTelegramPhoto(photoBuffer, caption, targetChatId = null) {
+  const { botToken } = getTelegramConfig();
+  if (!botToken) {
+    return { success: false, reason: 'TELEGRAM_CONFIG_MISSING' };
+  }
+
+  if (targetChatId) {
+    return sendSinglePhoto(botToken, targetChatId, photoBuffer, caption);
+  }
+
+  const recipients = await getAdminRecipients();
+  if (recipients.length === 0) {
+    return { success: false, reason: 'NO_RECIPIENTS_FOUND' };
+  }
+
+  const results = await Promise.allSettled(
+    recipients.map((cId) => sendSinglePhoto(botToken, cId, photoBuffer, caption))
+  );
+
+  const successCount = results.filter((r) => r.status === 'fulfilled' && r.value?.success).length;
+  return {
+    success: successCount > 0,
+    recipientsCount: recipients.length,
+    sentCount: successCount,
+  };
+}
+
+async function getBotSetting(key, defaultValue = 'true') {
+  try {
+    const s = await prisma.setting.findUnique({ where: { key } });
+    return s ? s.value : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
 /**
  * Notifikasi Transaksi Real-Time untuk Bot Telegram
- * Dikirim secara otomatis saat pembayaran pesanan berhasil (PAID)
+ * Menghasilkan banner grafis struk canvas HD 16:9 + caption detail terstruktur
  */
 export async function notifyPaidTransaction(order) {
   if (!order) return;
 
   try {
-    const invoiceNo = order.invoiceNo || `ORD-${order.id || 'N/A'}`;
-    const orderType =
-      order.type === 'TAKE_AWAY'
-        ? 'Take-Away (Bungkus)'
-        : `Dine-In ${order.tableNo ? `(Meja ${order.tableNo})` : ''}`;
-    const customer = order.customerName || order.customer?.name || 'Tamu';
+    const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';
+    const notifyTx = (await getBotSetting('botNotifyTransaction', 'true')) === 'true';
+    if (!botEnabled || !notifyTx) {
+      return;
+    }
+
+    const invoiceNo = order.invoiceNo || `KMZ-${Date.now().toString().slice(-8)}`;
+    const customer = order.customerName || order.customer?.name || 'Pelanggan Dine In';
     const cashier = order.cashier?.name || order.cashierName || 'Kasir';
 
     // Format Tanggal & Jam WIB
@@ -114,24 +186,26 @@ export async function notifyPaidTransaction(order) {
       ? new Date(order.createdAt)
       : new Date();
     const timeStr =
-      dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+      dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
     const dateStr = dateObj.toLocaleDateString('id-ID', {
       day: '2-digit',
-      month: 'short',
+      month: 'long',
       year: 'numeric',
     });
 
-    // Format Daftar Menu
-    const itemsList = (order.items || [])
-      .map((i) => {
-        const variant = i.variantName ? ` [${i.variantName}]` : '';
-        const name = i.productName || i.name || 'Menu';
-        const total = Number(
-          i.lineTotal || Number(i.qty || 1) * Number(i.unitPrice || 0)
-        ).toLocaleString('id-ID');
-        return `• <b>${i.qty}x ${name}${variant}</b> — Rp ${total}`;
-      })
-      .join('\n');
+    // Format Daftar Menu & Rincian Varian / Suhu / Ukuran / Catatan
+    const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [];
+    const totalQty = items.reduce((acc, it) => acc + (Number(it.qty) || 1), 0) || 1;
+
+    const itemsDetailLines = items.map((i) => {
+      const name = i.productName || i.name || 'Menu';
+      const qty = i.qty || 1;
+      const unitPrice = Number(i.unitPrice || (i.lineTotal ? i.lineTotal / qty : 0));
+      const lineTotal = Number(i.lineTotal || (qty * unitPrice));
+      const variant = i.variantName ? `\n   🏷️ <i>Varian/Suhu: ${i.variantName}</i>` : '';
+      const note = i.note ? `\n   📝 <i>Catatan: ${i.note}</i>` : '';
+      return `• <b>${qty}× ${name}</b> — Rp${lineTotal.toLocaleString('id-ID')} (Rp${unitPrice.toLocaleString('id-ID')}/item)${variant}${note}`;
+    }).join('\n') || '• 1× Transaksi Kasir';
 
     // Format Metode Pembayaran
     const paymentMethods = [];
@@ -145,7 +219,7 @@ export async function notifyPaidTransaction(order) {
             : p.method === 'TRANSFER'
             ? 'Transfer Bank'
             : p.method;
-        paymentMethods.push(`${m} (Rp ${Number(p.amount).toLocaleString('id-ID')})`);
+        paymentMethods.push(m);
       });
     } else if (order.paymentMethod) {
       const m =
@@ -158,45 +232,61 @@ export async function notifyPaidTransaction(order) {
           : order.paymentMethod;
       paymentMethods.push(m);
     } else {
-      paymentMethods.push('Lunas');
+      paymentMethods.push('QRIS Dinamis');
     }
 
-    const subtotal = Number(order.subtotal || 0).toLocaleString('id-ID');
+    const subtotal = Number(order.subtotal || 0);
     const discount = Number(order.discount || 0);
     const tax = Number(order.tax || 0);
-    const serviceFee = Number(order.serviceFee || 0);
-    const total = Number(order.total || 0).toLocaleString('id-ID');
+    const total = Number(order.total || 0);
 
-    let breakdown = `• Subtotal: Rp ${subtotal}`;
-    if (discount > 0) breakdown += `\n• Diskon Promo: -Rp ${discount.toLocaleString('id-ID')}`;
-    if (serviceFee > 0) breakdown += `\n• Service Fee: Rp ${serviceFee.toLocaleString('id-ID')}`;
-    if (tax > 0) breakdown += `\n• PB1 / Pajak: Rp ${tax.toLocaleString('id-ID')}`;
-
-    const message = `
-💰 <b>NOTIFIKASI TRANSAKSI BERHASIL</b>
-━━━━━━━━━━━━━━━━━━
-🧾 <b>No. Invoice:</b> <code>${invoiceNo}</code>
-📅 <b>Waktu:</b> ${dateStr}, ${timeStr}
-👤 <b>Kasir:</b> ${cashier}
-🍽️ <b>Tipe:</b> ${orderType}
-👥 <b>Pelanggan:</b> ${customer}
-
-🛒 <b>Daftar Menu:</b>
-${itemsList || '• 1x Transaksi Kasir'}
-
-📊 <b>Rincian Finansial:</b>
-${breakdown}
-━━━━━━━━━━━━━━━━━━
-💵 <b>TOTAL PEMBAYARAN:</b> <b>Rp ${total}</b>
+    // Caption Telegram berformat rapi dengan rincian varian & harga
+    const caption = `
+🧾 <b>STRUK TRANSAKSI — PAID ✅</b>
+━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Pelanggan:</b> <code>${customer}</code>
 💳 <b>Metode:</b> <b>${paymentMethods.join(', ')}</b>
-━━━━━━━━━━━━━━━━━━
-☕ <i>POS Komazi Real-Time Alert</i>
+📅 <b>Waktu:</b> ${dateStr} · ${timeStr}
+🧾 <b>No. Invoice:</b> <code>${invoiceNo}</code>
+━━━━━━━━━━━━━━━━━━━━━
+📋 <b>RINCIAN PESANAN:</b>
+${itemsDetailLines}
+─────────────────────
+🧮 <b>Subtotal (${totalQty} item):</b> Rp${Number(subtotal).toLocaleString('id-ID')}
+${tax > 0 ? `🏛️ <b>PB1 Resto:</b> Rp${Number(tax).toLocaleString('id-ID')}\n` : ''}${discount > 0 ? `🎟️ <b>Diskon:</b> -Rp${Number(discount).toLocaleString('id-ID')}\n` : ''}💵 <b>TOTAL BAYAR:</b> <b>Rp${Number(total).toLocaleString('id-ID')}</b>
+━━━━━━━━━━━━━━━━━━━━━
+☕ <i>Komazi Coffee & Workspace</i>
     `.trim();
 
-    // Broadcast ke seluruh admin/owner terdaftar
-    sendTelegramMessage(message).catch((err) => {
-      console.warn('[TelegramService] notifyPaidTransaction broadcast error:', err.message);
-    });
+    // 1. Generate Banner Grafis Canvas Digital Receipt
+    let photoBuffer = null;
+    try {
+      photoBuffer = await generateReceiptImageBuffer({
+        invoiceNo,
+        customerName: customer,
+        cashierName: cashier,
+        paymentMethod: paymentMethods.join(', '),
+        paidAt: dateObj,
+        subtotal,
+        discount,
+        tax,
+        total,
+        items,
+      });
+    } catch (canvasErr) {
+      console.warn('[TelegramService] Canvas generator error:', canvasErr.message);
+    }
+
+    // 2. Broadcast Foto + Caption ke seluruh Owner & Manager terdaftar
+    if (photoBuffer) {
+      sendTelegramPhoto(photoBuffer, caption).catch((err) => {
+        console.warn('[TelegramService] notifyPaidTransaction photo broadcast error:', err.message);
+      });
+    } else {
+      sendTelegramMessage(caption).catch((err) => {
+        console.warn('[TelegramService] notifyPaidTransaction fallback text error:', err.message);
+      });
+    }
   } catch (err) {
     console.warn('[TelegramService] Error preparing transaction notification:', err);
   }
@@ -210,7 +300,14 @@ export async function notifyNewOrder(order) {
 }
 
 export async function notifyLowStock({ ingredientName, currentStock, minStock, unit }) {
-  const message = `
+  try {
+    const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';
+    const notifyStock = (await getBotSetting('botNotifyLowStock', 'true')) === 'true';
+    if (!botEnabled || !notifyStock) {
+      return;
+    }
+
+    const message = `
 ⚠️ <b>PERINGATAN STOK MENIPIS</b>
 ━━━━━━━━━━━━━━━━━━
 <b>Bahan:</b> ${ingredientName}
@@ -222,7 +319,178 @@ export async function notifyLowStock({ ingredientName, currentStock, minStock, u
 <i>POS Komazi Inventory Alert</i>
   `.trim();
 
-  sendTelegramMessage(message).catch(() => {});
+    let photoBuffer = null;
+    try {
+      photoBuffer = await generateBotImage('inventory_critical', {
+        items: [
+          {
+            name: ingredientName,
+            stock: currentStock,
+            minStock: minStock,
+            unit: unit || 'unit',
+          },
+        ],
+        totalAlerts: 1,
+      });
+    } catch (imgErr) {
+      console.warn('[TelegramService] notifyLowStock image generation error:', imgErr.message);
+    }
+
+    if (photoBuffer) {
+      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+    } else {
+      sendTelegramMessage(message).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[TelegramService] notifyLowStock error:', err.message);
+  }
+}
+
+/**
+ * Notifikasi Sesi Kasir Dibuka ke Telegram Bot (Khusus Owner & Manager)
+ */
+export async function notifyShiftOpened({ shift, cashier, register, openingCash }) {
+  try {
+    const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';
+    const notifyShift = (await getBotSetting('botNotifyShift', 'true')) === 'true';
+    if (!botEnabled || !notifyShift) return;
+
+    const cashierName = cashier?.name || shift?.cashier?.name || 'Kasir';
+    const regName = register?.name || shift?.register?.name || 'Kasir Utama';
+    const regCode = register?.code || shift?.register?.code || 'REG-01';
+    const initialCash = Number(openingCash !== undefined ? openingCash : shift?.openingCash || 0);
+    const shiftId = shift?.id || 'NEW';
+    const openedTimeStr = new Intl.DateTimeFormat('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(shift?.openedAt ? new Date(shift.openedAt) : new Date());
+
+    const message = `
+🟢 <b>NOTIFIKASI SESI KASIR DIBUKA</b>
+━━━━━━━━━━━━━━━━━━
+<b>ID Sesi:</b> #${shiftId}
+<b>Kasir Pembuka:</b> ${cashierName}
+<b>Terminal:</b> ${regName} (${regCode})
+<b>Modal Awal Kas:</b> Rp ${initialCash.toLocaleString('id-ID')}
+<b>Waktu Buka:</b> ${openedTimeStr} WIB
+━━━━━━━━━━━━━━━━━━
+<i>Sesi kasir telah dibuka dan siap memproses transaksi POS.</i>
+    `.trim();
+
+    let photoBuffer = null;
+    try {
+      photoBuffer = await generateBotImage('shift_open', {
+        shiftId,
+        cashierName,
+        outletName: 'Komazi Coffee & Workspace',
+        initialCash,
+        openedAt: shift?.openedAt || new Date(),
+      });
+    } catch (imgErr) {
+      console.warn('[TelegramService] notifyShiftOpened image error:', imgErr.message);
+    }
+
+    if (photoBuffer) {
+      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+    } else {
+      sendTelegramMessage(message).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[TelegramService] notifyShiftOpened error:', err.message);
+  }
+}
+
+/**
+ * Notifikasi Sesi Kasir Ditutup (Z-Report) ke Telegram Bot (Khusus Owner & Manager)
+ */
+export async function notifyShiftClosed({ shift, cashier, closedBy, summary }) {
+  try {
+    const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';
+    const notifyShift = (await getBotSetting('botNotifyShift', 'true')) === 'true';
+    if (!botEnabled || !notifyShift) return;
+
+    const cashierName = cashier?.name || shift?.cashier?.name || 'Kasir';
+    const closedByName = closedBy?.name || summary?.closedByName || cashierName;
+    const regName = summary?.registerName || shift?.register?.name || 'Kasir Utama';
+    const shiftId = shift?.id || summary?.id || 'Z-REP';
+
+    const initialCash = Number(summary?.openingCash || shift?.openingCash || 0);
+    const countedCash = Number(summary?.closingCash !== undefined ? summary.closingCash : shift?.closingCash || 0);
+    const expectedCash = Number(summary?.expectedCash !== undefined ? summary.expectedCash : shift?.expectedCash || 0);
+    const diff = Number(summary?.difference !== undefined ? summary.difference : (countedCash - expectedCash));
+    const cashSales = Number(summary?.totalCashSales || summary?.cashSales || 0);
+    const nonCashSales = Number(summary?.totalNonCashSales || summary?.nonCashSales || 0);
+    const totalSales = Number(summary?.totalSales || (cashSales + nonCashSales));
+    const ordersCount = Number(summary?.ordersCount || 0);
+    const notes = summary?.notes || shift?.notes || '';
+
+    let diffText = '🟢 Kas Seimbang (Rp 0 / Pas)';
+    if (diff > 0) {
+      diffText = `🔵 Surplus +Rp ${diff.toLocaleString('id-ID')}`;
+    } else if (diff < 0) {
+      diffText = `🔴 Defisit -Rp ${Math.abs(diff).toLocaleString('id-ID')}`;
+    }
+
+    const closedTimeStr = new Intl.DateTimeFormat('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(summary?.closedAt || shift?.closedAt ? new Date(summary?.closedAt || shift?.closedAt) : new Date());
+
+    const message = `
+🔒 <b>NOTIFIKASI PENUTUPAN SESI KASIR (Z-REPORT)</b>
+━━━━━━━━━━━━━━━━━━
+<b>ID Sesi:</b> #${shiftId} • <b>Terminal:</b> ${regName}
+<b>Kasir Pembuka:</b> ${cashierName}
+${closedByName && closedByName !== cashierName ? `<b>Kasir Penutup:</b> ${closedByName}\n` : ''}<b>Waktu Tutup:</b> ${closedTimeStr} WIB
+━━━━━━━━━━━━━━━━━━
+<b>Modal Awal:</b> Rp ${initialCash.toLocaleString('id-ID')}
+<b>Penjualan Tunai:</b> Rp ${cashSales.toLocaleString('id-ID')}
+<b>Penjualan Non-Tunai:</b> Rp ${nonCashSales.toLocaleString('id-ID')}
+<b>Total Omzet:</b> Rp ${totalSales.toLocaleString('id-ID')} (${ordersCount} transaksi)
+━━━━━━━━━━━━━━━━━━
+<b>Kas yang Diharapkan:</b> Rp ${expectedCash.toLocaleString('id-ID')}
+<b>Kas Fisik Aktual:</b> Rp ${countedCash.toLocaleString('id-ID')}
+<b>Status Rekonsiliasi:</b> <b>${diffText}</b>
+${notes ? `<b>Catatan:</b> <i>${notes}</i>\n` : ''}━━━━━━━━━━━━━━━━━━
+<i>POS Komazi Z-Report Settlement</i>
+    `.trim();
+
+    let photoBuffer = null;
+    try {
+      photoBuffer = await generateBotImage('shift_closed', {
+        shiftId,
+        cashierName,
+        initialCash,
+        closingCash: countedCash,
+        expectedCash,
+        diff,
+        notes,
+        cashSales,
+        qrisSales: nonCashSales,
+        totalSales,
+      });
+    } catch (imgErr) {
+      console.warn('[TelegramService] notifyShiftClosed image error:', imgErr.message);
+    }
+
+    if (photoBuffer) {
+      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+    } else {
+      sendTelegramMessage(message).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[TelegramService] notifyShiftClosed error:', err.message);
+  }
 }
 
 /**
@@ -238,18 +506,18 @@ export async function handleTelegramWebhook(update) {
 
   if (!chatId || !text) return { status: 'no_text' };
 
-  // Otorisasi: Verifikasi Telegram Chat / User ID langsung dari database role OWNER & MANAGER
+  // Otorisasi: Verifikasi Telegram Chat / User ID langsung dari database staf terdaftar
   const authorizedUser = await prisma.user.findFirst({
     where: {
       telegramId: String(fromId || chatId),
       isActive: true,
-      role: { in: ['OWNER', 'MANAGER'] },
+      role: { in: ['OWNER', 'MANAGER', 'BARISTA', 'KITCHEN'] },
     },
   });
 
   if (!authorizedUser) {
     await sendTelegramMessage(
-      `⛔ <b>AKSES DITOLAK</b>\n\nChat ID Anda (<code>${chatId}</code>) tidak terdaftar sebagai Owner atau Manager POS Komazi.`,
+      `⛔ <b>AKSES DITOLAK</b>\n\nChat ID Anda (<code>${chatId}</code>) belum terdaftar sebagai staf aktif POS Komazi. Hubungi Owner/Manager untuk menautkan akun.`,
       chatId
     );
     return { status: 'unauthorized', chatId };
@@ -299,9 +567,102 @@ Berikut perintah kontrol & monitoring yang tersedia:
 ━━━━━━━━━━━━━━━━━━
 <i>Gunakan /laporan untuk rincian selengkapnya.</i>
         `.trim();
-        await sendTelegramMessage(omzetMsg, chatId);
+
+        let photoBuffer = null;
+        try {
+          photoBuffer = await generateBotImage('realtime_sales', {
+            totalRevenue: Number(summary.totalRevenue || sales.todayTotalRevenue || 0),
+            transactionCount: summary.totalTransactions,
+            avgOrderValue: sales.averageOrderValue || 0,
+            cashRevenue: summary.byMethod?.CASH || 0,
+            qrisRevenue: summary.byMethod?.QRIS || 0,
+            transferRevenue: summary.byMethod?.TRANSFER || 0,
+          });
+        } catch (imgErr) {
+          console.warn('[TelegramService] webhook omzet image error:', imgErr.message);
+        }
+
+        if (photoBuffer) {
+          await sendTelegramPhoto(photoBuffer, omzetMsg, chatId);
+        } else {
+          await sendTelegramMessage(omzetMsg, chatId);
+        }
       } catch (err) {
         await sendTelegramMessage(`❌ Gagal mengambil data omzet: ${err.message}`, chatId);
+      }
+      break;
+    }
+
+    case '/antrean':
+    case '/antrian': {
+      try {
+        const userRole = (authorizedUser?.role || 'BARISTA').toUpperCase();
+        const queue = await orderService.listQueue(userRole);
+
+        let emptyMessage = '✨ <b>Antrean Bersih!</b>\nTidak ada pesanan aktif saat ini.';
+        let roleTitle = '📋 Antrean Pesanan';
+        let cardBadge = 'KDS QUEUE DASHBOARD';
+        let cardBadgeColor = 'badge-amber';
+        let cardTitle = 'Status Antrean Pesanan';
+        let cardSubtitle = 'Pemantauan live antrean pesanan Komazi POS';
+
+        if (userRole === 'BARISTA') {
+          emptyMessage = '✨ <b>Antrean Bar Bersih!</b>\nTidak ada pesanan minuman yang sedang menunggu racikan barista saat ini.';
+          roleTitle = `☕ <b>Antrean Bar Minuman (Barista - ${queue.length} Pesanan):</b>`;
+          cardBadge = 'BDS BARISTA QUEUE';
+          cardBadgeColor = 'badge-amber';
+          cardTitle = 'Status Antrean Bar Minuman (Barista)';
+          cardSubtitle = 'Live pemantauan antrean pesanan racikan bar & kopi';
+        } else if (userRole === 'KITCHEN') {
+          emptyMessage = '✨ <b>Antrean Dapur Bersih!</b>\nTidak ada pesanan makanan yang sedang menunggu persiapan dapur saat ini.';
+          roleTitle = `🥐 <b>Antrean Dapur Makanan (Kitchen - ${queue.length} Pesanan):</b>`;
+          cardBadge = 'KDS KITCHEN QUEUE';
+          cardBadgeColor = 'badge-coral';
+          cardTitle = 'Status Antrean Dapur Makanan (Kitchen)';
+          cardSubtitle = 'Live pemantauan antrean pesanan dapur & pastry';
+        } else {
+          emptyMessage = '✨ <b>Antrean Kedai Bersih!</b>\nTidak ada pesanan aktif yang menunggu di bar maupun dapur saat ini.';
+          roleTitle = `📋 <b>Antrean Pesanan Keseluruhan (Bar & Dapur - ${queue.length} Pesanan):</b>`;
+          cardBadge = 'KDS/BDS MASTER QUEUE';
+          cardBadgeColor = 'badge-amber';
+          cardTitle = 'Status Antrean Barista & Dapur';
+          cardSubtitle = 'Live pemantauan seluruh antrean minuman & makanan Komazi POS';
+        }
+
+        if (!queue || queue.length === 0) {
+          await sendTelegramMessage(emptyMessage, chatId);
+        } else {
+          const cards = queue.map((o) => {
+            const items = (o.items || [])
+              .map((i) => `• <b>${i.qty}×</b> ${i.productName || i.name}${i.variantName ? ` (${i.variantName})` : ''}`)
+              .join('\n');
+            const icon = userRole === 'KITCHEN' ? '🥐' : '☕';
+            return `${icon} <b>${o.invoiceNo}</b> (${o.type} ${o.tableNo ? `Meja ${o.tableNo}` : ''})\n${items}\nStatus: <code>${o.status}</code>`;
+          }).join('\n\n━━━━━━━━━━━━━━━━━━\n\n');
+
+          const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━`;
+
+          let photoBuffer = null;
+          try {
+            photoBuffer = await generateBotImage('queue_dashboard', {
+              queue,
+              badgeText: cardBadge,
+              badgeColor: cardBadgeColor,
+              title: cardTitle,
+              subtitle: cardSubtitle,
+            });
+          } catch (imgErr) {
+            console.warn('[TelegramService] queue_dashboard render error:', imgErr.message);
+          }
+
+          if (photoBuffer) {
+            await sendTelegramPhoto(photoBuffer, caption, chatId);
+          } else {
+            await sendTelegramMessage(caption, chatId);
+          }
+        }
+      } catch (err) {
+        await sendTelegramMessage(`❌ Gagal mengambil antrean: ${err.message}`, chatId);
       }
       break;
     }
@@ -332,7 +693,27 @@ ${list}
 ━━━━━━━━━━━━━━━━━━
 <i>Harap segera buat PO atau restock persediaan bahan!</i>
           `.trim();
-          await sendTelegramMessage(stokMsg, chatId);
+
+          let photoBuffer = null;
+          try {
+            photoBuffer = await generateBotImage('inventory_critical', {
+              items: lowStock.slice(0, 5).map((i) => ({
+                name: i.name,
+                stock: i.stock,
+                minStock: i.minStock,
+                unit: i.unit || 'unit',
+              })),
+              totalAlerts: lowStock.length,
+            });
+          } catch (imgErr) {
+            console.warn('[TelegramService] webhook stok image error:', imgErr.message);
+          }
+
+          if (photoBuffer) {
+            await sendTelegramPhoto(photoBuffer, stokMsg, chatId);
+          } else {
+            await sendTelegramMessage(stokMsg, chatId);
+          }
         }
       } catch (err) {
         await sendTelegramMessage(`❌ Gagal mengambil data stok: ${err.message}`, chatId);
@@ -392,22 +773,135 @@ ${topList}
       break;
     }
 
-    case '/prediksi': {
+    case '/prediksi':
+    case '/briefing': {
       try {
-        const context = await getRoleScopedBusinessContext({ role: 'OWNER' });
-        const peak = context.salesSummary?.today?.peakHour || '14:00 - 17:00';
-        const predMsg = `
-🔮 <b>PREDIKSI & INSIGHT BISNIS</b>
+        const forecast = await calculatePeakHourAndRevenueForecast();
+        const aiInsight = await generateRealAiPredictionAnalysis(forecast);
+        const dateStr = new Date().toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+
+        const topMenuText = forecast.topProducts && forecast.topProducts.length > 0
+          ? forecast.topProducts.slice(0, 3).map((p, i) => `• <b>${p.name}</b> (${p.qty} terjual)`).join('\n')
+          : '• -';
+
+        const caption = `
+🔮 <b>KOMAZI AI — PREDIKSI & BRIEFING BISNIS</b>
 ━━━━━━━━━━━━━━━━━━
-<b>Estimasi Jam Sibuk (Peak Hour):</b> ${peak} WIB
-<b>Rekomendasi Barista:</b> Siapkan batch cold brew & espresso grind sebelum jam sibuk.
-<b>Status Shift:</b> ${context.currentShift?.isOpen ? 'Shift Aktif Berjalan' : 'Belum Ada Shift Terbuka'}
+📅 <b>Hari:</b> ${forecast.dayName}, ${dateStr}
+🎯 <b>Target Proyeksi:</b> <code>${forecast.projectedRevenueFormatted}</code>
+📊 <b>Kemarin:</b> ${forecast.yesterdayRevenueFormatted} (${forecast.yesterdayOrderCount} pesanan)
+⚡ <b>Jam Ramai:</b> <code>${forecast.primaryPeakWindow}</code>
+🌙 <b>Sesi Malam:</b> <code>${forecast.secondaryPeakWindow}</code>
+🏆 <b>Menu Primadona:</b>
+${topMenuText}
 ━━━━━━━━━━━━━━━━━━
-<i>Analisis pola penjualan Komazi AI Engine.</i>
+💡 <i>Detail analisis AI tertera di bawah.</i>
         `.trim();
-        await sendTelegramMessage(predMsg, chatId);
+
+        const fullMsg = `
+🔮 <b>KOMAZI AI — PREDIKSI & BRIEFING BISNIS</b>
+━━━━━━━━━━━━━━━━━━
+📅 <b>Hari:</b> ${forecast.dayName}, ${dateStr}
+🎯 <b>Target Proyeksi:</b> <code>${forecast.projectedRevenueFormatted}</code>
+📊 <b>Kemarin:</b> ${forecast.yesterdayRevenueFormatted} (${forecast.yesterdayOrderCount} pesanan)
+⚡ <b>Jam Ramai:</b> <code>${forecast.primaryPeakWindow}</code>
+🌙 <b>Sesi Malam:</b> <code>${forecast.secondaryPeakWindow}</code>
+━━━━━━━━━━━━━━━━━━
+🧠 <b>ANALISIS STRATEGI & TAKTIS:</b>
+${aiInsight}
+━━━━━━━━━━━━━━━━━━
+<i>Dianalisis secara real-time dari data riil transaksi POS Komazi.</i>
+        `.trim();
+
+        let photoBuffer = null;
+        try {
+          photoBuffer = await generateBotImage('ai_morning_briefing', forecast);
+        } catch (imgErr) {
+          console.warn('[TelegramService] ai_morning_briefing render error:', imgErr.message);
+        }
+
+        if (photoBuffer) {
+          await sendTelegramPhoto(photoBuffer, caption, chatId);
+          const detailMsg = `
+🧠 <b>ANALISIS STRATEGI & TAKTIS:</b>
+━━━━━━━━━━━━━━━━━━
+${aiInsight}
+━━━━━━━━━━━━━━━━━━
+<i>Dianalisis secara real-time dari data riil transaksi POS Komazi.</i>
+          `.trim();
+          await sendTelegramMessage(detailMsg, chatId);
+        } else {
+          await sendTelegramMessage(fullMsg, chatId);
+        }
       } catch (err) {
         await sendTelegramMessage(`❌ Gagal menghasilkan insight prediksi: ${err.message}`, chatId);
+      }
+      break;
+    }
+
+    case '/cek_stok_kritis':
+    case '/prediksi_stok': {
+      try {
+        const stockForecast = await calculateStockRunoutForecast();
+        const critMsg = `
+🚨 <b>KOMAZI AI — ESTIMASI HABIS BAHAN BAKU</b>
+━━━━━━━━━━━━━━━━━━
+Status: <b>${stockForecast.hasCriticalRisk ? `${stockForecast.criticalCount} Bahan Berisiko Kritis ⚠️` : 'Semua Bahan Aman Terkendali ✅'}</b>
+${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: sisa ${it.currentStock} ${it.unit} (${it.estimatedRunoutTime ? `habis ~${it.hoursUntilStockout} jam / ${it.estimatedRunoutTime}` : 'habis'})`).join('\n') || 'Tidak ada bahan yang terancam habis dalam waktu dekat.'}
+━━━━━━━━━━━━━━━━━━
+<i>Dihitung dari laju konsumsi pesanan aktif.</i>
+        `.trim();
+
+        let photoBuffer = null;
+        try {
+          photoBuffer = await generateBotImage('ai_stockout_alert', stockForecast);
+        } catch (imgErr) {
+          console.warn('[TelegramService] ai_stockout_alert render error:', imgErr.message);
+        }
+
+        if (photoBuffer) {
+          await sendTelegramPhoto(photoBuffer, critMsg, chatId);
+        } else {
+          await sendTelegramMessage(critMsg, chatId);
+        }
+      } catch (err) {
+        await sendTelegramMessage(`❌ Gagal memeriksa estimasi stok: ${err.message}`, chatId);
+      }
+      break;
+    }
+
+    case '/evaluasi_ai': {
+      try {
+        const closeComparison = await generateClosingComparison();
+        const evalMsg = `
+🌙 <b>KOMAZI AI — REKAPITULASI PENUTUPAN HARI INI</b>
+━━━━━━━━━━━━━━━━━━
+🏆 <b>Omset Realisasi:</b> ${closeComparison.actualRevenueFormatted}
+🎯 <b>Target Awal Hari:</b> ${closeComparison.projectedRevenueFormatted}
+📈 <b>Pencapaian:</b> ${closeComparison.achievementRatePct}% (${closeComparison.badgeLabel})
+🧾 <b>Total Struk:</b> ${closeComparison.totalTransactions} pesanan
+━━━━━━━━━━━━━━━━━━
+<i>Laporan performa harian Komazi POS Autonomous Engine.</i>
+        `.trim();
+
+        let photoBuffer = null;
+        try {
+          photoBuffer = await generateBotImage('ai_evening_wrapup', closeComparison);
+        } catch (imgErr) {
+          console.warn('[TelegramService] ai_evening_wrapup render error:', imgErr.message);
+        }
+
+        if (photoBuffer) {
+          await sendTelegramPhoto(photoBuffer, evalMsg, chatId);
+        } else {
+          await sendTelegramMessage(evalMsg, chatId);
+        }
+      } catch (err) {
+        await sendTelegramMessage(`❌ Gagal menyusun evaluasi penutupan: ${err.message}`, chatId);
       }
       break;
     }
@@ -443,7 +937,34 @@ ${topList}
 ━━━━━━━━━━━━━━━━━━
 <i>POS Komazi Autonomous Reporting Layer</i>
         `.trim();
-        await sendTelegramMessage(lapMsg, chatId);
+
+        let photoBuffer = null;
+        try {
+          photoBuffer = await generateBotImage('sales_report', {
+            period: 'Harian (Hari Ini)',
+            date: new Date().toLocaleDateString('id-ID', { dateStyle: 'medium' }),
+            totalRevenue: totalRev,
+            transactionCount: summary.totalTransactions,
+            grossProfit: estProfit,
+            marginPct: avgMargin,
+            cashRevenue: summary.byMethod?.CASH || 0,
+            qrisRevenue: summary.byMethod?.QRIS || 0,
+            transferRevenue: summary.byMethod?.TRANSFER || 0,
+            topProducts: (sales.topProducts || []).slice(0, 3).map((p) => ({
+              name: p.productName,
+              qty: p.qtySold,
+              revenue: p.revenue,
+            })),
+          });
+        } catch (imgErr) {
+          console.warn('[TelegramService] webhook laporan image error:', imgErr.message);
+        }
+
+        if (photoBuffer) {
+          await sendTelegramPhoto(photoBuffer, lapMsg, chatId);
+        } else {
+          await sendTelegramMessage(lapMsg, chatId);
+        }
       } catch (err) {
         await sendTelegramMessage(`❌ Gagal menyusun laporan: ${err.message}`, chatId);
       }

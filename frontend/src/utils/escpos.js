@@ -158,10 +158,11 @@ export { KomaziReceiptEncoder as EscPosEncoder };
 export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) {
   const encoder = new KomaziReceiptEncoder(paperWidth);
   const storeName = storeSettings.storeName || 'KOMAZI COFFEE';
-  const tagline = storeSettings.storeTagline || 'Coffee & Co-Working Space';
-  const address = storeSettings.address || 'Jl. Senopati No. 45, Jakarta Selatan';
-  const phone = storeSettings.phone || '0812-3456-7890';
-  const footer = storeSettings.receiptFooter || 'Terima Kasih Atas Kunjungan Anda!';
+  const tagline = storeSettings.storeTagline;
+  const address = storeSettings.address;
+  const phone = storeSettings.phone;
+  const headerText = storeSettings.headerText || storeSettings.receiptHeader;
+  const footer = storeSettings.receiptFooter !== undefined ? storeSettings.receiptFooter : 'Terima Kasih Atas Kunjungan Anda!';
 
   encoder
     .init()
@@ -170,10 +171,16 @@ export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) 
     .bold(true)
     .line(storeName)
     .doubleSize(false)
-    .bold(false)
-    .line(tagline)
-    .line(address)
-    .line(`Telp: ${phone}`)
+    .bold(false);
+
+  if (tagline && tagline.trim()) encoder.line(tagline.trim());
+  if (address && address.trim()) encoder.line(address.trim());
+  if (phone && phone.trim()) encoder.line(`Telp: ${phone.trim()}`);
+  if (headerText && headerText.trim()) {
+    encoder.bold(true).line(`*** ${headerText.trim()} ***`).bold(false);
+  }
+
+  encoder
     .divider(paperWidth)
     .align('center')
     .bold(true)
@@ -209,13 +216,13 @@ export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) 
     .bold(true)
     .twoColumns('Kembalian:', 'Rp 48.300', paperWidth)
     .bold(false)
-    .divider(paperWidth)
-    .align('center')
-    .bold(true)
-    .line(footer)
-    .bold(false);
+    .divider(paperWidth);
 
-  if (storeSettings.wifiName) {
+  if (footer && footer.trim()) {
+    encoder.align('center').bold(true).line(footer.trim()).bold(false);
+  }
+
+  if (storeSettings.wifiName && storeSettings.receiptShowWifi !== false) {
     encoder.line(`WiFi: ${storeSettings.wifiName} | Pass: ${storeSettings.wifiPass || '-'}`);
   }
 
@@ -242,13 +249,31 @@ export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) 
 /**
  * Generate binary ESC/POS payload for Order Receipt using esc-pos-encoder
  */
-export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = '58mm', options = {}) {
+export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, paperWidthParam = '58mm', optionsParam = {}) {
+  // Seamlessly accept either (order, storeSettings, paperWidth, options) OR (order, { storeSettings, paperWidth, ...options })
+  let storeSettings = {};
+  let paperWidth = '58mm';
+  let options = {};
+
+  if (storeSettingsOrOptions && typeof storeSettingsOrOptions === 'object') {
+    if (storeSettingsOrOptions.storeSettings !== undefined || storeSettingsOrOptions.paperWidth !== undefined) {
+      storeSettings = storeSettingsOrOptions.storeSettings || {};
+      paperWidth = storeSettingsOrOptions.paperWidth || '58mm';
+      options = storeSettingsOrOptions;
+    } else {
+      storeSettings = storeSettingsOrOptions;
+      paperWidth = typeof paperWidthParam === 'string' ? paperWidthParam : '58mm';
+      options = optionsParam || {};
+    }
+  }
+
   const encoder = new KomaziReceiptEncoder(paperWidth);
   const storeName = storeSettings.storeName || 'KOMAZI COFFEE';
-  const tagline = storeSettings.storeTagline || 'Coffee & Co-Working Space';
-  const address = storeSettings.address || 'Jl. Senopati No. 45, Jakarta Selatan';
-  const phone = storeSettings.phone || '0812-3456-7890';
-  const footer = storeSettings.receiptFooter || 'Terima Kasih Atas Kunjungan Anda!';
+  const tagline = storeSettings.storeTagline;
+  const address = storeSettings.address;
+  const phone = storeSettings.phone;
+  const headerText = storeSettings.headerText || storeSettings.receiptHeader;
+  const footer = storeSettings.receiptFooter !== undefined ? storeSettings.receiptFooter : 'Terima Kasih Atas Kunjungan Anda!';
 
   const resolvedPaymentMethod = String(
     order.paymentMethod ||
@@ -258,32 +283,80 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
     'CASH'
   ).toUpperCase();
 
+  const displayPaymentMethod = (() => {
+    if (resolvedPaymentMethod === 'CASH') return 'TUNAI';
+    if (resolvedPaymentMethod.includes('QRIS')) return 'QRIS';
+    if (resolvedPaymentMethod.includes('TRANSFER')) {
+      const ref = order?.payments?.[0]?.reference;
+      if (ref && ref.includes(':')) {
+        return `TRF (${ref.split(':')[0]})`;
+      }
+      return 'TRANSFER BANK';
+    }
+    return resolvedPaymentMethod;
+  })();
+
   const cashReceived = order.cashReceived || order.payments?.[0]?.tendered;
   const cashChange = order.cashChange ?? order.payments?.[0]?.change;
 
   encoder
-    .init()
-    .align('center')
-    .doubleSize(true)
-    .bold(true)
-    .line(storeName)
-    .doubleSize(false)
-    .bold(false)
-    .line(tagline)
-    .line(address)
-    .line(`Telp: ${phone}`)
+    .init();
+
+  // Kick cash drawer pulse if configured
+  if (options.kickDrawer || options.kickCashDrawer) {
+    encoder.kickDrawer();
+  }
+
+  if (storeSettings.receiptShowStoreName !== false) {
+    encoder
+      .align('center')
+      .doubleSize(true)
+      .bold(true)
+      .line(storeName)
+      .doubleSize(false)
+      .bold(false);
+  }
+
+  if (storeSettings.receiptShowTagline !== false && tagline && tagline.trim()) encoder.line(tagline.trim());
+  if (storeSettings.receiptShowAddress !== false && address && address.trim()) encoder.line(address.trim());
+  if (storeSettings.receiptShowPhone !== false && phone && phone.trim()) encoder.line(`Telp: ${phone.trim()}`);
+  if (storeSettings.receiptShowHeader !== false && headerText && headerText.trim()) {
+    encoder.bold(true).line(`*** ${headerText.trim()} ***`).bold(false);
+  }
+
+  if (order.isBillCheck) {
+    encoder.bold(true).line('*** TAGIHAN SEMENTARA (BILL) ***').bold(false);
+  }
+
+  encoder
     .divider(paperWidth)
-    .align('left')
+    .align('left');
+
+  if (order.isBillCheck) {
+    encoder.twoColumns('Status:', 'BELUM LUNAS', paperWidth);
+  }
+
+  encoder
     .twoColumns('No. Faktur:', order.invoiceNo || `KMZ-${order.id}`, paperWidth)
-    .twoColumns('Tanggal:', formatDateTime(order.createdAt || new Date().toISOString()), paperWidth)
-    .twoColumns('Kasir:', order.cashierName || 'Kasir Bertugas', paperWidth)
-    .twoColumns('Pelanggan:', order.customerName || 'Tamu Umum', paperWidth)
-    .twoColumns(
+    .twoColumns('Tanggal:', formatDateTime(order.createdAt || new Date().toISOString()), paperWidth);
+
+  if (storeSettings.receiptShowCashier !== false) {
+    encoder.twoColumns('Kasir:', order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir Bertugas', paperWidth);
+  }
+
+  if (storeSettings.receiptShowCustomer !== false) {
+    encoder.twoColumns('Pelanggan:', order.customerName || 'Tamu Umum', paperWidth);
+  }
+
+  if (storeSettings.receiptShowTable !== false) {
+    encoder.twoColumns(
       'Layanan:',
       `${formatOrderType(order.orderType || order.type)} ${order.tableNo ? `(Meja ${order.tableNo})` : ''}`.trim(),
       paperWidth
-    )
-    .divider(paperWidth);
+    );
+  }
+
+  encoder.divider(paperWidth);
 
   // Line items
   (order.items || []).forEach((item) => {
@@ -301,8 +374,8 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
     const variantStr = item.variantName ? ` • ${item.variantName}` : '';
     encoder.line(`  ${item.qty} x ${formatRupiah(unitPrice)}${variantStr}`);
 
-    // Line 3: Note if present
-    if (item.note) {
+    // Line 3: Note if present & enabled
+    if (storeSettings.receiptShowNotes !== false && item.note) {
       encoder.line(`  * ${item.note}`);
     }
   });
@@ -329,7 +402,7 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
     .twoColumns('TOTAL:', formatRupiah(order.total || order.grandTotal || 0), paperWidth)
     .bold(false)
     .divider(paperWidth)
-    .twoColumns('Metode Pembayaran:', resolvedPaymentMethod, paperWidth);
+    .twoColumns('Metode Pembayaran:', displayPaymentMethod, paperWidth);
 
   if (cashReceived) {
     encoder.twoColumns('Bayar Tunai:', formatRupiah(cashReceived), paperWidth);
@@ -349,7 +422,7 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
     options.showQris === true;
 
   const qrisEnabled = storeSettings.qrisEnabled !== false;
-  if (isQris && qrisEnabled) {
+  if (isQris && qrisEnabled && storeSettings.receiptShowQris !== false) {
     const qrisDynamic = generateDynamicQrisForOrder(order, storeSettings);
     encoder
       .divider(paperWidth)
@@ -366,20 +439,23 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
   }
 
   encoder
-    .divider(paperWidth)
-    .align('center')
-    .bold(true)
-    .line(footer)
-    .bold(false);
+    .divider(paperWidth);
 
-  if (storeSettings.wifiName) {
+  if (storeSettings.receiptShowFooter !== false && footer && footer.trim()) {
+    encoder.align('center').bold(true).line(footer.trim()).bold(false);
+  }
+
+  if (storeSettings.receiptShowWifi !== false && storeSettings.wifiName) {
     encoder.line(`WiFi: ${storeSettings.wifiName} | Pass: ${storeSettings.wifiPass || '-'}`);
   }
 
   encoder.line('Follow IG: @komazicoffee');
-  encoder.feed(1);
-  encoder.line('||||| | |||| ||| ||||| |||| || |');
-  encoder.line(String(order.invoiceNo || `KMZ-${order.id}`));
+
+  if (storeSettings.receiptShowBarcode !== false) {
+    encoder.feed(1);
+    encoder.line('||||| | |||| ||| ||||| |||| || |');
+    encoder.line(String(order.invoiceNo || `KMZ-${order.id}`));
+  }
 
   encoder
     .feed(3)
@@ -387,3 +463,74 @@ export function buildOrderReceiptEscPos(order, storeSettings = {}, paperWidth = 
 
   return encoder.encode();
 }
+
+/**
+ * Generate binary ESC/POS payload for Kitchen Order Ticket
+ */
+export function buildKitchenTicketEscPos(order, options = {}) {
+  const paperWidth = options.paperWidth || '58mm';
+  const stationName = options.stationName || 'DAPUR / BAR';
+  const isAdditional = options.isAdditional || false;
+  const encoder = new KomaziReceiptEncoder(paperWidth);
+
+  encoder
+    .init()
+    .align('center')
+    .bold(true)
+    .doubleSize(true)
+    .line(isAdditional ? `[TAMBAHAN] ${stationName}` : `[ORDER] ${stationName}`)
+    .doubleSize(false)
+    .bold(false)
+    .line('================================')
+    .align('left')
+    .twoColumns('No. Pesanan:', order.invoiceNo || `#${order.id}`, paperWidth)
+    .twoColumns('Waktu:', formatDateTime(order.createdAt || new Date().toISOString()), paperWidth)
+    .twoColumns(
+      'Tipe:',
+      `${formatOrderType(order.orderType || order.type)} ${order.tableNo ? `(Meja ${order.tableNo})` : ''}`.trim(),
+      paperWidth
+    );
+
+  if (order.customerName) {
+    encoder.twoColumns('Pelanggan:', order.customerName, paperWidth);
+  }
+  const cashierDisplay = order.cashierName || order.cashier?.name || order.shift?.cashier?.name;
+  if (cashierDisplay) {
+    encoder.twoColumns('Kasir:', cashierDisplay, paperWidth);
+  }
+
+  encoder.divider(paperWidth);
+
+  const itemsToPrint = options.items || order.items || [];
+  itemsToPrint.forEach((item) => {
+    encoder.bold(true);
+    encoder.line(`${item.qty}x  ${item.name || item.productName || 'Item'}`);
+    encoder.bold(false);
+    if (item.variantName) {
+      encoder.line(`    Varian: ${item.variantName}`);
+    }
+    if (item.modifiers) {
+      encoder.line(`    Topping/Mod: ${item.modifiers}`);
+    }
+    if (item.note) {
+      encoder.bold(true);
+      encoder.line(`    >> NOTE: ${item.note}`);
+      encoder.bold(false);
+    }
+  });
+
+  if (order.note || order.orderNote) {
+    encoder.divider(paperWidth);
+    encoder.bold(true);
+    encoder.line(`Catatan Khusus: ${order.note || order.orderNote}`);
+    encoder.bold(false);
+  }
+
+  encoder
+    .divider(paperWidth)
+    .feed(3)
+    .cut();
+
+  return encoder.encode();
+}
+

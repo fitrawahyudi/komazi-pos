@@ -2,7 +2,37 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { generateInvoiceNumber, isDrinkItem } from '../utils/format';
 import { useRecipeStore } from './useRecipeStore';
+import { useShiftStore } from './shiftStore';
+import { useStockStore } from './stockStore';
 import { api } from '../services/api';
+import { getSocket } from '../services/socket';
+import { NotificationService } from '../services/notification.service';
+
+// Helper: normalisasi order objek dari backend/socket menjadi format seragam
+export function formatSingleOrder(o) {
+  if (!o) return null;
+  return {
+    ...o,
+    cashierName: o.cashierName || o.cashier?.name || o.shift?.cashier?.name || 'Kasir',
+    total: Number(o.total) || 0,
+    subtotal: Number(o.subtotal) || 0,
+    discount: Number(o.discount) || 0,
+    tax: Number(o.tax) || 0,
+    serviceFee: Number(o.serviceFee) || 0,
+    items: (o.items || []).map((i) => ({
+      ...i,
+      categoryName: i.categoryName || i.product?.category?.name || '',
+      qty: Number(i.qty) || 1,
+      unitPrice: Number(i.unitPrice) || 0,
+      lineTotal: Number(i.lineTotal) || 0,
+      unitCost: Number(i.unitCost) || 0,
+      lineCost: Number(i.lineCost) || 0,
+    })),
+    kitchenStatus: o.kitchenStatus || 'PENDING',
+    barStatus: o.barStatus || 'PENDING',
+    status: o.status || 'PAID',
+  };
+}
 
 // Cross-tab real-time pub/sub synchronization channel
 const SYNC_CHANNEL_NAME = 'komazi_orders_sync';
@@ -32,79 +62,184 @@ export function broadcastOrdersSync(eventDetail) {
   }
 }
 
+// Same-tab reactive event listeners set (e.g. cartStore open bills auto sync)
+const ordersChangedListeners = new Set();
+export function subscribeOrdersChanged(listener) {
+  ordersChangedListeners.add(listener);
+  return () => ordersChangedListeners.delete(listener);
+}
+export function notifyOrdersChanged(detail) {
+  ordersChangedListeners.forEach((fn) => {
+    try {
+      fn(detail);
+    } catch (err) {
+      console.warn('[OrdersStore] Listener callback error:', err);
+    }
+  });
+}
+
+// In-flight deduplication promises to prevent duplicate concurrent network requests
+let inFlightFetchOrdersPromise = null;
+let inFlightFetchBackendOrdersPromise = null;
+
 export const useOrdersStore = create(
   persist(
     (set, get) => ({
       orders: [],
       invoiceSequence: 1,
       auditLogs: [],
+      isLoading: false,
+
+      // Handler untuk pesanan baru via Socket.IO realtime
+      handleIncomingOrder: (rawOrder) => {
+        const formatted = formatSingleOrder(rawOrder);
+        if (!formatted) return;
+
+        set((state) => {
+          const existsIndex = state.orders.findIndex(
+            (o) => String(o.id) === String(formatted.id) || (o.invoiceNo && o.invoiceNo === formatted.invoiceNo)
+          );
+
+          if (existsIndex >= 0) {
+            const updated = [...state.orders];
+            updated[existsIndex] = { ...updated[existsIndex], ...formatted };
+            return { orders: updated };
+          } else {
+            return { orders: [formatted, ...state.orders] };
+          }
+        });
+
+        // Picu sinkronisasi open bills dan dispatch notifikasi realtime
+        notifyOrdersChanged({ action: 'INCOMING_ORDER', order: formatted });
+        broadcastOrdersSync({
+          type: 'ORDER_CHANGED',
+          action: 'INCOMING_ORDER',
+          order: formatted,
+        });
+      },
+
+      // Handler untuk update status pesanan via Socket.IO realtime
+      handleUpdatedOrder: (rawOrder) => {
+        const formatted = formatSingleOrder(rawOrder);
+        if (!formatted) return;
+
+        set((state) => {
+          const existsIndex = state.orders.findIndex(
+            (o) => String(o.id) === String(formatted.id) || (o.invoiceNo && o.invoiceNo === formatted.invoiceNo)
+          );
+
+          if (existsIndex >= 0) {
+            const updated = [...state.orders];
+            updated[existsIndex] = { ...updated[existsIndex], ...formatted };
+            return { orders: updated };
+          } else {
+            return { orders: [formatted, ...state.orders] };
+          }
+        });
+
+        // Picu sinkronisasi open bills dan dispatch notifikasi realtime
+        notifyOrdersChanged({ action: 'UPDATED_ORDER', order: formatted });
+        broadcastOrdersSync({
+          type: 'ORDER_CHANGED',
+          action: 'UPDATED_ORDER',
+          order: formatted,
+        });
+      },
 
       fetchOrders: async () => {
-        try {
-          const res = await api.orders.getAll();
-          if (res && res.success && Array.isArray(res.data)) {
-            const formatted = res.data.map((o) => ({
-              ...o,
-              total: Number(o.total) || 0,
-              subtotal: Number(o.subtotal) || 0,
-              discount: Number(o.discount) || 0,
-              tax: Number(o.tax) || 0,
-              serviceFee: Number(o.serviceFee) || 0,
-              items: (o.items || []).map((i) => ({
-                ...i,
-                categoryName: i.categoryName || i.product?.category?.name || '',
-                qty: Number(i.qty) || 1,
-                unitPrice: Number(i.unitPrice) || 0,
-                lineTotal: Number(i.lineTotal) || 0,
-                unitCost: Number(i.unitCost) || 0,
-                lineCost: Number(i.lineCost) || 0,
-              })),
-              kitchenStatus: o.kitchenStatus || 'PENDING',
-              barStatus: o.barStatus || 'PENDING',
-              status: o.status || 'PAID',
-            }));
-            set({ orders: formatted });
-            return formatted;
-          }
-        } catch (err) {
-          console.error('[OrdersStore] Error fetching orders:', err);
+        if (inFlightFetchOrdersPromise) {
+          return inFlightFetchOrdersPromise;
         }
-        return get().orders;
+
+        inFlightFetchOrdersPromise = (async () => {
+          try {
+            set({ isLoading: true });
+            const res = await api.orders.getAll();
+            if (res && res.success && Array.isArray(res.data)) {
+              const formatted = res.data.map((o) => ({
+                ...o,
+                cashierName: o.cashierName || o.cashier?.name || o.shift?.cashier?.name || 'Kasir',
+                total: Number(o.total) || 0,
+                subtotal: Number(o.subtotal) || 0,
+                discount: Number(o.discount) || 0,
+                tax: Number(o.tax) || 0,
+                serviceFee: Number(o.serviceFee) || 0,
+                items: (o.items || []).map((i) => ({
+                  ...i,
+                  categoryName: i.categoryName || i.product?.category?.name || '',
+                  qty: Number(i.qty) || 1,
+                  unitPrice: Number(i.unitPrice) || 0,
+                  lineTotal: Number(i.lineTotal) || 0,
+                  unitCost: Number(i.unitCost) || 0,
+                  lineCost: Number(i.lineCost) || 0,
+                })),
+                kitchenStatus: o.kitchenStatus || 'PENDING',
+                barStatus: o.barStatus || 'PENDING',
+                status: o.status || 'PAID',
+              }));
+              set({ orders: formatted, isLoading: false });
+              // Pure query: DO NOT broadcast mutation events (which causes feedback loops)
+              return formatted;
+            }
+          } catch (err) {
+            console.error('[OrdersStore] Error fetching orders:', err);
+          } finally {
+            set({ isLoading: false });
+            inFlightFetchOrdersPromise = null;
+          }
+          return get().orders;
+        })();
+
+        return inFlightFetchOrdersPromise;
       },
 
       fetchBackendOrders: async () => {
-        const state = get();
-        try {
-          const res = await api.orders.getAll();
-          if (res && res.success && Array.isArray(res.data)) {
-            const formatted = res.data.map((o) => ({
-              ...o,
-              total: Number(o.total) || 0,
-              subtotal: Number(o.subtotal) || 0,
-              discount: Number(o.discount) || 0,
-              tax: Number(o.tax) || 0,
-              serviceFee: Number(o.serviceFee) || 0,
-              items: (o.items || []).map((i) => ({
-                ...i,
-                categoryName: i.categoryName || i.product?.category?.name || '',
-                qty: Number(i.qty) || 1,
-                unitPrice: Number(i.unitPrice) || 0,
-                lineTotal: Number(i.lineTotal) || 0,
-                unitCost: Number(i.unitCost) || 0,
-                lineCost: Number(i.lineCost) || 0,
-                status: i.status || 'PENDING',
-              })),
-              kitchenStatus: o.kitchenStatus || 'PENDING',
-              barStatus: o.barStatus || 'PENDING',
-              status: o.status || 'PAID',
-            }));
-            set({ orders: formatted });
-            return { success: true, count: formatted.length, orders: formatted };
-          }
-        } catch (err) {
-          console.warn('[OrdersStore] fetchBackendOrders error:', err);
+        if (inFlightFetchBackendOrdersPromise) {
+          return inFlightFetchBackendOrdersPromise;
         }
-        return { success: false, count: 0, orders: state.orders };
+
+        inFlightFetchBackendOrdersPromise = (async () => {
+          const state = get();
+          try {
+            set({ isLoading: true });
+            const res = await api.orders.getAll();
+            if (res && res.success && Array.isArray(res.data)) {
+              const formatted = res.data.map((o) => ({
+                ...o,
+                cashierName: o.cashierName || o.cashier?.name || o.shift?.cashier?.name || 'Kasir',
+                total: Number(o.total) || 0,
+                subtotal: Number(o.subtotal) || 0,
+                discount: Number(o.discount) || 0,
+                tax: Number(o.tax) || 0,
+                serviceFee: Number(o.serviceFee) || 0,
+                items: (o.items || []).map((i) => ({
+                  ...i,
+                  categoryName: i.categoryName || i.product?.category?.name || '',
+                  qty: Number(i.qty) || 1,
+                  unitPrice: Number(i.unitPrice) || 0,
+                  lineTotal: Number(i.lineTotal) || 0,
+                  unitCost: Number(i.unitCost) || 0,
+                  lineCost: Number(i.lineCost) || 0,
+                  status: i.status || 'PENDING',
+                })),
+                kitchenStatus: o.kitchenStatus || 'PENDING',
+                barStatus: o.barStatus || 'PENDING',
+                status: o.status || 'PAID',
+              }));
+              set({ orders: formatted, isLoading: false });
+              // Pure query: DO NOT broadcast mutation events (which causes feedback loops)
+              return { success: true, count: formatted.length, orders: formatted };
+            }
+          } catch (err) {
+            console.warn('[OrdersStore] fetchBackendOrders error:', err);
+          } finally {
+            set({ isLoading: false });
+            inFlightFetchBackendOrdersPromise = null;
+          }
+          return { success: false, count: 0, orders: state.orders };
+        })();
+
+        return inFlightFetchBackendOrdersPromise;
       },
 
       createOrder: async (orderPayload) => {
@@ -145,6 +280,7 @@ export const useOrdersStore = create(
 
         let newOrder = {
           ...orderPayload,
+          cashierName: orderPayload.cashierName || orderPayload.cashier?.name || 'Kasir',
           tableNo: cleanTableNo,
           customerName: cleanCustomerName,
           items: itemsWithCost,
@@ -164,6 +300,7 @@ export const useOrdersStore = create(
             type: orderPayload.type || 'DINE_IN',
             tableNo: cleanTableNo,
             customerName: cleanCustomerName,
+            customerId: orderPayload.customerId ? Number(orderPayload.customerId) : null,
             shiftId: orderPayload.shiftId ? Number(orderPayload.shiftId) : null,
             items: itemsWithCost.map((i) => ({
               productId: Number(i.productId),
@@ -180,10 +317,15 @@ export const useOrdersStore = create(
               : null,
           });
 
+          if (apiRes && !apiRes.success) {
+            throw new Error(apiRes.message || 'Gagal membuat pesanan');
+          }
+
           if (apiRes && apiRes.success && apiRes.data) {
             newOrder = {
               ...newOrder,
               ...apiRes.data,
+              cashierName: apiRes.data.cashierName || apiRes.data.cashier?.name || newOrder.cashierName || 'Kasir',
               items: (apiRes.data.items || newOrder.items).map((i, idx) => ({
                 ...i,
                 categoryName: i.categoryName || newOrder.items[idx]?.categoryName || i.product?.category?.name || '',
@@ -196,6 +338,7 @@ export const useOrdersStore = create(
           }
         } catch (err) {
           console.warn('[OrdersStore] Backend order create error:', err);
+          throw err;
         }
 
         const nextOrders = [newOrder, ...state.orders];
@@ -273,6 +416,9 @@ export const useOrdersStore = create(
           type: billPayload.type || billPayload.orderType || 'DINE_IN',
           tableNo: cleanTableNo,
           customerName: cleanCustomerName,
+          customerId: (billPayload.customerId ?? billPayload.selectedCustomerId)
+            ? Number(billPayload.customerId ?? billPayload.selectedCustomerId)
+            : null,
           shiftId: billPayload.shiftId ? Number(billPayload.shiftId) : null,
           items: payloadItems,
           discount: Number(billPayload.discount || billPayload.discountValue) || 0,
@@ -334,6 +480,11 @@ export const useOrdersStore = create(
           invoiceSequence: nextSeq,
         });
 
+        notifyOrdersChanged({
+          action: 'HOLD_ORDER_CREATED',
+          order: holdOrder,
+        });
+
         broadcastOrdersSync({
           type: 'ORDER_CHANGED',
           action: 'HOLD_ORDER_CREATED',
@@ -388,6 +539,12 @@ export const useOrdersStore = create(
             ),
           }));
         } catch (_) {}
+
+        notifyOrdersChanged({
+          action: 'ORDER_DELETED',
+          billId,
+          orderId: actualBackendId,
+        });
 
         broadcastOrdersSync({
           type: 'ORDER_CHANGED',
@@ -466,7 +623,11 @@ export const useOrdersStore = create(
               type: paidOrderPayload.type || 'DINE_IN',
               tableNo: cleanTableNo,
               customerName: cleanCustomerName,
+              customerId: paidOrderPayload.customerId ? Number(paidOrderPayload.customerId) : null,
             });
+            if (payRes && !payRes.success) {
+              throw new Error(payRes.message || 'Gagal memproses pembayaran');
+            }
             if (payRes && payRes.success && payRes.data) {
               paidOrderBackend = payRes.data;
             }
@@ -475,18 +636,23 @@ export const useOrdersStore = create(
               type: paidOrderPayload.type || 'DINE_IN',
               tableNo: cleanTableNo,
               customerName: cleanCustomerName,
+              customerId: paidOrderPayload.customerId ? Number(paidOrderPayload.customerId) : null,
               shiftId: paidOrderPayload.shiftId ? Number(paidOrderPayload.shiftId) : null,
               items: payloadItems,
               discount: Number(paidOrderPayload.discount) || 0,
               payments: cleanPayments,
               workspaceSessionId: paidOrderPayload.workspaceSessionId ? Number(paidOrderPayload.workspaceSessionId) : null,
             });
+            if (createRes && !createRes.success) {
+              throw new Error(createRes.message || 'Gagal membuat pesanan');
+            }
             if (createRes && createRes.success && createRes.data) {
               paidOrderBackend = createRes.data;
             }
           }
         } catch (err) {
           console.warn('[OrdersStore] Backend pay order error:', err);
+          throw err;
         }
 
         const invoiceNo = paidOrderBackend?.invoiceNo || oldHold?.invoiceNo || generateInvoiceNumber(state.invoiceSequence);
@@ -525,6 +691,11 @@ export const useOrdersStore = create(
           invoiceSequence: nextSeq,
         });
 
+        notifyOrdersChanged({
+          action: 'HOLD_UPGRADED_TO_PAID',
+          order: paidOrder,
+        });
+
         broadcastOrdersSync({
           type: 'ORDER_CHANGED',
           action: 'HOLD_UPGRADED_TO_PAID',
@@ -537,41 +708,6 @@ export const useOrdersStore = create(
         });
 
         return paidOrder;
-      },
-
-      // Hapus hold order (jika bill dibatalkan)
-      deleteHoldOrder: async (billId, knownBackendId = null) => {
-        const holdId = `hold_${billId}`;
-        const state = get();
-        const targetOrder = state.orders.find(
-          (o) => o.id === holdId || o.billId === billId || (knownBackendId && o.id === knownBackendId)
-        );
-        const actualBackendId = knownBackendId || targetOrder?.backendOrderId || (typeof targetOrder?.id === 'number' && targetOrder.id < 1000000000000 ? targetOrder.id : null);
-
-        if (actualBackendId) {
-          try {
-            await api.orders.void(actualBackendId, 'Dibatalkan oleh kasir dari Open Bills');
-          } catch (err) {
-            console.warn('[OrdersStore] Backend void hold order error:', err);
-          }
-        }
-
-        const nextOrders = state.orders.filter(
-          (o) => o.id !== holdId && o.billId !== billId && (!actualBackendId || o.id !== actualBackendId)
-        );
-        set({ orders: nextOrders });
-
-        broadcastOrdersSync({
-          type: 'ORDER_CHANGED',
-          action: 'HOLD_ORDER_DELETED',
-          holdId,
-          orderId: actualBackendId,
-          state: {
-            orders: nextOrders,
-            invoiceSequence: state.invoiceSequence,
-            auditLogs: state.auditLogs,
-          },
-        });
       },
 
       updateKitchenStatus: (orderId, newStatus, station = null) => {
@@ -716,12 +852,14 @@ export const useOrdersStore = create(
         try {
           const res = await client.bumpItem(itemId);
           if (res && res.success && res.data) {
+            const item = res.data.item || res.data.updatedItem;
+            const order = res.data.order || res.data.updatedOrder;
             get().applySocketItemUpdated({
-              orderId: res.data.order?.id,
-              item: res.data.item,
-              order: res.data.order,
+              orderId: order?.id,
+              item,
+              order,
             });
-            return { success: true, item: res.data.item, order: res.data.order };
+            return { success: true, item, order };
           }
         } catch (err) {
           console.warn('[OrdersStore] bumpItem error:', err);
@@ -803,7 +941,7 @@ export const useOrdersStore = create(
         return { success: true, order: updatedOrder };
       },
 
-      refundOrder: async (orderId, reason, refundAmount, authorizedBy, managerPin) => {
+      refundOrder: async (orderId, reason, refundAmount, authorizedBy) => {
         const state = get();
         const order = state.orders.find((o) => o.id === orderId);
         if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
@@ -811,15 +949,59 @@ export const useOrdersStore = create(
         const finalAmount = Number(refundAmount) || Number(order.total) || 0;
         const backendId = (typeof orderId === 'number' && orderId < 1000000000000) ? orderId : order.backendOrderId;
         let serverOrder = null;
+        let isPendingApproval = false;
+
         if (backendId) {
           try {
-            const res = await api.orders.refund(backendId, reason, finalAmount, managerPin);
+            const res = await api.orders.refund(backendId, reason, finalAmount);
             if (res && res.success && res.data) {
               serverOrder = res.data;
+              if (res.data.pendingApproval || res.data.status === 'PENDING_OWNER_APPROVAL') {
+                isPendingApproval = true;
+              }
+            } else if (res && res.success === false) {
+              throw new Error(res.message || 'Gagal memproses refund');
             }
           } catch (err) {
             console.warn('[OrdersStore] Backend refund order error:', err);
+            throw err;
           }
+        }
+
+        if (isPendingApproval) {
+          const updatedOrder = {
+            ...order,
+            refundPending: true,
+            refundReason: reason,
+            refundAmount: finalAmount,
+            refundRequestedBy: authorizedBy,
+            refundRequestedAt: new Date().toISOString(),
+          };
+
+          const audit = {
+            id: Date.now(),
+            action: 'REQUEST_REFUND',
+            targetInvoice: order.invoiceNo,
+            performedBy: authorizedBy,
+            reason,
+            amount: finalAmount,
+            createdAt: new Date().toISOString(),
+          };
+
+          const nextOrders = state.orders.map((o) => (o.id === orderId ? updatedOrder : o));
+          const nextAudit = [audit, ...state.auditLogs];
+
+          set({
+            orders: nextOrders,
+            auditLogs: nextAudit,
+          });
+
+          return {
+            success: true,
+            pendingApproval: true,
+            order: updatedOrder,
+            message: 'Permintaan refund berhasil diajukan! Menunggu persetujuan Owner.',
+          };
         }
 
         const updatedOrder = {
@@ -913,7 +1095,8 @@ export const useOrdersStore = create(
               productId: 1,
               name: 'Komazi Aren Latte',
               productName: 'Komazi Aren Latte',
-              categoryName: 'Kopi',
+              categoryName: 'Coffee',
+              station: { id: 2, name: 'Bar Utama', code: 'BAR_MAIN', type: 'BAR' },
               variantName: 'Iced',
               qty: 2,
               unitPrice: 28000,
@@ -925,7 +1108,8 @@ export const useOrdersStore = create(
               productId: 11,
               name: 'Artisan Butter Croissant',
               productName: 'Artisan Butter Croissant',
-              categoryName: 'Makanan & Snack',
+              categoryName: 'Snack & Pastry',
+              station: { id: 1, name: 'Kitchen Utama', code: 'KITCHEN_MAIN', type: 'KITCHEN' },
               variantName: 'Original Butter',
               qty: 1,
               unitPrice: 22000,
@@ -963,50 +1147,6 @@ export const useOrdersStore = create(
         });
 
         return sampleOrder;
-      },
-
-      // Sinkronisasi pesanan dari database backend (jika ada pesanan baru di server)
-      fetchBackendOrders: async () => {
-        try {
-          const res = await api.orders.getAll();
-          if (res && res.success && Array.isArray(res.data)) {
-            const state = get();
-            const serverOrders = res.data.map((bo) => ({
-              ...bo,
-              total: Number(bo.total) || 0,
-              subtotal: Number(bo.subtotal) || 0,
-              kitchenStatus: bo.kitchenStatus || 'PENDING',
-              barStatus: bo.barStatus || 'PENDING',
-              status: bo.status || 'PAID',
-              items: (bo.items || []).map((i) => ({
-                ...i,
-                categoryName: i.categoryName || i.product?.category?.name || '',
-                qty: Number(i.qty) || 1,
-                unitPrice: Number(i.unitPrice) || 0,
-                lineTotal: Number(i.lineTotal) || 0,
-              })),
-            }));
-
-            // Map server orders for fast lookup
-            const serverMap = new Map();
-            serverOrders.forEach((o) => {
-              serverMap.set(String(o.id), o);
-              serverMap.set(o.invoiceNo, o);
-            });
-
-            // Keep purely local temporary / hold orders that are not on the server
-            const localOnly = state.orders.filter(
-              (o) => !serverMap.has(String(o.id)) && !serverMap.has(o.invoiceNo)
-            );
-
-            const merged = [...localOnly, ...serverOrders];
-            set({ orders: merged });
-            return { success: true, count: serverOrders.length };
-          }
-        } catch (err) {
-          console.warn('Backend order sync quiet fail:', err);
-        }
-        return { success: true, count: 0 };
       },
     }),
     {
@@ -1051,5 +1191,89 @@ if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('komazi:orders-updated', { detail: { type: 'STORAGE_SYNC' } }));
     }
   });
+}
+
+// Socket.IO Real-time Synchronization Listener
+let isSocketSyncBound = false;
+
+export function initOrdersSocketSync() {
+  if (typeof window === 'undefined' || isSocketSyncBound) return;
+  try {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on('order:new', (order) => {
+      useOrdersStore.getState().fetchBackendOrders?.();
+      if (order) {
+        NotificationService.notifyNewOrder(order);
+      }
+    });
+
+    socket.on('order:created', (order) => {
+      useOrdersStore.getState().fetchBackendOrders?.();
+      useShiftStore.getState().fetchActiveShift?.();
+      if (order) {
+        NotificationService.notifyNewOrder(order);
+      }
+    });
+
+    socket.on('order:updated', (order) => {
+      useOrdersStore.getState().fetchBackendOrders?.();
+      useShiftStore.getState().fetchActiveShift?.();
+      if (order && (order.status === 'READY' || order.kitchenStatus === 'READY' || order.barStatus === 'READY')) {
+        NotificationService.notifyOrderReady(order);
+      }
+    });
+
+    socket.on('approval:requested', (approval) => {
+      if (approval) {
+        NotificationService.notifyApprovalRequired(approval);
+      }
+    });
+
+    socket.on('order:voided', (order) => {
+      useOrdersStore.getState().fetchBackendOrders?.();
+      useShiftStore.getState().fetchActiveShift?.();
+      useStockStore.getState().fetchIngredients?.();
+    });
+
+    socket.on('order:refunded', (order) => {
+      useOrdersStore.getState().handleUpdatedOrder(order);
+      useShiftStore.getState().fetchActiveShift?.();
+      useStockStore.getState().fetchIngredients?.();
+    });
+
+    socket.on('shift:opened', () => {
+      useShiftStore.getState().fetchActiveShift?.();
+      useShiftStore.getState().fetchShiftHistory?.();
+    });
+
+    socket.on('shift:closed', () => {
+      useShiftStore.getState().fetchActiveShift?.();
+      useShiftStore.getState().fetchShiftHistory?.();
+    });
+
+    // Auto-refresh orders & shifts upon socket connect / reconnect
+    socket.on('connect', () => {
+      useOrdersStore.getState().fetchOrders?.();
+      useShiftStore.getState().fetchActiveShift?.();
+      useStockStore.getState().fetchIngredients?.();
+    });
+
+    socket.on('reconnect', () => {
+      useOrdersStore.getState().fetchOrders?.();
+      useShiftStore.getState().fetchActiveShift?.();
+      useStockStore.getState().fetchIngredients?.();
+    });
+
+    isSocketSyncBound = true;
+  } catch (err) {
+    console.warn('[OrdersStore] Failed to bind socket listeners:', err);
+  }
+}
+
+// Auto-bind immediately in browser environment
+if (typeof window !== 'undefined') {
+  initOrdersSocketSync();
 }
 

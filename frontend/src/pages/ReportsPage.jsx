@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useOrdersStore } from '../store/ordersStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useStockStore } from '../store/stockStore';
@@ -8,7 +9,9 @@ import { formatRupiah } from '../utils/format';
 import { useSettingsStore } from '../store/settingsStore';
 import { exportReportToCsv, exportReportToExcel } from '../utils/exportReport';
 import CogsReportView from '../components/reports/CogsReportView';
+import ProfitLossView from '../components/reports/ProfitLossView';
 import TopProductInsightCard from '../components/analytics/TopProductInsightCard';
+import DashboardMetricsSkeleton from '../components/ui/loading/skeletons/DashboardMetricsSkeleton';
 import {
   BarChart3,
   TrendingUp,
@@ -23,6 +26,7 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FileText,
+  LineChart as LucideLineChart,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -39,39 +43,123 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-export default function ReportsPage() {
+export default function ReportsPage({ tab: propTab }) {
   const { user } = useAuthStore();
   const canViewCogs = user?.role === 'OWNER' || user?.role === 'MANAGER';
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const { orders, fetchOrders } = useOrdersStore();
+  const orders = useOrdersStore((s) => s.orders);
+  const fetchOrders = useOrdersStore((s) => s.fetchOrders);
+  const isLoading = useOrdersStore((s) => s.isLoading);
   const { historySessions, sessions } = useWorkspaceStore();
   const { getLowStockItems } = useStockStore();
 
-  const [activeTab, setActiveTab] = useState('SALES'); // 'SALES' | 'COGS'
+  const activeTab = React.useMemo(() => {
+    if (propTab) return propTab;
+    if (location.pathname.includes('/cogs')) return 'COGS';
+    if (location.pathname.includes('/profit-loss')) return 'PROFIT_LOSS';
+    return 'SALES';
+  }, [propTab, location.pathname]);
+
+  const handleTabChange = (newTab) => {
+    if (newTab === 'COGS') navigate('/reports/cogs');
+    else if (newTab === 'PROFIT_LOSS') navigate('/reports/profit-loss');
+    else navigate('/reports/sales');
+  };
+
   const [dateRange, setDateRange] = useState('TODAY'); // 'TODAY' | 'WEEK' | 'MONTH'
 
   React.useEffect(() => {
+    let lastFetched = Date.now();
     fetchOrders?.();
-  }, [fetchOrders]);
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetched > 10000) {
+        lastFetched = Date.now();
+        fetchOrders?.();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, []);
 
-  const validOrders = orders.filter((o) => o.status === 'PAID');
+  // Helper penentu batas rentang tanggal berbasis kalender lokal perangkat kasir
+  const isOrderInDateRange = (orderCreatedAt, range) => {
+    if (!orderCreatedAt) return false;
+    const orderDate = new Date(orderCreatedAt);
+    const now = new Date();
 
-  // Summary KPIs
-  const totalRevenue = validOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
-  const totalTransactions = validOrders.length;
+    if (range === 'TODAY') {
+      return (
+        orderDate.getFullYear() === now.getFullYear() &&
+        orderDate.getMonth() === now.getMonth() &&
+        orderDate.getDate() === now.getDate()
+      );
+    }
+
+    if (range === 'WEEK') {
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0).getTime();
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+      const orderTime = orderDate.getTime();
+      return orderTime >= startOfWeek && orderTime <= endOfToday;
+    }
+
+    if (range === 'MONTH') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+      const orderTime = orderDate.getTime();
+      return orderTime >= startOfMonth && orderTime <= endOfToday;
+    }
+
+    return true;
+  };
+
+  const dateRangeLabel =
+    dateRange === 'TODAY'
+      ? 'Hari Ini'
+      : dateRange === 'WEEK'
+      ? '7 Hari Terakhir'
+      : 'Bulan Ini';
+
+  // 1. Filter transaksi lunas (PAID) secara riil sesuai rentang tanggal yang dipilih
+  const filteredOrders = React.useMemo(() => {
+    if (!orders || orders.length === 0) return [];
+    return orders.filter((o) => o.status === 'PAID' && isOrderInDateRange(o.createdAt, dateRange));
+  }, [orders, dateRange]);
+
+  // 2. Ringkasan KPI dihitung murni dari filteredOrders
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalTransactions = filteredOrders.length;
   const averageOrderValue = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
-  const workspaceTotalRevenue = validOrders.reduce(
+  const workspaceTotalRevenue = filteredOrders.reduce(
     (sum, o) => sum + (o.workspaceSession ? Number(o.workspaceSession.charge || 0) : 0),
     0
   );
   const lowStockCount = getLowStockItems().length;
 
-  // Hourly Sales Data computed dynamically from real valid orders
+  // 3. Estimasi Laba Kotor & Margin HPP dari transaksi yang difilter
+  const { totalCogs, grossProfit, grossMarginPct } = React.useMemo(() => {
+    let cogs = 0;
+    filteredOrders.forEach((o) => {
+      (o.items || []).forEach((item) => {
+        cogs += Number(item.lineCost || (Number(item.unitCost || 0) * Number(item.qty || 1)) || 0);
+      });
+    });
+    const profit = Math.max(0, totalRevenue - cogs);
+    const margin = totalRevenue > 0 ? Math.round((profit / totalRevenue) * 1000) / 10 : 0;
+    return { totalCogs: cogs, grossProfit: profit, grossMarginPct: margin };
+  }, [filteredOrders, totalRevenue]);
+
+  // 4. Data Tren Penjualan Jam dihitung murni dari filteredOrders
   const hourlyBuckets = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
   const hourlyTotals = {};
   hourlyBuckets.forEach((b) => { hourlyTotals[b] = 0; });
 
-  validOrders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     if (!o.createdAt) return;
     const hour = new Date(o.createdAt).getHours();
     const bucketHour = Math.floor(hour / 2) * 2;
@@ -88,9 +176,9 @@ export default function ReportsPage() {
     total: hourlyTotals[time] || 0,
   }));
 
-  // Best Selling Products Bar Chart Data computed from real order items
+  // 5. Produk Terlaris dihitung murni dari filteredOrders
   const productSalesMap = {};
-  validOrders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     (o.items || []).forEach((item) => {
       const name = item.productName || item.name || 'Produk';
       if (!productSalesMap[name]) {
@@ -104,20 +192,24 @@ export default function ReportsPage() {
   const sortedTopProducts = Object.values(productSalesMap).sort((a, b) => b.sales - a.sales);
   const topProductsData = sortedTopProducts.slice(0, 6);
 
-  // Payment Methods Breakdown Data computed from real orders
+  // 6. Metode Pembayaran dihitung murni dari filteredOrders
   const paymentCounts = { QRIS: 0, CASH: 0, TRANSFER: 0 };
-  validOrders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     const method = (o.paymentMethod || o.payments?.[0]?.method || 'CASH').toUpperCase();
     if (method.includes('QRIS')) paymentCounts.QRIS += 1;
     else if (method.includes('TRANSFER')) paymentCounts.TRANSFER += 1;
     else paymentCounts.CASH += 1;
   });
 
-  const totalPayments = validOrders.length || 1;
-  const paymentMethodsData = [
-    { name: 'QRIS', value: Math.round((paymentCounts.QRIS / totalPayments) * 100), color: '#FF5A4D' },
-    { name: 'Tunai (Cash)', value: Math.round((paymentCounts.CASH / totalPayments) * 100), color: '#1F6F6B' },
-    { name: 'Transfer Bank', value: Math.round((paymentCounts.TRANSFER / totalPayments) * 100), color: '#F5B544' },
+  const totalPayments = filteredOrders.length;
+  const paymentMethodsData = totalPayments > 0 ? [
+    { name: 'QRIS', count: paymentCounts.QRIS, value: Math.round((paymentCounts.QRIS / totalPayments) * 100), color: '#FF5A4D' },
+    { name: 'Tunai (Cash)', count: paymentCounts.CASH, value: Math.round((paymentCounts.CASH / totalPayments) * 100), color: '#1F6F6B' },
+    { name: 'Transfer Bank', count: paymentCounts.TRANSFER, value: Math.round((paymentCounts.TRANSFER / totalPayments) * 100), color: '#F5B544' },
+  ] : [
+    { name: 'QRIS', count: 0, value: 0, color: '#FF5A4D' },
+    { name: 'Tunai (Cash)', count: 0, value: 0, color: '#1F6F6B' },
+    { name: 'Transfer Bank', count: 0, value: 0, color: '#F5B544' },
   ];
 
   const { settings } = useSettingsStore();
@@ -133,31 +225,6 @@ export default function ReportsPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const dateRangeLabel =
-    dateRange === 'TODAY'
-      ? 'Hari Ini'
-      : dateRange === 'WEEK'
-      ? '7 Hari Terakhir'
-      : 'Bulan Ini';
-
-  const filteredOrders = React.useMemo(() => {
-    if (!orders || orders.length === 0) return [];
-    const now = new Date();
-    if (dateRange === 'TODAY') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-      return orders.filter((o) => new Date(o.createdAt).getTime() >= startOfDay);
-    }
-    if (dateRange === 'WEEK') {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).getTime();
-      return orders.filter((o) => new Date(o.createdAt).getTime() >= weekAgo);
-    }
-    if (dateRange === 'MONTH') {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).getTime();
-      return orders.filter((o) => new Date(o.createdAt).getTime() >= monthAgo);
-    }
-    return orders;
-  }, [orders, dateRange]);
 
   const handleExport = (format = 'CSV', scope = 'FILTERED') => {
     const targetOrders =
@@ -204,51 +271,45 @@ export default function ReportsPage() {
     handleExport('EXCEL', 'FILTERED');
   };
 
+  // Dynamic header metadata per tab
+  const pageMeta = {
+    SALES: {
+      title: 'Laporan Penjualan & Omzet',
+      desc: 'Dashboard visual performa omzet harian, tren per jam, komposisi pembayaran, dan menu terlaris.',
+      icon: TrendingUp,
+    },
+    COGS: {
+      title: 'Laporan Laba Kotor & Analisis Margin HPP (COGS)',
+      desc: 'Perhitungan laba kotor otomatis berdasarkan takaran resep (BOM) dan snapshot modal setiap transaksi.',
+      icon: Scale,
+    },
+    PROFIT_LOSS: {
+      title: 'Laporan Estimasi Laba Bersih (P&L)',
+      desc: 'Analisis laba bersih akrual: Omzet dikurangi HPP, petty cash kas keluar, kerugian waste bahan, dan upah shift.',
+      icon: LucideLineChart,
+    },
+  }[activeTab] || {
+    title: 'Laporan & Analisis Bisnis',
+    desc: 'Dashboard visual performa omzet harian, laba kotor HPP, produk terlaris, dan margin operasional.',
+    icon: BarChart3,
+  };
+  const PageIcon = pageMeta.icon;
+
   return (
     <div className="p-4 sm:p-6 pb-24 lg:pb-6 space-y-6 max-w-7xl mx-auto select-none">
       {/* 1. Header & Date Range Filter & Export */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-komazi-coral" />
-            <span>Laporan & Analisis Bisnis</span>
+            <PageIcon className="w-6 h-6 text-komazi-coral" />
+            <span>{pageMeta.title}</span>
           </h1>
           <p className="text-xs text-komazi-muted mt-0.5">
-            Dashboard visual performa omzet harian, laba kotor HPP, produk terlaris, dan margin operasional.
+            {pageMeta.desc}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Tab Switcher if authorized */}
-          {canViewCogs && (
-            <div className="flex items-center bg-komazi-surface border border-komazi-border p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setActiveTab('SALES')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activeTab === 'SALES'
-                    ? 'bg-komazi-coral text-white shadow'
-                    : 'text-komazi-muted hover:text-white'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span>Penjualan</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('COGS')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activeTab === 'COGS'
-                    ? 'bg-komazi-coral text-white shadow'
-                    : 'text-komazi-muted hover:text-white'
-                }`}
-              >
-                <Scale className="w-3.5 h-3.5" />
-                <span>Laba Kotor (HPP)</span>
-              </button>
-            </div>
-          )}
-
           {/* Date Range Selector */}
           <div className="flex items-center bg-komazi-surface border border-komazi-border p-1 rounded-xl">
             <button
@@ -401,10 +462,38 @@ export default function ReportsPage() {
           onExportCSV={handleExportCSV}
           onExportExcel={handleExportExcel}
         />
+      ) : activeTab === 'PROFIT_LOSS' && canViewCogs ? (
+        <ProfitLossView dateRange={dateRange} />
+      ) : isLoading && orders.length === 0 ? (
+        <DashboardMetricsSkeleton />
       ) : (
         <>
           {/* AI Sales Analytics Quick Highlight Card */}
           <TopProductInsightCard />
+
+          {/* Banner Status Transaksi Hari Ini (Jika Masih 0) */}
+          {dateRange === 'TODAY' && totalTransactions === 0 && (
+            <div className="p-4 rounded-2xl bg-komazi-surface/90 border border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 text-komazi-coral flex items-center justify-center shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-white">Status Penjualan Hari Ini ({new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })})</span>
+                  <p className="text-komazi-muted text-[11px] mt-0.5">
+                    Belum ada transaksi penjualan yang tercatat hari ini. Seluruh indikator omzet menampilkan data riil (Rp 0). Transaksi baru di kasir POS akan langsung terupdate di sini.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDateRange('WEEK')}
+                className="px-3.5 py-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-border text-slate-200 text-xs font-semibold shrink-0 transition-all border border-komazi-border"
+              >
+                Lihat 7 Hari Terakhir &rarr;
+              </button>
+            </div>
+          )}
 
           {/* 2. Key Performance Indicators (KPI Cards) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -417,10 +506,10 @@ export default function ReportsPage() {
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-coral tabular-nums font-mono">
-            {formatRupiah(totalRevenue || 1392400)}
+            {formatRupiah(totalRevenue)}
           </p>
-          <span className="text-[10px] text-success font-semibold mt-1 inline-block">
-            +18.4% dibandingkan kemarin
+          <span className="text-[10px] text-komazi-muted font-medium mt-1 inline-block">
+            {totalTransactions === 0 ? 'Belum ada transaksi pada periode ini' : `${totalTransactions} transaksi berhasil (${dateRangeLabel})`}
           </span>
         </div>
 
@@ -433,10 +522,10 @@ export default function ReportsPage() {
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-text tabular-nums font-mono">
-            {totalTransactions + 34} <span className="text-sm font-sans font-normal text-komazi-muted">struk</span>
+            {totalTransactions} <span className="text-sm font-sans font-normal text-komazi-muted">struk</span>
           </p>
           <span className="text-[10px] text-komazi-muted mt-1 inline-block">
-            Rata-rata 4.2 pesanan / jam
+            {totalTransactions === 0 ? '0 pesanan tercatat' : `Rata-rata ${formatRupiah(averageOrderValue)} / transaksi`}
           </span>
         </div>
 
@@ -449,14 +538,14 @@ export default function ReportsPage() {
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-text tabular-nums font-mono">
-            {formatRupiah(averageOrderValue || 45200)}
+            {formatRupiah(averageOrderValue)}
           </p>
           <span className="text-[10px] text-komazi-muted mt-1 inline-block">
-            Rata-rata nilai per transaksi
+            {totalTransactions === 0 ? 'Belum ada data transaksi' : 'Rata-rata nilai per struk lunas'}
           </span>
         </div>
 
-        {/* Estimasi Laba Bersih */}
+        {/* Estimasi Margin Laba Kotor */}
         <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border relative overflow-hidden">
           <div className="flex items-center justify-between text-komazi-muted mb-2">
             <span className="text-xs uppercase font-bold tracking-wider">Margin Laba Kotor</span>
@@ -465,10 +554,10 @@ export default function ReportsPage() {
             </div>
           </div>
           <p className="font-display font-black text-2xl text-komazi-teal-light tabular-nums font-mono">
-            68.4%
+            {totalRevenue > 0 ? `${grossMarginPct}%` : '0%'}
           </p>
           <span className="text-[10px] text-komazi-teal-light font-semibold mt-1 inline-block">
-            Efisiensi HPP & Bahan Baku Optimal
+            {totalRevenue > 0 ? `Laba Kotor: ${formatRupiah(grossProfit)}` : 'Belum ada omzet penjualan'}
           </span>
         </div>
       </div>
@@ -528,35 +617,43 @@ export default function ReportsPage() {
             <p className="text-xs text-komazi-muted mt-0.5">Persentase transaksi pelanggan</p>
           </div>
 
-          <div className="h-48 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={paymentMethodsData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {paymentMethodsData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#141414',
-                    borderColor: '#2A2A2A',
-                    borderRadius: '0.75rem',
-                    color: '#F5F5F5',
-                    fontSize: '12px',
-                  }}
-                  formatter={(val) => [`${val}%`, 'Porsi']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          {totalPayments === 0 ? (
+            <div className="h-48 w-full flex flex-col items-center justify-center text-center p-4 text-komazi-muted">
+              <CreditCard className="w-8 h-8 text-komazi-muted/40 mb-2" />
+              <p className="text-xs font-semibold text-komazi-text">Belum ada transaksi pembayaran</p>
+              <p className="text-[11px] text-komazi-muted mt-0.5">Porsi metode bayar (Tunai, QRIS, Transfer) akan tampil setelah ada transaksi lunas.</p>
+            </div>
+          ) : (
+            <div className="h-48 w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={paymentMethodsData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {paymentMethodsData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#141414',
+                      borderColor: '#2A2A2A',
+                      borderRadius: '0.75rem',
+                      color: '#F5F5F5',
+                      fontSize: '12px',
+                    }}
+                    formatter={(val) => [`${val}%`, 'Porsi']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           <div className="space-y-1.5 pt-2 border-t border-komazi-border text-xs">
             {paymentMethodsData.map((pm) => (
@@ -579,29 +676,37 @@ export default function ReportsPage() {
           <span className="text-xs text-komazi-teal-light font-semibold">Berdasarkan Total Porsi Terjual</span>
         </div>
 
-        <div className="h-56 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topProductsData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A2A2A" vertical={false} />
-              <XAxis dataKey="name" stroke="#9A9A9A" fontSize={11} />
-              <YAxis stroke="#9A9A9A" fontSize={11} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#141414',
-                  borderColor: '#2A2A2A',
-                  borderRadius: '0.75rem',
-                  color: '#F5F5F5',
-                  fontSize: '12px',
-                }}
-                formatter={(val, name) => [
-                  name === 'sales' ? `${val} cup/porsi` : formatRupiah(val),
-                  name === 'sales' ? 'Terjual' : 'Omzet Menu',
-                ]}
-              />
-              <Bar dataKey="sales" fill="#1F6F6B" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {topProductsData.length === 0 ? (
+          <div className="h-44 w-full flex flex-col items-center justify-center text-center p-6 text-komazi-muted">
+            <Coffee className="w-8 h-8 text-komazi-muted/40 mb-2" />
+            <p className="text-xs font-semibold text-komazi-text">Belum ada menu terjual pada periode ini</p>
+            <p className="text-[11px] text-komazi-muted mt-0.5">Penjualan menu akan otomatis dirangking setelah kasir memproses pesanan.</p>
+          </div>
+        ) : (
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topProductsData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2A2A2A" vertical={false} />
+                <XAxis dataKey="name" stroke="#9A9A9A" fontSize={11} />
+                <YAxis stroke="#9A9A9A" fontSize={11} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#141414',
+                    borderColor: '#2A2A2A',
+                    borderRadius: '0.75rem',
+                    color: '#F5F5F5',
+                    fontSize: '12px',
+                  }}
+                  formatter={(val, name) => [
+                    name === 'sales' ? `${val} cup/porsi` : formatRupiah(val),
+                    name === 'sales' ? 'Terjual' : 'Omzet Menu',
+                  ]}
+                />
+                <Bar dataKey="sales" fill="#1F6F6B" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
         </>
       )}

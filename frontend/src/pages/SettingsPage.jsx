@@ -30,19 +30,32 @@ import {
   HelpCircle,
   Sparkles,
   Copy,
-  Radio,
-  Zap,
   Printer,
   Send,
+  UserCog,
+  CalendarClock,
+  Calendar,
+  CalendarCheck,
+  CalendarOff,
+  Clock,
+  Bell,
+  Smartphone,
+  MapPin,
+  Camera,
+  LocateFixed,
 } from 'lucide-react';
-import PrinterSettingsCard from '../components/settings/PrinterSettingsCard';
 import ReceiptPreviewCard from '../components/settings/ReceiptPreviewCard';
+import PrinterPage from './PrinterPage';
+import WifiManagerCard from '../components/settings/WifiManagerCard';
 import QrisUploader from '../components/settings/QrisUploader';
+import BankTransferSettingsCard from '../components/settings/BankTransferSettingsCard';
+import TelegramBotSettingsCard from '../components/settings/TelegramBotSettingsCard';
+import AndroidNotificationCard from '../components/settings/AndroidNotificationCard';
+import OwnerResetPasswordModal from '../components/auth/OwnerResetPasswordModal';
 import {
   convertStaticToDynamicQris,
   generateQrDataUrl,
   DEFAULT_STATIC_QRIS,
-  extractQrisMetadata,
 } from '../utils/qris';
 import { formatRupiah } from '../utils/format';
 import { api } from '../services/api';
@@ -54,14 +67,15 @@ export default function SettingsPage() {
 
   const TABS = [
     { id: 'outlet', label: 'Profil & Struk', icon: Store, desc: 'Identitas outlet, kontak WhatsApp, WiFi & catatan struk kasir' },
-    { id: 'payment', label: 'Pembayaran & QRIS', icon: QrCode, desc: 'QRIS dinamis EMVCo, foto merchant & webhook otomatis' },
+    { id: 'payment', label: 'Pembayaran & QRIS', icon: QrCode, desc: 'Upload foto QRIS merchant, nominal dinamis & rekening transfer bank kasir' },
     { id: 'tax', label: 'Pajak & Biaya', icon: Percent, desc: 'Kalkulasi persentase PB1 resto & service fee' },
     { id: 'printer', label: 'Printer & Hardware', icon: Printer, desc: 'Koneksi thermal printer, Bluetooth, USB & laci uang' },
-    { id: 'integrations', label: 'AI & Bot Telegram', icon: Sparkles, desc: 'Konfigurasi failover AI server & bot Telegram' },
-    { id: 'users', label: 'Staf & Hak Akses', icon: Users, desc: 'Manajemen akun kasir, barista, dapur, manager & owner' },
+    { id: 'integrations', label: 'Notifikasi & Bot', icon: Send, desc: 'Notifikasi & Bot Telegram' },
+    { id: 'security', label: 'Keamanan & PIN', icon: ShieldCheck, desc: 'PIN otorisasi void transaksi, refund dana & tautan modul HRIS' },
   ];
 
-  const activeTab = TABS.some((t) => t.id === rawTab) ? rawTab : 'outlet';
+  const resolvedTab = rawTab === 'users' ? 'security' : rawTab;
+  const activeTab = TABS.some((t) => t.id === resolvedTab) ? resolvedTab : 'outlet';
   const setActiveTab = (tab) => setSearchParams({ tab });
 
   const { settings, updateSettings, resetToDefault } = useSettingsStore();
@@ -76,14 +90,38 @@ export default function SettingsPage() {
 
   const [formState, setFormState] = useState({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
+  const [integrationSubTab, setIntegrationSubTab] = useState('android');
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+
+  const handleDetectCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Browser atau perangkat Anda tidak mendukung geolokasi GPS.');
+      return;
+    }
+    setIsDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lon = pos.coords.longitude.toFixed(6);
+        handleChange('outletLatitude', lat);
+        handleChange('outletLongitude', lon);
+        updateSettings({ outletLatitude: lat, outletLongitude: lon });
+        setIsDetectingLocation(false);
+        toast.success(`Koordinat outlet disetel: ${lat}, ${lon} (Akurasi: ±${Math.round(pos.coords.accuracy)}m)`);
+      },
+      (err) => {
+        setIsDetectingLocation(false);
+        toast.error(`Gagal mendeteksi lokasi GPS: ${err.message}. Pastikan izin lokasi aktif.`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   // QRIS Simulation & Test State
   const [testAmount, setTestAmount] = useState(10000);
   const [testQrUrl, setTestQrUrl] = useState('');
-  const [testPayloadStr, setTestPayloadStr] = useState('');
   const [showQrPreviewModal, setShowQrPreviewModal] = useState(false);
   const [isGeneratingTestQr, setIsGeneratingTestQr] = useState(false);
-  const [copiedPayload, setCopiedPayload] = useState(false);
 
   // User Management Modals State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -181,7 +219,6 @@ export default function SettingsPage() {
           invoiceNo: 'KMZ-TEST-001',
         }
       );
-      setTestPayloadStr(payload);
       const url = await generateQrDataUrl(payload, { width: 300 });
       setTestQrUrl(url);
       setShowQrPreviewModal(true);
@@ -189,25 +226,6 @@ export default function SettingsPage() {
       toast.error('Gagal membuat preview QRIS: ' + err.message);
     } finally {
       setIsGeneratingTestQr(false);
-    }
-  };
-
-  const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
-  const [isSimulatingWebhook, setIsSimulatingWebhook] = useState(false);
-
-  const handleTestWebhookSimulation = async () => {
-    setIsSimulatingWebhook(true);
-    try {
-      const res = await api.payments.simulate({ amount: testAmount });
-      if (res && res.success) {
-        showToast(res.message || 'Simulasi webhook sukses! Status pesanan berubah ke PAID');
-      } else {
-        showToast(res.message || 'Gagal simulasi', 'error');
-      }
-    } catch (err) {
-      showToast('Gagal simulasi: ' + err.message, 'error');
-    } finally {
-      setIsSimulatingWebhook(false);
     }
   };
 
@@ -221,26 +239,6 @@ export default function SettingsPage() {
       qrisPostalCode: metadata?.postalCode || prev.qrisPostalCode,
       qrisImageUrl: imageUrl || prev.qrisImageUrl,
     }));
-  };
-
-  const handleExtractFromText = () => {
-    if (!formState.qrisStaticString || formState.qrisStaticString.trim().length < 20) {
-      toast.error('Masukkan string payload QRIS yang valid terlebih dahulu');
-      return;
-    }
-    const meta = extractQrisMetadata(formState.qrisStaticString);
-    if (!meta || !meta.isValid) {
-      toast.error('Format string QRIS tidak valid atau tag tidak dikenali');
-      return;
-    }
-    setFormState((prev) => ({
-      ...prev,
-      qrisNmid: meta.nmid || prev.qrisNmid,
-      qrisMerchantName: meta.merchantName || prev.qrisMerchantName,
-      qrisMerchantCity: meta.merchantCity || prev.qrisMerchantCity,
-      qrisPostalCode: meta.postalCode || prev.qrisPostalCode,
-    }));
-    toast.success('Metadata berhasil diperbarui dari teks QRIS!');
   };
 
   useEffect(() => {
@@ -259,74 +257,7 @@ export default function SettingsPage() {
     }
   };
 
-  const [isTestingAi, setIsTestingAi] = useState(false);
-  const [aiStatusData, setAiStatusData] = useState(null);
 
-  const fetchAiStatus = async () => {
-    try {
-      const res = await api.analytics.getAiStatus();
-      if (res && res.success && res.data) {
-        setAiStatusData(res.data);
-        return res.data;
-      }
-    } catch {
-      // Backend mungkin offline atau rute belum siap
-    }
-    return null;
-  };
-
-  useEffect(() => {
-    fetchAiStatus();
-  }, []);
-
-  const handleTestAiConnection = async () => {
-    setIsTestingAi(true);
-    try {
-      const d = await fetchAiStatus();
-      if (d) {
-        const msg = `Status AI (.env): Groq (${d.groqConfigured ? 'Aktif ✅' : 'Belum diset ⚠️'}), Gemini (${d.geminiConfigured ? 'Aktif ✅' : 'Belum diset ⚠️'}), OpenRouter (${d.openrouterConfigured ? 'Aktif ✅' : 'Belum diset ⚠️'})`;
-        showToast(msg);
-      } else {
-        showToast('Koneksi AI: Mode fallback deterministik lokal aktif otomatis.');
-      }
-    } catch {
-      showToast('Backend offline: Mode fallback deterministik lokal aktif otomatis.');
-    } finally {
-      setIsTestingAi(false);
-    }
-  };
-
-  const [telegramStatus, setTelegramStatus] = useState(null);
-  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
-
-  const fetchTelegramStatus = async () => {
-    try {
-      const res = await api.telegram.getStatus();
-      if (res && res.success && res.data) {
-        setTelegramStatus(res.data);
-      }
-    } catch {}
-  };
-
-  useEffect(() => {
-    fetchTelegramStatus();
-  }, []);
-
-  const handleTestTelegram = async () => {
-    setIsTestingTelegram(true);
-    try {
-      const res = await api.telegram.test();
-      if (res && res.success) {
-        showToast('Notifikasi uji coba berhasil dikirim ke Telegram!');
-      } else {
-        showToast(res.message || 'Gagal mengirim pesan Telegram', 'error');
-      }
-    } catch (err) {
-      showToast('Gagal: ' + err.message, 'error');
-    } finally {
-      setIsTestingTelegram(false);
-    }
-  };
 
   const handleChange = (field, value) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -334,9 +265,18 @@ export default function SettingsPage() {
 
   const handleSave = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    const res = await updateSettings(formState);
+    const payload = {
+      ...formState,
+      receiptHeader: formState.headerText ?? '',
+      footerText: formState.receiptFooter ?? '',
+    };
+    const res = await updateSettings(payload);
     setIsSaved(true);
-    showToast(res?.message || 'Pengaturan outlet berhasil disimpan!');
+    const successMsg =
+      activeTab === 'integrations'
+        ? (res?.message || 'Pengaturan Bot Telegram & preferensi berhasil disimpan!')
+        : (res?.message || 'Pengaturan outlet berhasil disimpan!');
+    showToast(successMsg);
     setTimeout(() => setIsSaved(false), 2500);
   };
 
@@ -475,7 +415,6 @@ export default function SettingsPage() {
       {/* Header */}
       <div>
         <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
-          <Settings className="w-6 h-6 text-komazi-coral" />
           <span>Pengaturan Usaha</span>
         </h1>
         <p className="text-xs text-komazi-muted mt-0.5">
@@ -541,9 +480,9 @@ export default function SettingsPage() {
                 {tab.id === 'integrations' && (
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
-                      telegramStatus?.configured ? 'bg-emerald-400' : 'bg-neutral-500'
+                      formState.botEnabled !== false ? 'bg-emerald-400' : 'bg-neutral-500'
                     }`}
-                    title={telegramStatus?.configured ? 'Telegram Bot Aktif' : 'Telegram Bot Belum Dikonfigurasi'}
+                    title={formState.botEnabled !== false ? 'Telegram Bot Aktif' : 'Telegram Bot Nonaktif'}
                   />
                 )}
               </button>
@@ -551,21 +490,12 @@ export default function SettingsPage() {
           })}
         </div>
       </div>
-
-      {/* Active Tab Helper Breadcrumb */}
-      <div className="flex items-center justify-between text-xs text-komazi-muted px-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral"></span>
-          <span>
-            Kategori: <strong className="text-white">{TABS.find((t) => t.id === activeTab)?.label}</strong> — {TABS.find((t) => t.id === activeTab)?.desc}
-          </span>
+      {activeTab === 'printer' ? (
+        <div className="space-y-6 animate-fadeIn">
+          <PrinterPage isEmbedded={true} />
         </div>
-        <span className="text-[11px] text-neutral-500 hidden sm:inline">
-          {TABS.findIndex((t) => t.id === activeTab) + 1} dari {TABS.length} Tab
-        </span>
-      </div>
-
-      <form onSubmit={handleSave} className="space-y-6">
+      ) : (
+        <div className="space-y-6">
         {/* 1. Profil Usaha & WiFi Struk */}
         {activeTab === 'outlet' && (
           <div className="space-y-6 animate-fadeIn">
@@ -620,7 +550,7 @@ export default function SettingsPage() {
               </label>
               <input
                 type="text"
-                value={formState.phone}
+                value={formState.phone || ''}
                 onChange={(e) => handleChange('phone', e.target.value)}
                 className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
               />
@@ -628,56 +558,14 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* 3. WiFi Tamu & Struk Kasir */}
-        <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
-          <div className="flex items-center gap-2 border-b border-komazi-border pb-3">
-            <Receipt className="w-5 h-5 text-komazi-teal-light" />
-            <h2 className="font-bold text-sm text-komazi-text">WiFi Pelanggan & Catatan Struk</h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                Nama WiFi (SSID):
-              </label>
-              <input
-                type="text"
-                value={formState.wifiName}
-                onChange={(e) => handleChange('wifiName', e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                Password WiFi:
-              </label>
-              <input
-                type="text"
-                value={formState.wifiPass}
-                onChange={(e) => handleChange('wifiPass', e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-komazi-muted mb-1">
-              Pesan Footer Struk (Thermal Receipt):
-            </label>
-            <textarea
-              rows="3"
-              value={formState.receiptFooter}
-              onChange={(e) => handleChange('receiptFooter', e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
-            />
-          </div>
-        </div>
+        {/* 2. Manajemen Jaringan WiFi Outlet & Tamu (CRUD) */}
+        {/* <WifiManagerCard /> */}
 
             <div className="flex justify-end pt-2">
               <button
-                type="submit"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95"
+                type="button"
+                onClick={handleSave}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
                 <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Profil & Struk'}</span>
@@ -685,386 +573,177 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
-
-        {/* 2. Konfigurasi Pembayaran QRIS Dinamis */}
+        {/* 2. Konfigurasi Pembayaran QRIS */}
         {activeTab === 'payment' && (
           <div className="space-y-6 animate-fadeIn">
             <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-komazi-border pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral">
-                <QrCode className="w-5 h-5 stroke-[2.5]" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-komazi-border pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral">
+                    <QrCode className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
+                      <span>Konfigurasi QRIS Toko</span>
+                    </h2>
+                    <p className="text-[11px] text-komazi-muted">
+                      Pelanggan langsung scan QRIS dengan nominal pesanan otomatis tanpa perlu ketik manual
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <span className="text-xs font-semibold text-komazi-muted">Aktifkan di Kasir:</span>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formState.qrisEnabled !== false}
+                        onChange={(e) => handleChange('qrisEnabled', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
+                    </div>
+                  </label>
+                </div>
               </div>
-              <div>
-                <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
-                  <span>Konfigurasi QRIS Dinamis (Otomatis Nominal)</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    EMVCo MPM
+
+              {/* Upload Foto QRIS Statis Merchant (Auto Decode & Extract) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-komazi-text">
+                    Foto / Gambar QRIS Toko:
+                  </label>
+                  <span className="text-[11px] font-semibold text-komazi-coral">
+                    Otomatis Mendeteksi Data Toko ✨
                   </span>
-                </h2>
+                </div>
                 <p className="text-[11px] text-komazi-muted">
-                  Pelanggan tidak perlu mengetik nominal manual saat scan via m-banking atau e-wallet
+                  Upload file foto atau scan QRIS merchant Anda (dari DANA Bisnis, BCA, ShopeePay, atau foto akrilik kasir). Sistem membaca kode QR secara instan dan mengaktifkan QRIS dinamis otomatis.
                 </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <span className="text-xs font-semibold text-komazi-muted">Aktifkan di Kasir & Struk:</span>
-                <div className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formState.qrisEnabled !== false}
-                    onChange={(e) => handleChange('qrisEnabled', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Quick Info Alert */}
-          <div className="p-3.5 rounded-xl bg-komazi-teal/10 border border-komazi-teal/30 text-xs text-komazi-teal-light flex items-start gap-3">
-            <ShieldCheck className="w-5 h-5 text-komazi-teal-light shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-semibold text-white text-xs">
-                Solusi Kompatibilitas ShopeePay, BCA, GoPay & DANA:
-              </p>
-              <p className="text-[11px] text-neutral-300 leading-relaxed">
-                Untuk QRIS toko UMKM (seperti DANA Bisnis, BCA, atau ShopeePay Merchant), gunakan <strong className="text-white">Mode Kompatibel</strong>. Mode ini menyuntikkan nominal (<code className="text-komazi-coral font-mono">Tag 54</code>) secara otomatis tanpa mengubah Tag 01 ke '12' dan tanpa Tag 62, sehingga switch perbankan tidak menolak transaksi dengan alert <em>"Terjadi kesalahan sistem"</em>.
-              </p>
-            </div>
-          </div>
-
-          {/* QRIS Input Fields */}
-          <div className="space-y-4">
-            {/* Mode Pembuatan QRIS */}
-            <div>
-              <label className="block text-xs font-semibold text-komazi-muted mb-2">
-                Pilih Mode Injeksi QRIS:
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {[
-                  {
-                    id: 'compatible',
-                    title: 'Mode Kompatibel (Direkomendasikan)',
-                    badge: 'Bebas Error',
-                    desc: 'Tag 01 tetap 11 + Tag 54 Nominal. Sangat cocok untuk QRIS DANA Bisnis, ShopeePay, BCA & GoPay.',
-                  },
-                  {
-                    id: 'dynamic',
-                    title: 'Mode Dinamis Penuh',
-                    badge: 'Tag 01: 12',
-                    desc: 'Untuk merchant dengan API Payment Gateway resmi (Midtrans, Xendit, ShopeePay Enterprise).',
-                  },
-                  {
-                    id: 'raw',
-                    title: 'Mode Statis Asli',
-                    badge: 'Manual',
-                    desc: 'QR asli toko tanpa modifikasi nominal. Pelanggan mengetik nominal bayar secara manual.',
-                  },
-                ].map((modeItem) => {
-                  const isSelected = (formState.qrisMode || 'compatible') === modeItem.id;
-                  return (
-                    <button
-                      key={modeItem.id}
-                      type="button"
-                      onClick={() => handleChange('qrisMode', modeItem.id)}
-                      className={`p-3 rounded-xl border text-left transition-all relative ${
-                        isSelected
-                          ? 'border-komazi-coral bg-komazi-coral/10 text-white shadow-sm ring-1 ring-komazi-coral'
-                          : 'border-komazi-border bg-komazi-surface-2 text-komazi-muted hover:border-komazi-muted'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-xs text-komazi-text">{modeItem.title}</span>
-                        <span
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                            isSelected ? 'bg-komazi-coral text-white' : 'bg-komazi-surface text-komazi-muted'
-                          }`}
-                        >
-                          {modeItem.badge}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-komazi-muted leading-relaxed">{modeItem.desc}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Toggle Include Invoice Tag 62 */}
-            <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xs font-bold text-komazi-text block">Sertakan Nomor Invoice di QR (Tag 62)</span>
-                <span className="text-[10px] text-komazi-muted leading-tight block mt-0.5">
-                  Biarkan <strong className="text-neutral-300">Nonaktif</strong> jika menggunakan QRIS UMKM (DANA Bisnis). Menyertakan Tag 62 pada akun UMKM dapat menyebabkan ShopeePay menolak pembayaran.
-                </span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={Boolean(formState.qrisIncludeInvoice)}
-                  onChange={(e) => handleChange('qrisIncludeInvoice', e.target.checked)}
-                  className="sr-only peer"
+                <QrisUploader
+                  currentImageUrl={formState.qrisImageUrl}
+                  onExtracted={handleQrisExtracted}
                 />
-                <div className="w-8 h-4 bg-komazi-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-komazi-coral"></div>
-              </label>
-            </div>
-
-            {/* Upload Foto QRIS Statis Merchant (Auto Decode & Extract) */}
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-komazi-text">
-                  Upload Foto / Brosur QRIS Statis Toko:
-                </label>
-                <span className="text-[11px] font-semibold text-komazi-coral">
-                  Ekstraksi Payload & Metadata Otomatis ✨
-                </span>
               </div>
-              <p className="text-[11px] text-komazi-muted">
-                Cukup upload file foto/gambar QRIS merchant Anda (dari aplikasi bank, DANA Bisnis, atau foto akrilik meja). Sistem akan otomatis membaca kode QR, mengekstrak String Payload, NMID, Nama Toko, Kota, dan Kode Pos secara instan tanpa perlu diketik manual!
-              </p>
-              <QrisUploader
-                currentImageUrl={formState.qrisImageUrl}
-                onExtracted={handleQrisExtracted}
-              />
-            </div>
 
-            {/* String Payload QRIS Statis Toko */}
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                <label className="block text-xs font-semibold text-komazi-muted">
-                  String Payload QRIS Statis Toko:
-                </label>
+              {/* Informasi Merchant QRIS */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between border-b border-komazi-border/50 pb-2">
+                  <span className="text-xs font-bold text-komazi-text">Informasi Merchant QRIS</span>
+                  <span className="text-[10px] text-komazi-muted">Terisi otomatis dari hasil upload foto</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
+                      NMID (National Merchant ID):
+                    </label>
+                    <input
+                      type="text"
+                      value={formState.qrisNmid || ''}
+                      onChange={(e) => handleChange('qrisNmid', e.target.value)}
+                      placeholder="ID1020088920199"
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
+                      Nama Merchant QRIS:
+                    </label>
+                    <input
+                      type="text"
+                      value={formState.qrisMerchantName || ''}
+                      onChange={(e) => handleChange('qrisMerchantName', e.target.value)}
+                      placeholder="KOMAZI COFFEE & WORKSPACE"
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
+                      Kota Merchant:
+                    </label>
+                    <input
+                      type="text"
+                      value={formState.qrisMerchantCity || ''}
+                      onChange={(e) => handleChange('qrisMerchantCity', e.target.value)}
+                      placeholder="MEDAN"
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
+                      Kode Pos:
+                    </label>
+                    <input
+                      type="text"
+                      value={formState.qrisPostalCode || ''}
+                      onChange={(e) => handleChange('qrisPostalCode', e.target.value)}
+                      placeholder="20112"
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Uji Coba Scan QRIS Dinamis */}
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-komazi-coral/15 flex items-center justify-center text-komazi-coral shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-komazi-text block">Uji Coba Scan QRIS Dinamis</span>
+                    <span className="text-[11px] text-komazi-muted">
+                      Masukkan nominal untuk mencoba generate QRIS dan scan langsung dengan aplikasi bank atau e-wallet Anda
+                    </span>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExtractFromText}
-                    className="text-[11px] text-komazi-teal-light hover:underline font-semibold"
-                    title="Ekstrak ulang NMID, Nama, Kota dari teks di bawah"
-                  >
-                    Ekstrak Metadata dari Teks
-                  </button>
-                  <span className="text-neutral-600">•</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleChange('qrisStaticString', DEFAULT_STATIC_QRIS);
-                      const meta = extractQrisMetadata(DEFAULT_STATIC_QRIS);
-                      if (meta) {
-                        setFormState((prev) => ({
-                          ...prev,
-                          qrisStaticString: DEFAULT_STATIC_QRIS,
-                          qrisNmid: meta.nmid,
-                          qrisMerchantName: meta.merchantName,
-                          qrisMerchantCity: meta.merchantCity,
-                          qrisPostalCode: meta.postalCode,
-                        }));
-                      }
-                      showToast('Menggunakan template default QRIS Komazi');
-                    }}
-                    className="text-[11px] text-komazi-coral hover:underline font-semibold"
-                  >
-                    Gunakan Template Default Komazi
-                  </button>
-                </div>
-              </div>
-              <textarea
-                rows="3"
-                value={formState.qrisStaticString || ''}
-                onChange={(e) => handleChange('qrisStaticString', e.target.value)}
-                placeholder="Tempelkan raw string QRIS toko atau upload foto di atas (contoh: 00020101021126660014ID.LINKAJA...)"
-                className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono break-all"
-              />
-              <p className="text-[11px] text-komazi-muted mt-1">
-                * Payload ini akan otomatis terisi saat foto QRIS diupload di atas, atau dapat Anda edit manual.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  NMID (National Merchant ID):
-                </label>
-                <input
-                  type="text"
-                  value={formState.qrisNmid || ''}
-                  onChange={(e) => handleChange('qrisNmid', e.target.value)}
-                  placeholder="ID1020088920199"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  Nama Merchant QRIS:
-                </label>
-                <input
-                  type="text"
-                  value={formState.qrisMerchantName || ''}
-                  onChange={(e) => handleChange('qrisMerchantName', e.target.value)}
-                  placeholder="KOMAZI COFFEE & WORKSPACE"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  Kota Merchant:
-                </label>
-                <input
-                  type="text"
-                  value={formState.qrisMerchantCity || ''}
-                  onChange={(e) => handleChange('qrisMerchantCity', e.target.value)}
-                  placeholder="MEDAN"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none uppercase"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  Kode Pos:
-                </label>
-                <input
-                  type="text"
-                  value={formState.qrisPostalCode || ''}
-                  onChange={(e) => handleChange('qrisPostalCode', e.target.value)}
-                  placeholder="20112"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
-                />
-              </div>
-            </div>
-
-            {/* Test Simulation Box */}
-            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-4 h-4 text-komazi-coral shrink-0" />
-                <div>
-                  <span className="text-xs font-bold text-komazi-text block">Uji Coba Scan QRIS Dinamis</span>
-                  <span className="text-[11px] text-komazi-muted">
-                    Tes generate QRIS dengan nominal tertentu dan coba scan dengan ShopeePay / HP Anda
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="relative w-32">
-                  <span className="absolute left-2.5 top-1.5 text-[11px] font-bold text-komazi-muted font-mono">Rp</span>
-                  <input
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    value={testAmount}
-                    onChange={(e) => setTestAmount(Number(e.target.value))}
-                    className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-xs font-bold font-mono text-komazi-text focus:border-komazi-coral outline-none"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleOpenTestQr}
-                  disabled={isGeneratingTestQr}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>{isGeneratingTestQr ? 'Memuat...' : 'Uji Scan'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Webhook Automation Section */}
-            <div className="pt-2 p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-komazi-border/50 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <Radio className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-komazi-text">
-                    Integrasi Webhook Otomatis (Uang Masuk → Langsung PAID)
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 w-fit">
-                  Endpoint Siap Digunakan
-                </span>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-komazi-muted">
-                  URL Webhook Backend POS Komazi:
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 p-2 rounded-lg bg-neutral-900 border border-komazi-border font-mono text-[11px] text-emerald-400 break-all select-all">
-                    {typeof window !== 'undefined'
-                      ? `${window.location.protocol}//${window.location.hostname}:4000/api/v1/payments/webhook`
-                      : 'http://localhost:4000/api/v1/payments/webhook'}
+                  <div className="relative w-32">
+                    <span className="absolute left-2.5 top-1.5 text-[11px] font-bold text-komazi-muted font-mono">Rp</span>
+                    <input
+                      type="number"
+                      min="1000"
+                      step="1000"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(Number(e.target.value))}
+                      className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-xs font-bold font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                    />
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      const url =
-                        typeof window !== 'undefined'
-                          ? `${window.location.protocol}//${window.location.hostname}:4000/api/v1/payments/webhook`
-                          : 'http://localhost:4000/api/v1/payments/webhook';
-                      navigator.clipboard.writeText(url);
-                      setCopiedWebhookUrl(true);
-                      setTimeout(() => setCopiedWebhookUrl(false), 2000);
-                      showToast('URL Webhook berhasil disalin!');
-                    }}
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg bg-komazi-surface border border-komazi-border hover:border-komazi-coral text-xs font-bold text-komazi-text transition-colors shrink-0"
+                    onClick={handleOpenTestQr}
+                    disabled={isGeneratingTestQr}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
                   >
-                    {copiedWebhookUrl ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>{copiedWebhookUrl ? 'Tersalin' : 'Salin URL'}</span>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{isGeneratingTestQr ? 'Memuat...' : 'Uji Scan'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Instructions */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-[11px] text-komazi-muted leading-relaxed">
-                <div className="p-3 rounded-lg bg-komazi-surface border border-komazi-border space-y-1">
-                  <span className="font-bold text-white block">Metode 1: DANA Bisnis (Gratis & Mandiri)</span>
-                  <p>
-                    Pasang aplikasi Android seperti <strong className="text-neutral-200">MacroDroid</strong> atau <strong className="text-neutral-200">Notification Forwarder</strong> di HP toko. Atur rule jika ada notifikasi dari DANA masuk, teruskan HTTP POST ke URL Webhook di atas.
-                  </p>
-                </div>
-                <div className="p-3 rounded-lg bg-komazi-surface border border-komazi-border space-y-1">
-                  <span className="font-bold text-white block">Metode 2: Payment Gateway (Midtrans/Xendit)</span>
-                  <p>
-                    Salin URL Webhook di atas dan tempelkan ke menu <strong className="text-neutral-200">Payment Notification URL</strong> pada dashboard Midtrans atau Xendit outlet Anda.
-                  </p>
-                </div>
-              </div>
-
-              {/* Quick Test Webhook Button */}
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-komazi-border/50">
-                <span className="text-[11px] text-komazi-muted">
-                  Ingin menguji apakah sistem auto-paid merespons?
-                </span>
+              <div className="flex justify-end pt-2">
                 <button
                   type="button"
-                  onClick={handleTestWebhookSimulation}
-                  disabled={isSimulatingWebhook}
-                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+                  onClick={handleSave}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
                 >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>{isSimulatingWebhook ? 'Menguji...' : 'Uji Kirim Webhook (Simulasi Uang Masuk)'}</span>
+                  {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
+                  <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Konfigurasi QRIS'}</span>
                 </button>
               </div>
             </div>
-          </div>
-        </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95"
-              >
-                {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
-                <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Konfigurasi QRIS'}</span>
-              </button>
-            </div>
+            {/* Konfigurasi Transfer Bank Toko */}
+            <BankTransferSettingsCard
+              formState={formState}
+              setFormState={setFormState}
+            />
           </div>
         )}
 
@@ -1136,8 +815,9 @@ export default function SettingsPage() {
 
             <div className="flex justify-end pt-2">
               <button
-                type="submit"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95"
+                type="button"
+                onClick={handleSave}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
                 <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Pajak & Biaya'}</span>
@@ -1146,292 +826,79 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* 4. Konfigurasi Printer Kasir & Hardware */}
+
+        {/* 4. Printer & Hardware Thermal POS */}
         {activeTab === 'printer' && (
-          <div className="space-y-6 animate-fadeIn">
-            <PrinterSettingsCard />
-            <ReceiptPreviewCard />
-          </div>
+          <PrinterPage isEmbedded={true} />
         )}
 
-        {/* 5. Integrasi AI & Bot Telegram */}
+        {/* 5. Notifikasi & Bot Telegram */}
         {activeTab === 'integrations' && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-komazi-border pb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-komazi-primary" />
-              <div>
-                <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
-                  Integrasi Komazi AI
-                </h2>
-                <p className="text-[11px] text-komazi-muted">
-                  Seluruh API Key kecerdasan buatan dikelola secara aman melalui file environment (<code className="px-1 py-0.5 rounded bg-komazi-surface-2 font-mono text-[10px] text-komazi-primary">.env</code>) di server backend untuk melindungi kredensial.
-                </p>
-              </div>
+            {/* Sub-tab Switcher: Android vs Telegram */}
+            <div className="flex items-center gap-1.5 p-1 bg-komazi-surface border border-komazi-border rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('android')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  integrationSubTab === 'android'
+                    ? 'bg-komazi-coral text-white shadow-sm'
+                    : 'text-komazi-muted hover:text-white hover:bg-komazi-surface-2'
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>Notifikasi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('telegram')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  integrationSubTab === 'telegram'
+                    ? 'bg-komazi-coral text-white shadow-sm'
+                    : 'text-komazi-muted hover:text-white hover:bg-komazi-surface-2'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Bot Telegram</span>
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleTestAiConnection}
-              disabled={isTestingAi}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-komazi-primary/10 hover:bg-komazi-primary/20 border border-komazi-primary/30 text-komazi-primary text-xs font-semibold transition-all active:scale-95 shrink-0"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>{isTestingAi ? 'Memeriksa...' : 'Uji Status AI'}</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Tier 1: Groq Cloud LPU */}
-            <div className="p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Tier 1 (Utama): Groq Cloud LPU
-                </span>
-                <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
-                  Ultra-Fast (~300ms)
-                </span>
+            {integrationSubTab === 'android' ? (
+              <div className="animate-fadeIn">
+                <AndroidNotificationCard />
               </div>
+            ) : (
+              <div className="space-y-6 animate-fadeIn">
+                <TelegramBotSettingsCard
+                  formState={formState}
+                  setFormState={setFormState}
+                  currentUser={currentUser}
+                  onSave={handleSave}
+                  isSaved={isSaved}
+                />
 
-              {/* Status Box */}
-              <div className="p-3 rounded-lg bg-komazi-surface border border-komazi-border flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-komazi-muted block">Status Kunci API:</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {aiStatusData?.groqConfigured || settings.aiGroqConfigured ? (
-                      <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Terkonfigurasi 
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold text-amber-400 flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> Belum diatur di .env
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-komazi-muted block">Variabel Server:</span>
-                  <code className="text-[11px] font-mono text-komazi-text font-semibold bg-komazi-surface-2 px-1.5 py-0.5 rounded">
-                    GROQ_API_KEY
-                  </code>
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={currentUser?.role !== 'OWNER'}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 ${
+                      currentUser?.role === 'OWNER'
+                        ? 'bg-komazi-coral hover:bg-komazi-coral-dark text-white cursor-pointer'
+                        : 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-komazi-border'
+                    }`}
+                  >
+                    {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
+                    <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Pengaturan Bot Telegram'}</span>
+                  </button>
                 </div>
               </div>
-
-              {/* Model Info */}
-              <div className="p-2.5 rounded-lg bg-komazi-surface/50 border border-komazi-border/50 text-[11px] text-komazi-muted space-y-1">
-                <div className="flex items-center justify-between">
-                  <span>Model Aktif:</span>
-                  <span className="font-mono text-komazi-text font-semibold">
-                    {aiStatusData?.groqModel || settings.aiGroqModel || 'openai/gpt-oss-120b'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Akselerasi Inferensi:</span>
-                  <span className="text-emerald-400 font-semibold">LPU Hardware Engine</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Tier 2: Google Gemini Cloud AI */}
-            <div className="p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                  Tier 2 (Fallback 1): Google Gemini
-                </span>
-                <span className="text-[10px] text-cyan-400 font-semibold bg-cyan-500/10 px-2 py-0.5 rounded">
-                  Generative Cloud AI
-                </span>
-              </div>
-
-              {/* Status Box */}
-              <div className="p-3 rounded-lg bg-komazi-surface border border-komazi-border flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-komazi-muted block">Status Kunci API:</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {aiStatusData?.geminiConfigured || settings.aiGeminiConfigured ? (
-                      <span className="text-xs font-semibold text-cyan-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Terkonfigurasi 
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold text-amber-400 flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> Belum diatur di .env
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-komazi-muted block">Variabel Server:</span>
-                  <code className="text-[11px] font-mono text-komazi-text font-semibold bg-komazi-surface-2 px-1.5 py-0.5 rounded">
-                    GEMINI_API_KEY
-                  </code>
-                </div>
-              </div>
-
-              {/* Model Info */}
-              <div className="p-2.5 rounded-lg bg-komazi-surface/50 border border-komazi-border/50 text-[11px] text-komazi-muted space-y-1">
-                <div className="flex items-center justify-between">
-                  <span>Model Gemini:</span>
-                  <span className="font-mono text-komazi-text font-semibold">
-                    {aiStatusData?.geminiModel || settings.aiGeminiModel || 'gemini-1.5-flash'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Akselerasi Model:</span>
-                  <span className="text-cyan-400 font-semibold">Google Cloud TPU/Multimodal</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Tier 3: OpenRouter Cloud */}
-            <div className="p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-                  Tier 3 (Fallback 2): OpenRouter
-                </span>
-                <span className="text-[10px] text-blue-400 font-semibold bg-blue-500/10 px-2 py-0.5 rounded">
-                  High-Availability LLM
-                </span>
-              </div>
-
-              {/* Status Box */}
-              <div className="p-3 rounded-lg bg-komazi-surface border border-komazi-border flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-komazi-muted block">Status Kunci API:</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {aiStatusData?.openrouterConfigured || settings.aiOpenRouterConfigured ? (
-                      <span className="text-xs font-semibold text-blue-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Terkonfigurasi 
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold text-amber-400 flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> Belum diatur di .env
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-komazi-muted block">Variabel Server:</span>
-                  <code className="text-[11px] font-mono text-komazi-text font-semibold bg-komazi-surface-2 px-1.5 py-0.5 rounded">
-                    OPENROUTER_API_KEY
-                  </code>
-                </div>
-              </div>
-
-              {/* Model Info */}
-              <div className="p-2.5 rounded-lg bg-komazi-surface/50 border border-komazi-border/50 text-[11px] text-komazi-muted space-y-1">
-                <div className="flex items-center justify-between">
-                  <span>Model Cadangan:</span>
-                  <span className="font-mono text-komazi-text font-semibold">
-                    {aiStatusData?.openrouterModel || settings.aiOpenRouterModel || 'meta-llama/llama-3.3-70b-instruct'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Waktu Failover:</span>
-                  <span className="text-blue-400 font-semibold">Otomatis (&gt;3.5s / 429)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Secure Environment Variables Notice */}
-          <div className="p-3.5 rounded-xl bg-komazi-surface-2/70 border border-komazi-border text-xs text-komazi-muted space-y-1.5">
-            <div className="flex items-center gap-2 text-komazi-text font-semibold">
-              <ShieldCheck className="w-4 h-4 text-komazi-primary" />
-              <span>Panduan Pengaturan API Key (.env)</span>
-            </div>
-            <p className="text-[11px] leading-relaxed">
-              Demi keamanan, seluruh API Key tidak diinput melalui browser ini agar tidak terekspos ke perangkat kasir atau pihak lain. Untuk memperbarui atau memasukkan API Key, edit file <code className="px-1 py-0.5 rounded bg-komazi-surface text-komazi-primary font-mono text-[10px]">backend/.env</code> pada server:
-            </p>
-            <div className="p-2.5 rounded-lg bg-black/40 border border-komazi-border/50 font-mono text-[11px] text-komazi-text space-y-0.5">
-              <div><span className="text-komazi-muted"># Tier 1: Groq Cloud LPU (Console: console.groq.com)</span></div>
-              <div className="text-emerald-400">GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx</div>
-              <div><span className="text-komazi-muted"># Tier 2: Google Gemini (Console: aistudio.google.com)</span></div>
-              <div className="text-cyan-400">GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxx</div>
-              <div><span className="text-komazi-muted"># Tier 3: OpenRouter (Console: openrouter.ai)</span></div>
-              <div className="text-blue-400">OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxx</div>
-              <div><span className="text-komazi-muted"># Tier 4: Komazi Deterministic Engine (Offline Local Built-in, tanpa API Key)</span></div>
-            </div>
-            <p className="text-[10px] text-komazi-muted">
-              💡 Setelah mengubah file <code className="font-mono">.env</code>, lakukan restart server backend agar nilai baru terbaca.
-            </p>
-          </div>
-        </div>
-
-            {/* Telegram Notification & Control Box */}
-            <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-komazi-border pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-400">
-                    <Send className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
-                      <span>Notifikasi & Bot Telegram Realtime</span>
-                      {telegramStatus?.configured ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success/15 text-success border border-success/30">
-                          Bot Terhubung
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                          Belum Diatur di .env
-                        </span>
-                      )}
-                    </h2>
-                    <p className="text-[11px] text-komazi-muted">
-                      Kirim notifikasi otomatis saat pesanan baru dibayar, peringatan stok menipis, dan cek omzet via Telegram.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleTestTelegram}
-                  disabled={isTestingTelegram}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-400 text-xs font-semibold transition-all active:scale-95 shrink-0 disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isTestingTelegram ? 'Mengirim...' : 'Uji Kirim Telegram'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2">
-                  <span className="font-bold text-komazi-text block">Variabel Server (backend/.env):</span>
-                  <div className="font-mono text-[11px] space-y-1 text-neutral-300">
-                    <div className="p-2 rounded-lg bg-neutral-900 border border-komazi-border">
-                      <div className="text-komazi-muted">TELEGRAM_BOT_TOKEN=...</div>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-komazi-muted">
-                    Notifikasi transaksi otomatis dikirim ke akun dengan role <b>Owner</b> &amp; <b>Manager</b> yang menautkan Telegram melalui tautan staf.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2">
-                  <span className="font-bold text-komazi-text block">Perintah Kontrol Bot Tersedia:</span>
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-komazi-coral">/omzet</span>
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-warning">/stok</span>
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-success">/menu_laris</span>
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-teal-400">/laporan</span>
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-purple-400">/profit</span>
-                    <span className="px-2 py-1 rounded bg-komazi-surface border border-komazi-border/60 text-blue-400">/prediksi</span>
-                  </div>
-                  <p className="text-[10px] text-komazi-muted">
-                    Bot otomatis memvalidasi Chat ID admin sebelum menampilkan data omzet.
-                  </p>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
-        {/* 6. Manajemen Akun Pengguna */}
-        {activeTab === 'users' && (
+        {/* 6. Keamanan & PIN Supervisor serta Hub HRIS */}
+        {activeTab === 'security' && (
           <div className="space-y-6 animate-fadeIn">
             {/* PIN Otorisasi Supervisor & Keamanan Card */}
             <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4 shadow-sm">
@@ -1443,15 +910,6 @@ export default function SettingsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="font-bold text-sm text-komazi-text">PIN Otorisasi Supervisor &amp; Keamanan Outlet</h2>
-                      {currentUser?.role === 'OWNER' ? (
-                        <span className="px-2 py-0.5 rounded-full bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30 text-[10px] font-bold">
-                          Khusus Owner
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-komazi-muted border border-komazi-border text-[10px] font-bold">
-                          Hanya Baca
-                        </span>
-                      )}
                     </div>
                     <p className="text-[11px] text-komazi-muted">
                       PIN otorisasi mandiri untuk pembatalan transaksi (Void), pengembalian dana (Refund), dan reset kata sandi
@@ -1569,173 +1027,247 @@ export default function SettingsPage() {
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral mt-1.5 shrink-0" />
-                      <span><b>Reset Sandi Staf:</b> Kunci verifikasi darurat di halaman Login jika kasir lupa password.</span>
+                      <span><b>Otorisasi Manajerial:</b> Kunci verifikasi darurat Void &amp; Refund di POS (reset password staf dikelola via token di modul Staf / HRIS).</span>
                     </li>
                   </ul>
                 </div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
+            {/* Card Pengaturan: Aturan Validasi Jadwal Kerja (Schedule Guard) */}
+            <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4 shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-komazi-border pb-3">
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-komazi-coral" />
-              <div>
-                <h2 className="font-bold text-sm text-komazi-text">Manajemen Staf & Hak Akses</h2>
-                <p className="text-[11px] text-komazi-muted">
-                  Kelola staf kasir, supervisor manager, dan pemilik outlet
-                </p>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    formState.enforceScheduleGuard
+                      ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-emerald-500/15 text-emerald-400'
+                  }`}>
+                    <CalendarCheck className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
+                      <span>Keamanan Presensi Staf</span>
+                    </h2>
+                    <p className="text-[11px] text-komazi-muted">
+                      Atur validasi jadwal kerja untuk presensi staf
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <span className="text-xs font-semibold text-komazi-muted">Wajibkan Jadwal:</span>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formState.enforceScheduleGuard)}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          handleChange('enforceScheduleGuard', val);
+                          updateSettings({ enforceScheduleGuard: val });
+                          toast.success(
+                            val
+                              ? 'Validasi jadwal diaktifkan: Staf wajib memiliki jadwal terdaftar hari ini & melakukan presensi.'
+                              : 'Mode Fleksibel diaktifkan: Staf dapat presensi tanpa jadwal, namun tetap wajib presensi sebelum bertransaksi.'
+                          );
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
+                    </div>
+                  </label>
+                </div>
               </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-komazi-coral/15 hover:bg-komazi-coral text-komazi-coral hover:text-white font-bold text-xs border border-komazi-coral/30 transition-all active:scale-95 shadow-sm"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Tambah Akun Staf</span>
-            </button>
-          </div>
+              <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs space-y-2">
+                <div className="flex items-start gap-2.5">
+                  {formState.enforceScheduleGuard ? (
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <p className="font-semibold text-komazi-text">
+                      {formState.enforceScheduleGuard
+                        ? 'Mode Ketat Aktif: Staf wajib memiliki jadwal terdaftar hari ini DAN wajib presensi sebelum dapat membuka kasir & bertransaksi.'
+                        : 'Mode Fleksibel Aktif: Staf dapat presensi tanpa jadwal harian, namun tetap wajib presensi sebelum membuka kasir & bertransaksi.'}
+                    </p>
+                    <p className="text-[11px] text-komazi-muted leading-relaxed">
+                      {formState.enforceScheduleGuard
+                        ? 'Pastikan Owner atau Manajer selalu menginput jadwal staf setiap hari sebelum outlet buka agar staf dapat presensi dan melayani transaksi kasir.'
+                        : 'Jika Owner belum sempat menginput jadwal kerja, staf tetap dapat bekerja dengan melakukan presensi mandiri terlebih dahulu untuk membuka akses kasir.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-          <div className="space-y-2.5">
-            {paginatedUsers.map((u) => {
-              const isCurrent = currentUser?.id === u.id || currentUser?.username === u.username;
-              return (
-                <div
-                  key={u.id}
-                  className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-komazi-border/80 transition-all"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${u.role === 'OWNER'
-                          ? 'bg-komazi-coral/20 text-komazi-coral'
-                          : u.role === 'MANAGER'
-                            ? 'bg-komazi-teal/20 text-komazi-teal-light'
-                            : u.role === 'KITCHEN'
-                              ? 'bg-amber-500/20 text-amber-400'
-                              : u.role === 'BARISTA'
-                                ? 'bg-komazi-teal/20 text-komazi-teal-light'
-                                : 'bg-komazi-surface text-komazi-muted'
-                        }`}
-                    >
-                      {u.name.substring(0, 2).toUpperCase()}
+              {/* Anti-Fraud & Validasi Kehadiran Presensi */}
+              <div className="pt-4 border-t border-komazi-border/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center">
+                      <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-komazi-text">{u.name}</p>
-                        {isCurrent && (
-                          <span className="text-[10px] bg-komazi-border text-komazi-muted px-1.5 py-0.2 rounded font-medium">
-                            Anda
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-komazi-muted">Username: @{u.username}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 justify-between sm:justify-end">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${u.role === 'OWNER'
-                            ? 'bg-komazi-coral-soft text-komazi-coral border border-komazi-coral/30'
-                            : u.role === 'MANAGER'
-                              ? 'bg-komazi-teal/15 text-komazi-teal-light border border-komazi-teal/30'
-                              : u.role === 'KITCHEN'
-                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                : u.role === 'BARISTA'
-                                  ? 'bg-komazi-teal/15 text-komazi-teal-light border border-komazi-teal/30'
-                                  : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
-                          }`}
-                      >
-                        {u.role === 'KITCHEN' ? 'DAPUR' : u.role === 'BARISTA' ? 'BARISTA' : u.role}
-                      </span>
-                      <span className="text-success text-[11px] font-semibold flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
-                        Aktif
-                      </span>
-
-                      {/* Telegram Account Link Status */}
-                      {u.telegramId ? (
-                        <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 text-[10px] font-semibold">
-                          <Send className="w-2.5 h-2.5" />
-                          <span>@{u.telegramUsername || 'Tertaut'}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUnlinkTelegram(u)}
-                            title="Putuskan Tautan Telegram"
-                            className="text-neutral-400 hover:text-danger ml-0.5 transition-colors"
-                          >
-                            <X className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenTgLinkModal(u)}
-                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-500/15 hover:bg-blue-500 text-blue-400 hover:text-white font-semibold text-[10px] border border-blue-500/30 transition-all active:scale-95"
-                          title="Tautkan akun staf ke Telegram"
-                        >
-                          <Send className="w-2.5 h-2.5" />
-                          <span>Tautkan Telegram</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1 pl-2 border-l border-komazi-border">
-                      {/* Reset Password Button */}
-                      <button
-                        type="button"
-                        title="Reset Password Akun Ini"
-                        onClick={() => {
-                          setTargetUserForReset(u);
-                          setTargetNewPassword('');
-                          setTargetConfirmPassword('');
-                          setResetError('');
-                          setShowResetModal(true);
-                        }}
-                        className="p-1.5 rounded-lg text-komazi-muted hover:text-komazi-coral hover:bg-komazi-surface transition-colors"
-                      >
-                        <KeyRound className="w-4 h-4" />
-                      </button>
-
-                      {/* Delete User Button (not allowed for own account) */}
-                      <button
-                        type="button"
-                        title={isCurrent ? 'Tidak bisa menghapus akun yang sedang digunakan' : 'Hapus Akun'}
-                        disabled={isCurrent}
-                        onClick={() => {
-                          setTargetUserForDelete(u);
-                          setShowDeleteModal(true);
-                        }}
-                        className="p-1.5 rounded-lg text-komazi-muted hover:text-danger hover:bg-komazi-surface transition-colors disabled:opacity-30 disabled:hover:text-komazi-muted"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <h3 className="font-bold text-sm text-komazi-text flex items-center gap-2">
+                        <span>Anti-Fraud &amp; Validasi Presensi Staf</span>
+                      </h3>
+                      <p className="text-[11px] text-komazi-muted">
+                        Cegah presensi titip/palsu dari luar outlet dengan Geofencing GPS dan Foto Selfie
+                      </p>
                     </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
 
-          {usersList.length > 0 && (
-            <Pagination
-              currentPage={userPage}
-              totalItems={usersList.length}
-              itemsPerPage={usersPerPage}
-              onPageChange={setUserPage}
-              onItemsPerPageChange={(newLimit) => {
-                setUsersPerPage(newLimit);
-                setUserPage(1);
-              }}
-              itemLabel="akun staf"
-            />
-          )}
-        </div>
+                {/* Sub-grid options */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Option 1: Geofencing GPS */}
+                  <div className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-komazi-coral" />
+                        <span className="font-bold text-xs text-komazi-text">Validasi Lokasi (GPS)</span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(formState.attendanceGeofenceEnabled)}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            handleChange('attendanceGeofenceEnabled', val);
+                            updateSettings({ attendanceGeofenceEnabled: val });
+                            toast.success(
+                              val
+                                ? 'Validasi Geofencing GPS diaktifkan: Staf harus berada di area outlet.'
+                                : 'Validasi Geofencing dinonaktifkan: Staf dapat presensi bebas lokasi.'
+                            );
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-komazi-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
+                      </label>
+                    </div>
+
+                    <p className="text-[11px] text-komazi-muted leading-relaxed">
+                      Staf wajib mengaktifkan GPS dan berada dalam radius outlet untuk dapat melakukan presensi.
+                    </p>
+
+                    {formState.attendanceGeofenceEnabled && (
+                      <div className="space-y-3 pt-2 border-t border-komazi-border/60">
+                        {/* Koordinat Outlet */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-bold uppercase text-komazi-muted">
+                              Titik Koordinat Outlet:
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handleDetectCurrentLocation}
+                              disabled={isDetectingLocation}
+                              className="text-[10px] text-komazi-coral hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <LocateFixed className={`w-3 h-3 ${isDetectingLocation ? 'animate-spin' : ''}`} />
+                              <span>{isDetectingLocation ? 'Mendeteksi...' : 'Ambil Lokasi Saya Sekarang'}</span>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Latitude (mis: -6.2088)"
+                              value={formState.outletLatitude || ''}
+                              onChange={(e) => {
+                                handleChange('outletLatitude', e.target.value);
+                                updateSettings({ outletLatitude: e.target.value });
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Longitude (mis: 106.8456)"
+                              value={formState.outletLongitude || ''}
+                              onChange={(e) => {
+                                handleChange('outletLongitude', e.target.value);
+                                updateSettings({ outletLongitude: e.target.value });
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Radius Toleransi */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-komazi-muted mb-1">
+                            Batas Radius Maksimal:
+                          </label>
+                          <select
+                            value={formState.attendanceRadiusMeters || 100}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              handleChange('attendanceRadiusMeters', val);
+                              updateSettings({ attendanceRadiusMeters: val });
+                              toast.success(`Radius presensi outlet disetel ke ${val} meter`);
+                            }}
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-bold text-komazi-text focus:border-komazi-coral outline-none"
+                          >
+                            <option value={50}>50 meter (Sangat Ketat - Di Dalam Cafe)</option>
+                            <option value={100}>100 meter (Standar Outlet Cafe)</option>
+                            <option value={200}>200 meter (Area Parkir &amp; Sekitarnya)</option>
+                            <option value={500}>500 meter (Kompleks Ruko / Gedung Mall)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Option 2: Live Selfie Photo */}
+                  <div className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-komazi-coral" />
+                        <span className="font-bold text-xs text-komazi-text">Wajib Foto Selfie</span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(formState.attendanceSelfieRequired)}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            handleChange('attendanceSelfieRequired', val);
+                            updateSettings({ attendanceSelfieRequired: val });
+                            toast.success(
+                              val
+                                ? 'Bukti foto selfie diaktifkan: Staf wajib mengambil selfie saat presensi.'
+                                : 'Bukti foto selfie dinonaktifkan.'
+                            );
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-komazi-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
+                      </label>
+                    </div>
+
+                    <p className="text-[11px] text-komazi-muted leading-relaxed">
+                      Mewajibkan staf mengambil foto selfie langsung menggunakan kamera perangkat saat Clock-In untuk mencegah titip presensi antar staf.
+                    </p>
+
+                    <div className="p-3 rounded-xl bg-komazi-surface border border-komazi-border text-[11px] text-komazi-muted space-y-1">
+                      <div className="flex items-center gap-1.5 text-komazi-text font-semibold">
+                        <Sparkles className="w-3.5 h-3.5 text-komazi-coral" />
+                        <span>Verifikasi Visual untuk Owner</span>
+                      </div>
+                      <p>
+                        Foto selfie staf akan tersimpan di riwayat presensi HRIS dan dapat ditinjau oleh Owner/Manajer sewaktu-waktu.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-      </form>
+        </div>
+      )}
 
       {/* Modal: Simulasi & Uji Coba QRIS Dinamis */}
       {showQrPreviewModal && (
@@ -1773,13 +1305,13 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 inline-block">
-                    Tag 54 Nominal: {formatRupiah(testAmount)}
+                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 inline-block font-mono">
+                    Nominal Uji: {formatRupiah(testAmount)}
                   </span>
                   <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30 inline-block">
-                    {formState.qrisMode === 'dynamic' ? 'Mode Dinamis (Tag 01: 12)' : formState.qrisMode === 'raw' ? 'Mode Statis Asli' : 'Mode Kompatibel UMKM (Tag 01: 11)'}
+                    QRIS Dinamis Otomatis
                   </span>
                 </div>
                 <p className="font-mono text-xs text-komazi-text font-bold pt-1">
@@ -1788,32 +1320,9 @@ export default function SettingsPage() {
                 <p className="text-[11px] text-komazi-muted">
                   NMID: {formState.qrisNmid || 'ID1020088920199'} • Kota: {formState.qrisMerchantCity || 'MEDAN'}
                 </p>
-                {(!formState.qrisMode || formState.qrisMode === 'compatible') && (
-                  <p className="text-[10px] text-emerald-400/90 font-medium pt-0.5">
-                    ✓ Aman di-scan ShopeePay, BCA, GoPay, dan DANA tanpa error "Kesalahan Sistem"
-                  </p>
-                )}
-              </div>
-
-              <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-left w-full space-y-1.5">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-komazi-muted">Payload EMVCo String:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(testPayloadStr);
-                      setCopiedPayload(true);
-                      setTimeout(() => setCopiedPayload(false), 2000);
-                    }}
-                    className="flex items-center gap-1 text-komazi-coral hover:underline"
-                  >
-                    {copiedPayload ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedPayload ? 'Tersalin' : 'Salin String'}</span>
-                  </button>
-                </div>
-                <div className="font-mono text-[10px] text-neutral-300 break-all p-2 rounded bg-neutral-900/50 max-h-20 overflow-y-auto">
-                  {testPayloadStr}
-                </div>
+                <p className="text-[10px] text-emerald-400/90 font-medium pt-0.5">
+                  ✓ Siap di-scan dengan ShopeePay, BCA, GoPay, DANA, dan semua m-Banking
+                </p>
               </div>
             </div>
 
@@ -1955,98 +1464,18 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Modal: Reset Password User oleh Owner */}
+      {/* Modal: Otorisasi Token Reset Password oleh Owner */}
       {showResetModal && targetUserForReset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden p-6 space-y-5">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-komazi-text">Reset Password Staf</h3>
-                  <p className="text-[11px] text-komazi-muted">
-                    Atur ulang password untuk akun @{targetUserForReset.username}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowResetModal(false)}
-                className="p-1.5 rounded-lg text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between text-xs">
-              <div>
-                <p className="font-bold text-komazi-text">{targetUserForReset.name}</p>
-                <p className="text-[11px] text-komazi-muted">@{targetUserForReset.username}</p>
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-komazi-border text-komazi-text">
-                {targetUserForReset.role}
-              </span>
-            </div>
-
-            {resetError && (
-              <div className="p-3 rounded-xl bg-danger/15 border border-danger/30 text-danger text-xs font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{resetError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  Password Baru (Min. 6 Karakter):
-                </label>
-                <input
-                  type="password"
-                  autoFocus
-                  required
-                  value={targetNewPassword}
-                  onChange={(e) => setTargetNewPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                  Konfirmasi Password Baru:
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={targetConfirmPassword}
-                  onChange={(e) => setTargetConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowResetModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted text-xs font-bold transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingReset}
-                  className="flex-1 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-md disabled:opacity-50"
-                >
-                  <KeyRound className="w-4 h-4" />
-                  <span>{isSubmittingReset ? 'Menyimpan...' : 'Perbarui Password'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <OwnerResetPasswordModal
+          targetUser={targetUserForReset}
+          onClose={() => {
+            setShowResetModal(false);
+            setTargetUserForReset(null);
+          }}
+          onSuccess={() => {
+            fetchUsers?.();
+          }}
+        />
       )}
 
       {/* Modal: Konfirmasi Hapus Akun */}
@@ -2092,7 +1521,7 @@ export default function SettingsPage() {
           <div className="w-full max-w-md bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-komazi-coral/15 text-komazi-coral flex items-center justify-center">
                   <Send className="w-5 h-5" />
                 </div>
                 <div>
@@ -2102,16 +1531,6 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTelegramLinkModal(false);
-                  fetchUsers();
-                }}
-                className="p-1.5 rounded-lg text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             {/* Profil Staf Target */}
@@ -2164,7 +1583,7 @@ export default function SettingsPage() {
                   href={`https://t.me/KomaziAssistant_bot?start=${generatedTgCode}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-600/20 active:scale-95"
+                  className="w-full py-3 px-4 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-komazi-coral/20 active:scale-95"
                 >
                   <Send className="w-4 h-4" />
                   <span>Buka di Aplikasi Telegram (@KomaziAssistant_bot)</span>
@@ -2203,7 +1622,7 @@ export default function SettingsPage() {
                 }}
                 className="w-full py-2.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-bold transition-colors"
               >
-                Selesai / Tutup
+                Selesai
               </button>
             </div>
           </div>

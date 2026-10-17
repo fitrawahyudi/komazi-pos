@@ -1,4 +1,7 @@
 import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import prisma from './db.js';
+import { isAllowedOrigin, getJwtSecrets } from '../utils/security.js';
 
 let io = null;
 
@@ -6,23 +9,59 @@ export function initSocket(httpServer) {
   io = new Server(httpServer, {
     cors: {
       origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
-          .split(',')
-          .map((o) => o.trim());
-
-        if (
-          allowedOrigins.includes(origin) ||
-          origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$/)
-        ) {
-          return callback(null, origin);
+        if (isAllowedOrigin(origin)) {
+          return callback(null, origin || true);
         }
-        callback(null, true);
+        callback(new Error('Koneksi WebSocket ditolak oleh kebijakan CORS'));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     },
     transports: ['websocket', 'polling'],
+  });
+
+  // Autentikasi koneksi WebSocket untuk melindungi data pesanan dari penyadapan
+  io.use(async (socket, next) => {
+    try {
+      const auth = socket.handshake.auth || {};
+      const query = socket.handshake.query || {};
+      const token = auth.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '');
+      const apiKey = auth.apiKey || query.apiKey || socket.handshake.headers?.['x-api-key'];
+
+      // 1. Izinkan jika KDS API Key valid
+      const configuredApiKey = process.env.KDS_API_KEY || 'komazi_kds_live_secure_token_key_2026';
+      if (apiKey && apiKey === configuredApiKey) {
+        socket.isApiKey = true;
+        return next();
+      }
+
+      // 2. Izinkan jika JWT token valid dan akun user aktif
+      if (token) {
+        try {
+          const { jwtSecret } = getJwtSecrets();
+          const decoded = jwt.verify(token, jwtSecret, { ignoreExpiration: true });
+          if (decoded?.id) {
+            const dbUser = await prisma.user.findUnique({
+              where: { id: decoded.id },
+              select: { id: true, isActive: true, role: true },
+            });
+            if (dbUser && dbUser.isActive) {
+              socket.user = decoded;
+              return next();
+            }
+          }
+        } catch {}
+      }
+
+      // 3. Izinkan pada mode development
+      if (process.env.NODE_ENV !== 'production') {
+        return next();
+      }
+
+      return next(new Error('Autentikasi WebSocket diperlukan (Token atau API Key tidak valid)'));
+    } catch (err) {
+      return next(new Error('Gagal memproses autentikasi WebSocket'));
+    }
   });
 
   io.on('connection', (socket) => {
@@ -94,3 +133,21 @@ export function emitOrderEvent(event, data) {
   if (!io) return;
   io.emit(event, data);
 }
+
+/**
+ * Emit global customer event ke seluruh client / room
+ */
+export function emitCustomerEvent(event, data) {
+  if (!io) return;
+  io.emit(event, data);
+}
+
+/**
+ * Paksa logout semua sesi aktif milik userId tertentu
+ * Digunakan saat Owner menonaktifkan atau menghapus akun user
+ */
+export function emitForceLogout(userId, reason = 'Akun Anda telah dinonaktifkan oleh pemilik kedai.') {
+  if (!io) return;
+  io.emit('user:force_logout', { userId, reason });
+}
+

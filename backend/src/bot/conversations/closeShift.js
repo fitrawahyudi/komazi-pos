@@ -1,28 +1,46 @@
 import { getBotUser } from '../context.js';
 import { shiftService } from '../../services/shift.service.js';
-import { rupiah } from '../utils/format.js';
+import { rupiah, esc } from '../utils/format.js';
 import { logBotAudit } from '../middlewares/audit.js';
 import { events } from '../events.js';
+import { generateBotImage } from '../../services/botImage/index.js';
+import { replyWithPhotoFallback } from '../utils/sendVisual.js';
 
 export async function closeShift(conversation, ctx) {
   const user = await getBotUser(conversation, ctx);
   if (!user) return ctx.reply('Akun Anda belum tertaut.');
 
-  const current = await conversation.external(() => shiftService.getCurrent(user.id));
+  const current = await conversation.external(async () => {
+    const s = await shiftService.getCurrent(user.id);
+    if (!s) return null;
+    let cashSales = 0;
+    let qrisSales = 0;
+    let transferSales = 0;
+    for (const order of s.orders || []) {
+      if (order.status === 'PAID') {
+        for (const p of order.payments || []) {
+          if (p.method === 'CASH') cashSales += Number(p.amount);
+          else if (p.method === 'QRIS') qrisSales += Number(p.amount);
+          else if (p.method === 'TRANSFER') transferSales += Number(p.amount);
+        }
+      }
+    }
+    return {
+      id: s.id,
+      openingCash: Number(s.openingCash),
+      cashSales,
+      qrisSales,
+      transferSales,
+      ordersCount: (s.orders || []).filter(o => o.status === 'PAID').length,
+    };
+  });
+
   if (!current) {
     return ctx.reply('⚠️ Anda tidak memiliki shift aktif saat ini.');
   }
 
-  // Cek expected cash sementara
-  let cashSales = 0;
-  for (const order of current.orders || []) {
-    if (order.status === 'PAID') {
-      for (const p of order.payments || []) {
-        if (p.method === 'CASH') cashSales += Number(p.amount);
-      }
-    }
-  }
-  const openingCash = Number(current.openingCash);
+  const openingCash = current.openingCash;
+  const cashSales = current.cashSales;
   const expectedCash = openingCash + cashSales;
 
   await ctx.reply(
@@ -43,7 +61,18 @@ export async function closeShift(conversation, ctx) {
   const notes = noteMsg.message.text.trim() === '-' ? null : noteMsg.message.text.trim();
 
   try {
-    const summary = await conversation.external(() => shiftService.close(user.id, actualAmount, notes));
+    const summary = await conversation.external(async () => {
+      const res = await shiftService.close(user.id, actualAmount, notes);
+      return {
+        openingCash: Number(res.openingCash),
+        closingCash: Number(res.closingCash),
+        expectedCash: Number(res.expectedCash),
+        cashSales: Number(res.cashSales),
+        nonCashSales: Number(res.nonCashSales),
+        diff: Number(res.diff),
+      };
+    });
+
     await conversation.external(() => logBotAudit(user.id, 'CLOSE_SHIFT', { shiftId: current.id, actualAmount, diff: summary.diff }));
 
     // Emit event shift closed for notifier
@@ -58,10 +87,24 @@ export async function closeShift(conversation, ctx) {
       ? `🟡 Lebih: +${rupiah(summary.diff)}`
       : `🔴 Selisih Kurang: ${rupiah(summary.diff)}`;
 
-    await ctx.reply(
-      `✅ <b>Shift Kasir Berhasil Ditutup!</b>\n━━━━━━━━━━━━━━━━━━\nKasir: ${esc(user.name)}\nModal Awal: ${rupiah(summary.openingCash)}\nTotal Kas Aktual: <b>${rupiah(summary.closingCash)}</b>\nKas Seharusnya: ${rupiah(summary.expectedCash)}\nStatus: <b>${diffText}</b>\n${notes ? `Catatan: <i>${esc(notes)}</i>\n` : ''}━━━━━━━━━━━━━━━━━━`,
-      { parse_mode: 'HTML' }
-    );
+    const caption = `✅ <b>Shift Kasir Berhasil Ditutup (Z-Report)!</b>\n━━━━━━━━━━━━━━━━━━\nKasir: ${esc(user.name)}\nModal Awal: ${rupiah(summary.openingCash)}\nTotal Kas Aktual: <b>${rupiah(summary.closingCash)}</b>\nKas Seharusnya: ${rupiah(summary.expectedCash)}\nStatus: <b>${diffText}</b>\n${notes ? `Catatan: <i>${esc(notes)}</i>\n` : ''}━━━━━━━━━━━━━━━━━━`;
+
+    await replyWithPhotoFallback(ctx, {
+      imageBufferPromise: generateBotImage('shift_closed', {
+        cashierName: user.name,
+        initialCash: summary.openingCash,
+        closingCash: summary.closingCash,
+        expectedCash: summary.expectedCash,
+        cashSales: summary.cashSales,
+        qrisSales: current.qrisSales || summary.nonCashSales,
+        transferSales: current.transferSales || 0,
+        totalSales: summary.cashSales + summary.nonCashSales,
+        diff: summary.diff,
+        notes: notes || 'Shift ditutup seimbang.',
+        shiftId: current.id,
+      }),
+      captionHtml: caption,
+    });
   } catch (err) {
     await ctx.reply(`❌ Gagal menutup shift: ${err.message}`);
   }

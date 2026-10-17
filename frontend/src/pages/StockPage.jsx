@@ -23,9 +23,16 @@ import {
   CheckCircle2,
   Check,
   SlidersHorizontal,
+  FileSpreadsheet,
+  Download,
+  MessageCircle,
+  Edit2,
+  ExternalLink,
 } from 'lucide-react';
 import AlertModal from '../components/ui/AlertModal';
 import Pagination from '../components/ui/Pagination';
+import ExcelImportModal from '../components/common/ExcelImportModal';
+import { exportToExcel } from '../utils/excel';
 import { toast } from '../store/toastStore';
 
 export default function StockPage() {
@@ -36,15 +43,57 @@ export default function StockPage() {
     ingredients,
     movements,
     addIngredient,
+    updateIngredient,
+    deleteIngredient,
     recordMovement,
+    recordWaste,
     getLowStockItems,
     bulkDeleteIngredients,
     bulkUpdateMinStock,
     bulkRecordMovement,
   } = useStockStore();
 
+  useEffect(() => {
+    useStockStore.getState().fetchIngredients?.();
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        useStockStore.getState().fetchIngredients?.();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, []);
+
   // Multi-select state
   const [selectedIngredientIds, setSelectedIngredientIds] = useState([]);
+  const [ingredientToDelete, setIngredientToDelete] = useState(null);
+  const [isDeletingSingle, setIsDeletingSingle] = useState(false);
+  const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
+
+  const handleExportStock = () => {
+    if (!ingredients || ingredients.length === 0) {
+      toast.error('Tidak ada data bahan baku untuk diekspor');
+      return;
+    }
+    const exportData = ingredients.map((i) => ({
+      'ID': i.id,
+      'Nama Bahan': i.name,
+      'Satuan': i.unit,
+      'Stok Saat Ini': i.stock,
+      'Stok Minimum': i.minStock,
+      'Harga Modal per Satuan': canViewCost ? (i.costPerUnit || 0) : 'Dirahasiakan',
+      'Nama Supplier': i.supplierName || '-',
+      'Kontak WA Supplier': i.supplierPhone || '-',
+      'Status': Number(i.stock) <= Number(i.minStock) ? 'Menipis' : 'Aman',
+    }));
+    exportToExcel(exportData, `inventori_bahan_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`, 'Stok Bahan Baku');
+    toast.success('Data stok bahan berhasil diekspor ke Excel');
+  };
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkMinStockModalOpen, setIsBulkMinStockModalOpen] = useState(false);
   const [bulkMinStockValue, setBulkMinStockValue] = useState(2);
@@ -59,6 +108,17 @@ export default function StockPage() {
   const [movementQty, setMovementQty] = useState(1);
   const [movementNote, setMovementNote] = useState('');
   const [movementUnitCost, setMovementUnitCost] = useState('');
+  const [movementRecordedBy, setMovementRecordedBy] = useState('');
+
+  // Waste reasons presets
+  const WASTE_REASONS = [
+    'Kalibrasi Grinder / Dial-in Espresso',
+    'Basi / Kadaluwarsa (Expired)',
+    'Tumpah di Bar / Bocor',
+    'Salah Racik Barista (Human Error)',
+    'Cacat Kemasan / Rusak Pabrik',
+    'Lainnya',
+  ];
 
   const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
   const [newIngData, setNewIngData] = useState({
@@ -67,7 +127,23 @@ export default function StockPage() {
     stock: 5,
     minStock: 2,
     costPerUnit: 50000,
+    supplierName: '',
+    supplierPhone: '',
   });
+
+  const [isEditIngredientOpen, setIsEditIngredientOpen] = useState(false);
+  const [editingIngData, setEditingIngData] = useState(null);
+
+  const getWhatsAppRestockUrl = (ing) => {
+    if (!ing?.supplierPhone) return null;
+    let clean = String(ing.supplierPhone).replace(/[^0-9]/g, '');
+    if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+    else if (clean.startsWith('8')) clean = '62' + clean;
+
+    const greeting = ing.supplierName ? `Halo ${ing.supplierName}` : 'Halo Supplier';
+    const text = `${greeting}, kami dari Komazi Coffee ingin memesan restock bahan:\n\n• Bahan: *${ing.name}*\n• Sisa Stok: ${ing.stock} ${ing.unit}\n• Status: Memerlukan restock segera\n\nMohon konfirmasi stok & harga terbarunya. Terima kasih! 🙏`;
+    return `https://wa.me/${clean}?text=${encodeURIComponent(text)}`;
+  };
 
   // Filter & Pagination States
   const [searchQuery, setSearchQuery] = useState('');
@@ -198,20 +274,59 @@ export default function StockPage() {
     setActiveMovementType(type);
     if (ingredientId) setSelectedIngredientId(ingredientId);
     setMovementQty(1);
-    setMovementNote('');
+    setMovementNote(type === 'WASTE' ? WASTE_REASONS[0] : '');
     setMovementUnitCost('');
+    setMovementRecordedBy(user?.name || 'Staff');
   };
 
-  const handleSaveMovement = (e) => {
+  const handleSaveMovement = async (e) => {
     e.preventDefault();
-    recordMovement(
-      Number(selectedIngredientId),
-      activeMovementType,
-      movementQty,
-      movementNote,
-      movementUnitCost !== '' ? Number(movementUnitCost) : null
-    );
+    if (activeMovementType === 'WASTE') {
+      await recordWaste(
+        Number(selectedIngredientId),
+        movementQty,
+        movementNote || 'Waste / Kalibrasi',
+        movementRecordedBy || user?.name || 'Staff'
+      );
+      toast.success('Pencatatan waste berhasil disimpan');
+    } else {
+      await recordMovement(
+        Number(selectedIngredientId),
+        activeMovementType,
+        movementQty,
+        movementNote,
+        movementUnitCost !== '' ? Number(movementUnitCost) : null,
+        movementRecordedBy || user?.name || 'Staff'
+      );
+      toast.success('Mutasi stok berhasil dicatat');
+    }
     setActiveMovementType(null);
+  };
+
+  const handleOpenEditModal = (ing) => {
+    setEditingIngData({
+      id: ing.id,
+      name: ing.name,
+      unit: ing.unit,
+      minStock: Number(ing.minStock),
+      costPerUnit: Number(ing.costPerUnit || 0),
+      supplierName: ing.supplierName || '',
+      supplierPhone: ing.supplierPhone || '',
+    });
+    setIsEditIngredientOpen(true);
+  };
+
+  const handleUpdateIngredient = async (e) => {
+    e.preventDefault();
+    if (!editingIngData) return;
+    try {
+      await updateIngredient(editingIngData.id, editingIngData);
+      toast.success(`Bahan "${editingIngData.name}" berhasil diperbarui`);
+      setIsEditIngredientOpen(false);
+      setEditingIngData(null);
+    } catch (err) {
+      toast.error('Gagal memperbarui bahan: ' + err.message);
+    }
   };
 
   const handleCreateIngredient = (e) => {
@@ -225,7 +340,10 @@ export default function StockPage() {
       stock: 5,
       minStock: 2,
       costPerUnit: 50000,
+      supplierName: '',
+      supplierPhone: '',
     });
+    toast.success('Bahan baku baru berhasil ditambahkan');
   };
 
   const handleResetFilters = () => {
@@ -245,29 +363,41 @@ export default function StockPage() {
         <div>
           <h1 className="font-display font-black text-2xl text-komazi-text flex items-center gap-2">
             <Boxes className="w-6 h-6 text-komazi-coral" />
-            <span>Inventori & Stok Bahan Baku</span>
+            <span>Sumber Persediaan</span>
           </h1>
           <p className="text-xs text-komazi-muted mt-0.5">
-            Pantau stok biji kopi, susu, sirup, cup, atur harga modal, dan catat pembelian serta waste bahan.
+            Kelola sumber persediaan dan tingkat stoknya
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={() => handleOpenMovementModal('PURCHASE')}
-            className="px-3.5 py-2 rounded-xl bg-success/15 hover:bg-success/25 text-success border border-success/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
+            onClick={handleExportStock}
+            className="px-3 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-semibold border border-komazi-border transition-colors flex items-center gap-1.5"
+            title="Ekspor daftar bahan baku ke file Excel (.xlsx)"
           >
-            <ArrowUpRight className="w-4 h-4" />
-            <span>+ Stok Masuk</span>
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Ekspor Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsExcelImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
+            title="Import bahan baku massal dari file Excel atau CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Import Excel</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleOpenMovementModal('WASTE')}
             className="px-3.5 py-2 rounded-xl bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
+            title="Catat bahan terbuang, tumpah, atau kalibrasi dial-in"
           >
-            <ArrowDownRight className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
             <span>Catat Waste</span>
           </button>
 
@@ -281,35 +411,6 @@ export default function StockPage() {
           </button>
         </div>
       </div>
-
-      {/* 2. Low Stock Warning Banner if any */}
-      {lowStock.length > 0 && (
-        <div className="p-4 rounded-2xl bg-warning/10 border border-warning/30 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-warning/20 text-warning shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-warning">
-                Peringatan: {lowStock.length} Bahan Mencapai Batas Minimum!
-              </h3>
-              <p className="text-xs text-komazi-muted mt-0.5 line-clamp-1">
-                {lowStock.map((i) => `${i.name} (Sisa ${i.stock} ${i.unit})`).join(', ')}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setStatusFilter('LOW_STOCK');
-              setCurrentPage(1);
-            }}
-            className="px-3 py-1.5 rounded-xl bg-warning hover:bg-warning/90 text-black font-bold text-xs shrink-0 transition-colors"
-          >
-            Lihat Bahan Kritis
-          </button>
-        </div>
-      )}
 
       {/* 3. Filters & Search Bar */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
@@ -551,7 +652,37 @@ export default function StockPage() {
                         />
                       </td>
                       <td className="py-3.5 px-4 font-bold text-komazi-text">
-                        {ing.name}
+                        <div>{ing.name}</div>
+                        {(ing.supplierName || ing.supplierPhone) ? (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1 font-normal">
+                            {ing.supplierName && (
+                              <span className="text-[10px] text-komazi-muted bg-komazi-surface-2 px-1.5 py-0.5 rounded border border-komazi-border">
+                                {ing.supplierName}
+                              </span>
+                            )}
+                            {ing.supplierPhone && (
+                              <a
+                                href={getWhatsAppRestockUrl(ing)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-bold bg-emerald-500/15 hover:bg-emerald-500/25 px-1.5 py-0.5 rounded border border-emerald-500/30 transition-colors shadow-sm"
+                                title={`Chat WhatsApp ke supplier ${ing.supplierPhone}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MessageCircle className="w-2.5 h-2.5" />
+                                <span>Pesan WA</span>
+                              </a>
+                            )}
+                          </div>
+                        ) : canViewCost ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(ing)}
+                            className="text-[10px] text-komazi-muted/70 hover:text-komazi-coral mt-1 transition-colors flex items-center gap-1 font-normal"
+                          >
+                            + Atur Supplier
+                          </button>
+                        ) : null}
                       </td>
                       <td className="py-3.5 px-4 text-komazi-muted uppercase font-semibold">
                         {ing.unit}
@@ -601,18 +732,25 @@ export default function StockPage() {
                           <button
                             type="button"
                             onClick={() => handleOpenMovementModal('WASTE', ing.id)}
-                            className="px-2 py-1 rounded-lg bg-komazi-surface-2 hover:bg-danger/20 hover:text-danger text-komazi-muted text-[11px] font-semibold border border-komazi-border transition-colors"
-                            title="Catat bahan terbuang"
+                            className="px-2 py-1 rounded-lg bg-danger/15 hover:bg-danger/25 text-danger font-semibold text-[11px] border border-danger/30 transition-colors"
+                            title="Catat bahan terbuang / rusak"
                           >
                             Waste
                           </button>
                           {canViewCost && (
                             <button
                               type="button"
-                              onClick={() => {
-                                setSelectedIngredientIds([ing.id]);
-                                setIsBulkDeleteModalOpen(true);
-                              }}
+                              onClick={() => handleOpenEditModal(ing)}
+                              className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors border border-komazi-border"
+                              title="Edit bahan baku & supplier"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canViewCost && (
+                            <button
+                              type="button"
+                              onClick={() => setIngredientToDelete(ing)}
                               className="p-1.5 rounded-lg text-komazi-muted hover:text-danger hover:bg-danger/10 transition-colors"
                               title="Hapus bahan baku"
                             >
@@ -769,18 +907,16 @@ export default function StockPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="w-full max-w-md rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-komazi-border">
-              <h3 className="font-bold text-base text-komazi-text">
-                {activeMovementType === 'PURCHASE' && 'Pencatatan Stok Masuk (Pembelian)'}
-                {activeMovementType === 'ADJUSTMENT' && 'Penyesuaian Fisik (Stock Opname)'}
-                {activeMovementType === 'WASTE' && 'Pencatatan Bahan Terbuang (Waste)'}
+              <h3 className="font-bold text-base text-komazi-text flex items-center gap-2">
+                {activeMovementType === 'PURCHASE' && <span>Pencatatan Stok Masuk</span>}
+                {activeMovementType === 'ADJUSTMENT' && <span>Penyesuaian Fisik (Opname)</span>}
+                {activeMovementType === 'WASTE' && (
+                  <>
+                    <Trash2 className="w-4 h-4 text-danger" />
+                    <span>Catat Bahan Terbuang (Waste)</span>
+                  </>
+                )}
               </h3>
-              <button
-                type="button"
-                onClick={() => setActiveMovementType(null)}
-                className="text-komazi-muted hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             <form onSubmit={handleSaveMovement} className="p-5 space-y-3.5">
@@ -805,6 +941,8 @@ export default function StockPage() {
                 <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
                   {activeMovementType === 'ADJUSTMENT'
                     ? 'Jumlah Stok Fisik Sebenarnya:'
+                    : activeMovementType === 'WASTE'
+                    ? 'Jumlah Bahan Terbuang:'
                     : 'Jumlah Qty:'}
                 </label>
                 <input
@@ -833,18 +971,81 @@ export default function StockPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                  Keterangan / Catatan:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Pembelian supplier Tanamera / tumpah di bar..."
-                  value={movementNote}
-                  onChange={(e) => setMovementNote(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
-                />
-              </div>
+              {activeMovementType === 'WASTE' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      Penyebab / Alasan Waste:
+                    </label>
+                    <select
+                      value={movementNote}
+                      onChange={(e) => setMovementNote(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
+                    >
+                      {WASTE_REASONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      Catatan Tambahan (Opsional):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Kalibrasi shot ke-3 over-extracted / tumpah saat rush hour..."
+                      value={movementNote && !WASTE_REASONS.includes(movementNote) ? movementNote : ''}
+                      onChange={(e) => setMovementNote(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Financial Loss Preview Banner */}
+                  {(() => {
+                    const sel = ingredients.find((i) => i.id === Number(selectedIngredientId));
+                    const estLoss = Math.round((Number(movementQty) || 0) * (Number(sel?.costPerUnit) || 0));
+                    return (
+                      <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 flex items-center justify-between text-xs">
+                        <span className="text-komazi-muted font-medium">Estimasi Kerugian Biaya:</span>
+                        <span className="font-mono font-bold text-danger text-sm">
+                          {canViewCost ? formatRupiah(estLoss) : 'Tercatat di Laporan P&L'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      Staf Pencatat:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={movementRecordedBy}
+                      onChange={(e) => setMovementRecordedBy(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {activeMovementType !== 'WASTE' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                    Keterangan / Catatan:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Pembelian supplier Tanamera / penyesuaian opname..."
+                    value={movementNote}
+                    onChange={(e) => setMovementNote(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                  />
+                </div>
+              )}
 
               <div className="pt-2 flex justify-between gap-3">
                 <button
@@ -856,9 +1057,13 @@ export default function StockPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md"
+                  className={`flex-1 py-2.5 rounded-xl text-white font-bold text-xs shadow-md ${
+                    activeMovementType === 'WASTE'
+                      ? 'bg-danger hover:bg-danger/80'
+                      : 'bg-komazi-coral hover:bg-komazi-coral-dark'
+                  }`}
                 >
-                  Simpan Perubahan
+                  {activeMovementType === 'WASTE' ? 'Catat Kerugian Waste' : 'Simpan Perubahan'}
                 </button>
               </div>
             </form>
@@ -872,13 +1077,6 @@ export default function StockPage() {
           <div className="w-full max-w-md rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-komazi-border">
               <h3 className="font-bold text-base text-komazi-text">Tambah Bahan Baku Baru</h3>
-              <button
-                type="button"
-                onClick={() => setIsAddIngredientOpen(false)}
-                className="text-komazi-muted hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             <form onSubmit={handleCreateIngredient} className="p-5 space-y-3.5">
@@ -959,6 +1157,38 @@ export default function StockPage() {
                 </div>
               )}
 
+              <div className="pt-2 border-t border-komazi-border">
+                <span className="text-[11px] font-bold text-komazi-coral uppercase tracking-wider block mb-2">
+                  Kontak Restock Supplier
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      Nama Supplier:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: PT Sukanda Djaya"
+                      value={newIngData.supplierName}
+                      onChange={(e) => setNewIngData({ ...newIngData, supplierName: e.target.value })}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      No. WhatsApp:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 08123456789"
+                      value={newIngData.supplierPhone}
+                      onChange={(e) => setNewIngData({ ...newIngData, supplierPhone: e.target.value })}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-2 flex justify-between gap-3">
                 <button
                   type="button"
@@ -979,19 +1209,184 @@ export default function StockPage() {
         </div>
       )}
 
+      {/* Modal: Edit Ingredient & Supplier */}
+      {isEditIngredientOpen && editingIngData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-komazi-border">
+              <h3 className="font-bold text-base text-komazi-text flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-komazi-coral" />
+                <span>Edit Bahan Baku & Supplier</span>
+              </h3>
+            </div>
+
+            <form onSubmit={handleUpdateIngredient} className="p-5 space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                  Nama Bahan Baku:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingIngData.name}
+                  onChange={(e) => setEditingIngData({ ...editingIngData, name: e.target.value })}
+                  className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                    Satuan Ukur:
+                  </label>
+                  <select
+                    value={editingIngData.unit}
+                    onChange={(e) => setEditingIngData({ ...editingIngData, unit: e.target.value })}
+                    className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
+                  >
+                    <option value="kg">kg (Kilogram)</option>
+                    <option value="gram">gram</option>
+                    <option value="liter">liter</option>
+                    <option value="ml">ml (Mililiter)</option>
+                    <option value="pcs">pcs (Pieces)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                    Batas Minimum:
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={editingIngData.minStock}
+                    onChange={(e) => setEditingIngData({ ...editingIngData, minStock: Number(e.target.value) })}
+                    className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {canViewCost && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                    Harga Modal Standar (Rp / {editingIngData.unit}):
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={editingIngData.costPerUnit}
+                    onChange={(e) => setEditingIngData({ ...editingIngData, costPerUnit: Number(e.target.value) })}
+                    className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono font-bold text-komazi-text focus:border-komazi-coral focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-komazi-border">
+                <span className="text-[11px] font-bold text-komazi-coral uppercase tracking-wider block mb-2">
+                  Kontak Restock Supplier
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      Nama Supplier:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Toffin Indonesia"
+                      value={editingIngData.supplierName}
+                      onChange={(e) => setEditingIngData({ ...editingIngData, supplierName: e.target.value })}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
+                      No. WhatsApp:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 08123456789"
+                      value={editingIngData.supplierPhone}
+                      onChange={(e) => setEditingIngData({ ...editingIngData, supplierPhone: e.target.value })}
+                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEditIngredientOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white font-semibold text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Single Delete Alert Modal */}
+      <AlertModal
+        isOpen={!!ingredientToDelete}
+        onClose={() => !isDeletingSingle && setIngredientToDelete(null)}
+        isProcessing={isDeletingSingle}
+        onConfirm={async () => {
+          if (!ingredientToDelete) return;
+          setIsDeletingSingle(true);
+          try {
+            const res = await deleteIngredient(ingredientToDelete.id);
+            if (res?.success) {
+              toast.success(res.message || `Bahan baku "${ingredientToDelete.name}" berhasil dihapus.`);
+              setSelectedIngredientIds((prev) => prev.filter((id) => id !== ingredientToDelete.id));
+              setIngredientToDelete(null);
+            } else {
+              toast.error(res?.message || 'Gagal menghapus bahan baku');
+            }
+          } finally {
+            setIsDeletingSingle(false);
+          }
+        }}
+        type="danger"
+        title="Hapus Bahan Baku?"
+        message={`Apakah Anda yakin ingin menghapus "${ingredientToDelete?.name}"? Data resep dan riwayat mutasi terkait bahan ini akan dibersihkan secara aman.`}
+        confirmText="Ya, Hapus Bahan"
+        cancelText="Batal"
+      />
+
       {/* Bulk Delete Alert Modal */}
       <AlertModal
         isOpen={isBulkDeleteModalOpen}
-        onClose={() => setIsBulkDeleteModalOpen(false)}
-        onConfirm={() => {
-          bulkDeleteIngredients(selectedIngredientIds);
-          toast.success(`${selectedIngredientIds.length} bahan baku berhasil dihapus.`);
-          setSelectedIngredientIds([]);
-          setIsBulkDeleteModalOpen(false);
+        onClose={() => !isDeletingBulk && setIsBulkDeleteModalOpen(false)}
+        isProcessing={isDeletingBulk}
+        onConfirm={async () => {
+          if (selectedIngredientIds.length === 0) return;
+          setIsDeletingBulk(true);
+          try {
+            const res = await bulkDeleteIngredients(selectedIngredientIds);
+            if (res?.success) {
+              toast.success(res.message || `${res.count || selectedIngredientIds.length} bahan baku berhasil dihapus.`);
+              setSelectedIngredientIds([]);
+              setIsBulkDeleteModalOpen(false);
+            } else {
+              toast.error(res?.message || 'Gagal menghapus bahan baku terpilih');
+            }
+          } finally {
+            setIsDeletingBulk(false);
+          }
         }}
         type="danger"
         title={`Hapus ${selectedIngredientIds.length} Bahan Baku Terpilih?`}
-        message={`Apakah Anda yakin ingin menghapus ${selectedIngredientIds.length} bahan baku yang dipilih? Riwayat mutasi tetap tersimpan namun bahan tidak akan muncul di daftar inventori atau resep.`}
+        message={`Apakah Anda yakin ingin menghapus ${selectedIngredientIds.length} bahan baku yang dipilih? Data resep dan riwayat mutasi terkait bahan-bahan ini akan dibersihkan secara aman.`}
         confirmText={`Ya, Hapus ${selectedIngredientIds.length} Bahan`}
         cancelText="Batal"
       />
@@ -1161,6 +1556,17 @@ export default function StockPage() {
           </div>
         </div>
       )}
+      {/* Excel Import Modal */}
+      <ExcelImportModal
+        isOpen={isExcelImportModalOpen}
+        onClose={() => setIsExcelImportModalOpen(false)}
+        title="Import Inventori Bahan Baku"
+        type="INGREDIENT"
+        onSuccess={() => {
+          useStockStore.getState().fetchIngredients();
+          toast.success('Bahan baku berhasil diimpor!');
+        }}
+      />
     </div>
   );
 }
