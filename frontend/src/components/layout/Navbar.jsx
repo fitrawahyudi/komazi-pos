@@ -213,13 +213,13 @@ export default function Navbar() {
             </button>
           )}
 
-          {/* Fullscreen Toggle Button */}
+          {/* Fullscreen Toggle Button (Hidden on Mobile) */}
           <button
             type="button"
             onClick={toggleFullscreen}
             title={isFullscreen ? 'Keluar dari Layar Penuh (Esc)' : 'Mode Layar Penuh / Fullscreen (F11)'}
             aria-label={isFullscreen ? 'Keluar Layar Penuh' : 'Mode Layar Penuh'}
-            className={`p-2 rounded-xl border transition-all active:scale-95 flex items-center justify-center shrink-0 shadow-sm ${isFullscreen
+            className={`hidden sm:flex p-2 rounded-xl border transition-all active:scale-95 items-center justify-center shrink-0 shadow-sm ${isFullscreen
                 ? 'bg-komazi-coral/15 border-komazi-coral/40 text-komazi-coral hover:bg-komazi-coral/25'
                 : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-white hover:border-komazi-border-bright hover:bg-komazi-surface-3'
               }`}

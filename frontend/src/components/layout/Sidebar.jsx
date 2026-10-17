@@ -201,12 +201,12 @@ export default function Sidebar() {
             icon: ClipboardCheck,
             allowed: isManagerOrOwner,
           },
-          {
-            to: '/inventory/assets',
-            label: 'Aset',
-            icon: Landmark,
-            allowed: isManagerOrOwner,
-          },
+          // {
+          //   to: '/inventory/assets',
+          //   label: 'Aset',
+          //   icon: Landmark,
+          //   allowed: isManagerOrOwner,
+          // },
         ],
       },
       {

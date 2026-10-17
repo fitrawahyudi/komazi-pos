@@ -6,6 +6,7 @@ import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscP
 import { AndroidPrinter } from '../adapters/printer/printer.android';
 import { isAndroid, isNative } from '../services/platform';
 import { api } from '../services/api';
+import { useSettingsStore } from './settingsStore';
 
 // Known Bluetooth thermal printer service UUIDs (standard & vendor custom)
 export const BT_PRINTER_SERVICES = [
@@ -432,9 +433,16 @@ export const usePrinterStore = create(
         try {
           // If direct hardware is connected, build ESC/POS payload & print
           if (isConnected) {
+            const currentSettings = useSettingsStore.getState().settings || {};
+            const mergedStoreSettings = {
+              ...currentSettings,
+              ...(receiptSettings || {}),
+              ...(options.storeSettings || {}),
+            };
+
             const rawBytes = buildOrderReceiptEscPos(order, {
               paperWidth: effectivePaperWidth,
-              storeSettings: receiptSettings || {},
+              storeSettings: mergedStoreSettings,
               ...options,
             });
 
@@ -897,7 +905,9 @@ export const usePrinterStore = create(
         if ((connectionType === 'BLUETOOTH' || connectionType === 'USB') && isConnected) {
           try {
             toast.info('Mengirim data uji coba ke printer...');
-            const bytes = buildTestReceiptEscPos(paperWidth, storeSettings);
+            const currentSettings = useSettingsStore.getState().settings || {};
+            const mergedSettings = { ...currentSettings, ...storeSettings };
+            const bytes = buildTestReceiptEscPos(paperWidth, mergedSettings);
             const ok = await sendRawData(bytes);
             if (ok) {
               set({ lastTestedAt: new Date().toISOString() });

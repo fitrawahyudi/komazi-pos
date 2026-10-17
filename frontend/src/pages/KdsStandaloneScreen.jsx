@@ -374,7 +374,7 @@ export default function KdsStandaloneScreen() {
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-[#1A1A1A] hover:bg-[#252525] text-neutral-300 hover:text-white border border-komazi-border transition-colors"
+            className="hidden sm:inline-flex p-2 rounded-xl bg-[#1A1A1A] hover:bg-[#252525] text-neutral-300 hover:text-white border border-komazi-border transition-colors"
             title="Toggle Layar Penuh (Fullscreen TV)"
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}

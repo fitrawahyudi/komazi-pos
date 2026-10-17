@@ -411,13 +411,13 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     encoder.bold(false);
   }
 
-  // Print Dynamic QRIS section if payment method is QRIS, or explicitly requested, or for unpaid bills
+  // Print Dynamic QRIS section if payment method is QRIS, or explicitly requested
   const isQrisPaymentMethod = resolvedPaymentMethod.includes('QRIS') || resolvedPaymentMethod.includes('QR');
   const isUnpaidBill = ['OPEN', 'PENDING_PAYMENT', 'HOLD', 'PENDING', 'SERVED'].includes(String(order.status || '').toUpperCase()) &&
     (!order.payments || order.payments.length === 0 || !order.paidAt);
   const isQris =
     isQrisPaymentMethod ||
-    isUnpaidBill ||
+    (isUnpaidBill && resolvedPaymentMethod.includes('QRIS')) ||
     order.showQris === true ||
     options.showQris === true;
 
@@ -428,12 +428,10 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
       .divider(paperWidth)
       .align('center')
       .bold(true)
-      .line('BAYAR DENGAN QRIS DINAMIS')
+      .line('QRIS')
       .bold(false)
-      .line(`Tagihan: ${formatRupiah(order.total || order.grandTotal || 0)}`)
+      .line(`Total Tagihan: ${formatRupiah(order.total || order.grandTotal || 0)}`)
       .qrCode(qrisDynamic, paperWidth)
-      .line(`NMID: ${storeSettings.qrisNmid || 'ID1020088920199'}`)
-      .line('Scan via BCA, Mandiri, GoPay, Dana dll.')
       .line('(Nominal otomatis terisi & terkunci)')
       .align('left');
   }

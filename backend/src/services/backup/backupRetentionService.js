@@ -26,13 +26,33 @@ export const backupRetentionService = {
     let deletedCount = 0;
 
     // 1. Ambil seluruh backup berstatus SUCCESS yang tidak diproteksi
-    const successfulRecords = await prisma.$queryRawUnsafe(
-      `SELECT * FROM \`backuprecord\` 
-       WHERE \`status\` = 'SUCCESS' 
-         AND \`deletedAt\` IS NULL 
-         AND \`isProtected\` = 0 
-       ORDER BY \`startedAt\` DESC`
-    );
+    let successfulRecords = [];
+    try {
+      if (prisma.backupRecord && typeof prisma.backupRecord.findMany === 'function') {
+        successfulRecords = await prisma.backupRecord.findMany({
+          where: {
+            status: 'SUCCESS',
+            deletedAt: null,
+            isProtected: false,
+          },
+          orderBy: { startedAt: 'desc' },
+        });
+      }
+    } catch {}
+
+    if (!successfulRecords.length) {
+      const tables = await prisma.$queryRawUnsafe('SHOW TABLES');
+      const names = tables.map((t) => Object.values(t)[0]);
+      const tableName = names.find((n) => n.toLowerCase() === 'backuprecord') || 'BackupRecord';
+
+      successfulRecords = await prisma.$queryRawUnsafe(
+        `SELECT * FROM \`${tableName}\` 
+         WHERE \`status\` = 'SUCCESS' 
+           AND \`deletedAt\` IS NULL 
+           AND \`isProtected\` = 0 
+         ORDER BY \`startedAt\` DESC`
+      );
+    }
 
     // Golden Rule 1: Jika total backup sukses <= 2, jangan hapus apa pun untuk mencegah hilangnya cadangan tunggal
     if (successfulRecords.length <= 2) {
@@ -64,10 +84,24 @@ export const backupRetentionService = {
         }
 
         // Tandai soft-delete di database untuk jejak audit
-        await prisma.$executeRawUnsafe(
-          `UPDATE \`backuprecord\` SET \`deletedAt\` = NOW() WHERE \`id\` = ?`,
-          record.id
-        );
+        try {
+          if (prisma.backupRecord && typeof prisma.backupRecord.update === 'function') {
+            await prisma.backupRecord.update({
+              where: { id: record.id },
+              data: { deletedAt: new Date() },
+            });
+          } else {
+            const tables = await prisma.$queryRawUnsafe('SHOW TABLES');
+            const names = tables.map((t) => Object.values(t)[0]);
+            const tableName = names.find((n) => n.toLowerCase() === 'backuprecord') || 'BackupRecord';
+            await prisma.$executeRawUnsafe(
+              `UPDATE \`${tableName}\` SET \`deletedAt\` = NOW() WHERE \`id\` = ?`,
+              record.id
+            );
+          }
+        } catch (delErr) {
+          logger.scheduler.error(`[BackupRetention] Gagal soft-delete backup #${record.id}: ${delErr.message}`);
+        }
 
         deletedCount++;
       }

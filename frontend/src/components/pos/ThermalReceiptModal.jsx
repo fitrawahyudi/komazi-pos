@@ -75,11 +75,13 @@ export default function ThermalReceiptModal({ order, onClose }) {
     ['OPEN', 'PENDING_PAYMENT', 'HOLD', 'PENDING', 'SERVED'].includes(String(order?.status || '').toUpperCase()) &&
     (!order?.payments || order?.payments.length === 0 || !order?.paidAt);
 
-  // Toggle QRIS on receipt: defaults to true if QRIS payment, unpaid bill, or explicitly flagged
-  const [showQrisOnReceipt, setShowQrisOnReceipt] = useState(isQrisPayment || isUnpaidBill || order?.showQris === true);
+  // Toggle QRIS on receipt: defaults to true if QRIS payment, or explicitly flagged
+  const [showQrisOnReceipt, setShowQrisOnReceipt] = useState(
+    isQrisPayment || (isUnpaidBill && isQrisPayment) || order?.showQris === true
+  );
 
   useEffect(() => {
-    setShowQrisOnReceipt(isQrisPayment || isUnpaidBill || order?.showQris === true);
+    setShowQrisOnReceipt(isQrisPayment || (isUnpaidBill && isQrisPayment) || order?.showQris === true);
   }, [isQrisPayment, isUnpaidBill, order?.showQris]);
 
   // Generate Dynamic QRIS if showQrisOnReceipt is active (both SVG and Data URL for print stability)
@@ -513,12 +515,12 @@ export default function ThermalReceiptModal({ order, onClose }) {
                     <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
                       {dividerText}
                     </div>
-                    <div className="text-center space-y-1 my-2">
-                      <div className="text-[10px] font-bold text-neutral-950 uppercase tracking-wide">
-                        SCAN QR CODE UNTUK MEMBAYAR
+                    <div className="text-center space-y-1 my-1.5">
+                      <div className="font-bold text-[11px] text-neutral-950 uppercase tracking-wide">
+                        QRIS
                       </div>
-                      <div className="text-[9px] text-neutral-600">
-                        Tagihan: {formatRupiah(order.total || order.grandTotal || 0)}
+                      <div className="text-[10px] text-neutral-800">
+                        Total Tagihan: {formatRupiah(order.total || order.grandTotal || 0)}
                       </div>
                       <div className="my-1.5 flex justify-center">
                         {receiptQrisSvg ? (
@@ -539,8 +541,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
                           </div>
                         )}
                       </div>
-                      <div className="text-[8px] text-neutral-500">Scan via BCA, Mandiri, GoPay, Dana dll.</div>
-                      <div className="text-[8px] text-neutral-400 italic">(Nominal otomatis terisi & terkunci)</div>
+                      <div className="text-[9px] text-neutral-600">(Nominal otomatis terisi & terkunci)</div>
                     </div>
                   </>
                 )}

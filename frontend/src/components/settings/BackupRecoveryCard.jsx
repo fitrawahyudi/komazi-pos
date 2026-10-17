@@ -60,6 +60,8 @@ export default function BackupRecoveryCard() {
       const res = await api.backup.getSummary();
       if (res && res.success) {
         setSummary(res.data);
+      } else if (res && !res.success && res.message) {
+        console.warn('[BackupCard] Error loading summary:', res.message);
       }
     } catch (err) {
       console.warn('[BackupCard] Error loading summary:', err);
@@ -77,13 +79,19 @@ export default function BackupRecoveryCard() {
 
         const res = await api.backup.getHistory(params);
         if (res && res.success) {
-          setHistory(res.data || []);
+          setHistory(Array.isArray(res.data) ? res.data : []);
           if (res.meta) {
             setPagination(res.meta);
           }
+        } else {
+          setHistory([]);
+          if (res?.message) {
+            toast.error(res.message);
+          }
         }
       } catch (err) {
-        toast.error('Gagal memuat riwayat backup: ' + err.message);
+        toast.error('Gagal memuat riwayat backup: ' + (err?.message || 'Terjadi kesalahan sistem'));
+        setHistory([]);
       } finally {
         setIsLoading(false);
       }
@@ -212,12 +220,6 @@ export default function BackupRecoveryCard() {
             <Database className="w-6 h-6 stroke-[2.2]" />
           </div>
           <div>
-            <h2 className="font-display font-black text-base text-komazi-text flex items-center gap-2">
-              <span>Pencadangan & Pemulihan Data Toko</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Perlindungan Aktif
-              </span>
-            </h2>
             <p className="text-xs text-komazi-muted mt-0.5">
               Salinan data penjualan, menu, dan stok tersimpan otomatis agar toko Anda selalu aman.
             </p>

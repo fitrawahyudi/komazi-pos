@@ -176,19 +176,37 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         total: Number(summary.grandTotal) || 0,
         grandTotal: Number(summary.grandTotal) || 0,
         paymentMethod: method,
-        payments: [],
-        showQris: method === 'QRIS' || settings?.qrisEnabled !== false,
+        cashReceived: method === 'CASH' ? Number(cashTendered) : null,
+        cashChange: method === 'CASH' ? Number(change) : 0,
+        payments: [
+          {
+            method,
+            amount: Number(summary.grandTotal) || 0,
+            tendered: method === 'CASH' ? Number(cashTendered) : Number(summary.grandTotal) || 0,
+            change: method === 'CASH' ? Number(change) : 0,
+            reference:
+              method === 'TRANSFER'
+                ? (typeof transferRef === 'string' && transferRef.trim()
+                  ? `${activeBank?.bankName || 'TRF'}: ${transferRef.trim()}`
+                  : `TRF-${activeBank?.bankName || 'BANK'}`)
+                : method === 'QRIS'
+                  ? (typeof qrisRef === 'string' && qrisRef.trim()) || `QRIS-${sessionInvoiceNo}`
+                  : null,
+          },
+        ],
+        showQris: method === 'QRIS',
       };
 
       const printerState = usePrinterStore.getState();
       if (printerState.isConnected) {
-        toast.info('Mencetak struk tagihan (Bill) ke printer...');
+        toast.info('Mencetak struk ke printer...');
         const res = await printerState.printReceiptForOrder(billOrder, {
           requestedBy: typeof user?.name === 'string' ? user.name : 'Kasir',
-          showQris: method === 'QRIS' || settings?.qrisEnabled !== false,
+          showQris: method === 'QRIS',
+          storeSettings: settings,
         });
         if (res.success) {
-          toast.success('Struk tagihan berhasil dicetak! Berikan ke pelanggan sebelum konfirmasi pembayaran.');
+          toast.success('Struk berhasil dicetak!');
         } else {
           toast.warning('Printer offline, membuka pratinjau struk...');
           setBillReceiptToPreview(billOrder);
@@ -197,8 +215,8 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         setBillReceiptToPreview(billOrder);
       }
     } catch (err) {
-      console.error('[PaymentModal] Gagal cetak bill:', err);
-      toast.error('Gagal mencetak struk tagihan: ' + err.message);
+      console.error('[PaymentModal] Gagal cetak struk:', err);
+      toast.error('Gagal mencetak struk: ' + err.message);
     } finally {
       setIsPrintingBill(false);
     }
@@ -666,7 +684,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                     </div>
 
                     {/* Standby Status & Quick Test */}
-                    <div className="pt-1 flex items-center justify-between text-[11px] text-komazi-muted border-t border-komazi-border/50">
+                    {/* <div className="pt-1 flex items-center justify-between text-[11px] text-komazi-muted border-t border-komazi-border/50">
                       <div className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         <span>Auto-detect Webhook standby</span>
@@ -681,7 +699,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                         <Zap className="w-3 h-3" />
                         <span>{isSimulating ? 'Memverifikasi...' : 'Uji Simulasi'}</span>
                       </button>
-                    </div>
+                    </div> */}
                   </div>
                 </>
               )}
