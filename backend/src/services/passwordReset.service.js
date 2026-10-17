@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
+import { sendTelegramMessage } from './telegramService.js';
 
 export const passwordResetService = {
   /**
@@ -313,6 +314,244 @@ export const passwordResetService = {
         success: true,
         message: 'Password berhasil diubah. Silakan login kembali dengan password baru.',
         username: updatedUser.username,
+      };
+    });
+  },
+
+  /**
+   * Owner meminta kode OTP 6-digit untuk reset password mandiri via Telegram.
+   * Disimpan dalam bentuk hash SHA-256 ber-salt (OWNER_OTP:userId:otp) dengan masa berlaku 5 menit.
+   */
+  async requestOwnerResetOtp(username) {
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      throw new Error('Username akun Owner wajib diisi');
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+
+    const owner = await prisma.user.findFirst({
+      where: {
+        username: cleanUsername,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        telegramId: true,
+        telegramUsername: true,
+      },
+    });
+
+    if (!owner) {
+      throw new Error('Akun tidak ditemukan atau berstatus nonaktif');
+    }
+
+    if (owner.role !== 'OWNER') {
+      throw new Error('Pemulihan kata sandi via Telegram hanya berlaku untuk akun Owner. Untuk staf atau kasir, silakan hubungi Owner untuk dibuatkan token reset baru.');
+    }
+
+    if (!owner.telegramId || !String(owner.telegramId).trim()) {
+      throw new Error('Akun Owner ini belum terhubung dengan akun Telegram. Silakan gunakan perintah darurat server (npm run reset-owner) atau hubungi administrator sistem.');
+    }
+
+    // 1. Generate 6-digit numeric OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const tokenHash = crypto.createHash('sha256').update(`OWNER_OTP:${owner.id}:${otp}`).digest('hex');
+
+    // 2. Masa berlaku 5 menit
+    const expiresInMinutes = 5;
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+
+    // 3. Simpan ke database dalam transaksi & cabut token lama
+    await prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: owner.id,
+          usedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+
+      await tx.passwordResetToken.create({
+        data: {
+          userId: owner.id,
+          createdById: owner.id,
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: owner.id,
+          action: 'OWNER_PASSWORD_RESET_OTP_REQUESTED',
+          detail: {
+            username: owner.username,
+            telegramId: String(owner.telegramId),
+            expiresAt: expiresAt.toISOString(),
+          },
+        },
+      });
+    });
+
+    // 4. Kirim kode OTP via Telegram
+    const formattedDate = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const telegramMessage =
+      `🔐 *KODE VERIFIKASI RESET PASSWORD OWNER*\n\n` +
+      `Halo *${owner.name}*,\n` +
+      `Permintaan atur ulang kata sandi diterima untuk akun *@${owner.username}* pada ${formattedDate}.\n\n` +
+      `Kode Verifikasi Anda:\n` +
+      `👉 \`${otp}\`\n\n` +
+      `⏱️ _Kode berlaku selama ${expiresInMinutes} menit._\n` +
+      `⚠️ *PENTING:* Jangan berikan kode ini kepada siapa pun termasuk staf kasir! Jika Anda tidak meminta kode ini, akun Anda tetap aman dan abaikan pesan ini.`;
+
+    const sendRes = await sendTelegramMessage(telegramMessage, owner.telegramId);
+
+    if (!sendRes.success) {
+      throw new Error(
+        `Gagal mengirim kode ke Telegram (${sendRes.reason || sendRes.error || 'Kendala bot'}). Pastikan Anda sudah membuka chat dan klik /start pada bot Telegram Komazi POS.`
+      );
+    }
+
+    // Mask telegram ID/username untuk konfirmasi ke UI tanpa membocorkan nomor
+    const maskedTelegram = owner.telegramUsername
+      ? `@${owner.telegramUsername}`
+      : `ID: ${String(owner.telegramId).slice(-4).padStart(String(owner.telegramId).length, '*')}`;
+
+    return {
+      success: true,
+      message: `Kode verifikasi 6-digit berhasil dikirim ke Telegram Owner (${maskedTelegram}).`,
+      expiresInMinutes,
+    };
+  },
+
+  /**
+   * Owner memverifikasi kode OTP 6-digit dan menetapkan password baru
+   */
+  async verifyAndCompleteOwnerReset(username, otp, newPassword, confirmPassword) {
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      throw new Error('Username akun Owner wajib diisi');
+    }
+
+    if (!otp || typeof otp !== 'string' || !/^\d{6}$/.test(otp.trim())) {
+      throw new Error('Kode OTP verifikasi harus berupa 6 digit angka');
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error('Password baru minimal 8 karakter');
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new Error('Konfirmasi password tidak cocok');
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+
+    const owner = await prisma.user.findFirst({
+      where: {
+        username: cleanUsername,
+        isActive: true,
+      },
+    });
+
+    if (!owner || owner.role !== 'OWNER') {
+      throw new Error('Akun Owner tidak ditemukan atau tidak valid');
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(`OWNER_OTP:${owner.id}:${cleanOtp}`).digest('hex');
+
+    return prisma.$transaction(async (tx) => {
+      const tokenRecord = await tx.passwordResetToken.findFirst({
+        where: {
+          userId: owner.id,
+          tokenHash,
+          usedAt: null,
+          revokedAt: null,
+        },
+      });
+
+      if (!tokenRecord) {
+        throw new Error('Kode verifikasi salah atau sudah tidak berlaku.');
+      }
+
+      if (new Date() > new Date(tokenRecord.expiresAt)) {
+        throw new Error('Kode verifikasi telah kedaluwarsa (masa berlaku 5 menit habis). Silakan minta kode baru.');
+      }
+
+      // Hash password baru dengan bcrypt
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      // Tandai token usedAt
+      await tx.passwordResetToken.update({
+        where: { id: tokenRecord.id },
+        data: { usedAt: new Date() },
+      });
+
+      // Cabut sisa token aktif lainnya untuk akun ini
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: owner.id,
+          id: { not: tokenRecord.id },
+          usedAt: null,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+
+      // Perbarui password dan cabut semua sesi login dengan increment tokenVersion
+      const updatedOwner = await tx.user.update({
+        where: { id: owner.id },
+        data: {
+          password: hashedPassword,
+          tokenVersion: { increment: 1 },
+        },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          telegramId: true,
+        },
+      });
+
+      // Catat audit log
+      await tx.auditLog.create({
+        data: {
+          userId: owner.id,
+          action: 'OWNER_PASSWORD_RESET_COMPLETED',
+          detail: {
+            username: owner.username,
+            resetMethod: 'TELEGRAM_OTP',
+            resetAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      // Kirim konfirmasi keamanan ke Telegram Owner
+      if (owner.telegramId) {
+        const formattedDate = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        const notifyMsg =
+          `✅ *KATA SANDI BERHASIL DIUBAH*\n\n` +
+          `Halo *${owner.name}*,\n` +
+          `Kata sandi untuk akun Owner *@${owner.username}* baru saja berhasil diperbarui pada ${formattedDate}.\n\n` +
+          `🔒 *Catatan Keamanan:* Seluruh sesi login di perangkat lain telah otomatis dicabut demi keamanan outlet Anda.`;
+
+        sendTelegramMessage(notifyMsg, owner.telegramId).catch((err) => {
+          console.warn('[PasswordResetService] Gagal kirim notifikasi reset sukses ke Telegram:', err.message);
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Password Owner berhasil diperbarui! Silakan masuk dengan kata sandi baru.',
+        username: updatedOwner.username,
       };
     });
   },

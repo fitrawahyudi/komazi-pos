@@ -169,3 +169,17 @@ export const verifyPasswordResetTokenSchema = z.object({
   token: z.string().min(1, 'Token reset wajib diisi'),
 });
 
+export const requestOwnerResetOtpSchema = z.object({
+  username: z.string().min(1, 'Username akun Owner wajib diisi'),
+});
+
+export const verifyOwnerResetOtpSchema = z.object({
+  username: z.string().min(1, 'Username akun Owner wajib diisi'),
+  otp: z.string().length(6, 'Kode OTP verifikasi harus berupa 6 digit angka').regex(/^\d{6}$/, 'Kode OTP harus berupa angka'),
+  newPassword: z.string().min(8, 'Password baru minimal 8 karakter'),
+  confirmPassword: z.string().min(8, 'Konfirmasi password wajib diisi'),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: 'Konfirmasi password baru tidak cocok',
+  path: ['confirmPassword'],
+});
+

@@ -15,6 +15,11 @@ import {
   AlertCircle,
   HelpCircle,
   ArrowRight,
+  Send,
+  Eye,
+  EyeOff,
+  MessageSquare,
+  Terminal,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -28,6 +33,106 @@ export default function LoginPage() {
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotTab, setForgotTab] = useState('owner'); // 'owner' | 'staff'
+  const [ownerStep, setOwnerStep] = useState(1); // 1: input username, 2: input OTP & password, 3: success
+  const [ownerUsername, setOwnerUsername] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [modalError, setModalError] = useState('');
+  const [modalSuccess, setModalSuccess] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  // Countdown timer effect
+  React.useEffect(() => {
+    let timer;
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  // Open Forgot Password Modal
+  const openForgotPassword = () => {
+    setShowForgotModal(true);
+    setForgotTab('owner');
+    setOwnerStep(1);
+    setOwnerUsername(username || '');
+    setOtp('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setModalError('');
+    setModalSuccess('');
+    setCountdown(0);
+  };
+
+  const handleRequestOtp = async (e) => {
+    e?.preventDefault();
+    if (!ownerUsername.trim()) {
+      setModalError('Silakan masukkan username akun Owner Anda');
+      return;
+    }
+    setModalError('');
+    setModalSuccess('');
+    setOtpLoading(true);
+    try {
+      const res = await api.auth.requestOwnerResetOtp(ownerUsername.trim());
+      if (res?.success) {
+        setModalSuccess(res.message || 'Kode verifikasi 6-digit berhasil dikirim ke Telegram.');
+        setOwnerStep(2);
+        setCountdown(60);
+      } else {
+        setModalError(res?.message || 'Gagal mengirim kode verifikasi.');
+      }
+    } catch (err) {
+      setModalError(err.message || 'Gagal mengirim kode verifikasi ke Telegram.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e?.preventDefault();
+    if (!otp || otp.trim().length !== 6) {
+      setModalError('Masukkan 6 digit kode OTP verifikasi dengan lengkap');
+      return;
+    }
+    if (!newPassword || newPassword.length < 8) {
+      setModalError('Kata sandi baru minimal 8 karakter');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setModalError('Konfirmasi kata sandi tidak cocok');
+      return;
+    }
+
+    setModalError('');
+    setVerifyLoading(true);
+    try {
+      const res = await api.auth.verifyAndCompleteOwnerReset({
+        username: ownerUsername.trim(),
+        otp: otp.trim(),
+        newPassword,
+        confirmPassword,
+      });
+      if (res?.success) {
+        setOwnerStep(3);
+        setModalSuccess(res.message || 'Kata sandi berhasil diperbarui!');
+        setUsername(ownerUsername.trim());
+        setPassword('');
+      } else {
+        setModalError(res?.message || 'Gagal mengatur ulang kata sandi.');
+      }
+    } catch (err) {
+      setModalError(err.message || 'Gagal mengatur ulang kata sandi. Pastikan kode OTP benar.');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -49,11 +154,6 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  // Open Forgot Password Info
-  const openForgotPassword = () => {
-    setShowForgotModal(true);
   };
 
   return (
@@ -227,19 +327,21 @@ export default function LoginPage() {
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
           <div className="w-full max-w-md bg-komazi-surface border border-komazi-border rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-7 space-y-5">
+            {/* Modal Header */}
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral shrink-0">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-komazi-text">Pemulihan Akun Staf</h3>
+                  <h3 className="font-bold text-base text-komazi-text">Pemulihan Kata Sandi</h3>
                   <p className="text-[11px] text-komazi-muted">
-                    Prosedur Resmi Pengaturan Ulang Password
+                    Pilih tipe akun untuk memulihkan akses login
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowForgotModal(false)}
                 className="p-1.5 rounded-xl text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 transition-colors cursor-pointer"
               >
@@ -247,47 +349,295 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
-              <div className="flex items-center gap-2 font-bold text-amber-400">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Otorisasi Langsung oleh Owner Diperlukan</span>
-              </div>
-              <p className="text-[11px] text-neutral-300 leading-relaxed">
-                Demi keamanan data finansial dan operasional outlet, sistem POS Komazi tidak mengizinkan reset password otomatis tanpa verifikasi manual oleh Owner.
-              </p>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-komazi-text">
-              <p className="font-semibold text-neutral-300 text-[11.5px]">Langkah Pemulihan:</p>
-              <div className="space-y-2 text-[11px] text-komazi-muted">
-                <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
-                  <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">1</span>
-                  <span>Hubungi Owner outlet Anda secara langsung untuk memverifikasi identitas Anda.</span>
-                </div>
-                <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
-                  <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">2</span>
-                  <span>Owner akan membuka <strong>Manajemen Akun</strong> dan menerbitkan kode atau tautan reset sekali pakai (berlaku 15 menit).</span>
-                </div>
-                <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
-                  <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">3</span>
-                  <span>Buka tautan atau masukkan kode tersebut di halaman reset password untuk membuat password baru.</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2">
+            {/* Tab Selection */}
+            <div className="grid grid-cols-2 p-1 rounded-2xl bg-komazi-surface-2 border border-komazi-border text-xs font-bold">
               <button
                 type="button"
                 onClick={() => {
-                  setShowForgotModal(false);
-                  navigate('/reset-password');
+                  setForgotTab('owner');
+                  setModalError('');
                 }}
-                className="w-full py-3 rounded-2xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  forgotTab === 'owner'
+                    ? 'bg-komazi-coral text-white shadow-md'
+                    : 'text-komazi-muted hover:text-komazi-text'
+                }`}
               >
-                <KeyRound className="w-4 h-4" />
-                <span>Sudah Punya Kode / Tautan? Buka Halaman Reset</span>
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Akun Owner</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotTab('staff');
+                  setModalError('');
+                }}
+                className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  forgotTab === 'staff'
+                    ? 'bg-komazi-coral text-white shadow-md'
+                    : 'text-komazi-muted hover:text-komazi-text'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Staf & Kasir</span>
               </button>
             </div>
+
+            {/* TAB 1: OWNER VIA TELEGRAM */}
+            {forgotTab === 'owner' && (
+              <div className="space-y-4">
+                {modalError && (
+                  <div className="p-3 rounded-xl bg-danger/15 border border-danger/30 text-danger text-xs font-semibold flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="leading-tight">{modalError}</span>
+                  </div>
+                )}
+
+                {/* Step 1: Input Username & Request OTP */}
+                {ownerStep === 1 && (
+                  <form onSubmit={handleRequestOtp} className="space-y-4">
+                    <div className="p-3.5 rounded-2xl bg-komazi-surface-2/80 border border-komazi-border text-xs space-y-1.5">
+                      <div className="flex items-center gap-2 text-komazi-coral font-bold">
+                        <MessageSquare className="w-4 h-4 shrink-0" />
+                        <span>Verifikasi Instan via Telegram Bot</span>
+                      </div>
+                      <p className="text-[11px] text-komazi-muted leading-relaxed">
+                        Masukkan username Owner Anda. Bot Telegram Komazi POS akan mengirimkan 6 digit kode OTP langsung ke chat Telegram pribadi Anda.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1.5">
+                        Username Akun Owner:
+                      </label>
+                      <div className="relative">
+                        <User className="w-4 h-4 text-komazi-muted absolute left-3.5 top-3" />
+                        <input
+                          type="text"
+                          required
+                          value={ownerUsername}
+                          onChange={(e) => setOwnerUsername(e.target.value)}
+                          className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none transition-colors"
+                          placeholder="misal: owner"
+                        />
+                      </div>
+                    </div>
+
+                    <LoadingButton
+                      type="submit"
+                      isLoading={otpLoading}
+                      loadingText="Mengirim Kode ke Telegram..."
+                      variant="primary"
+                      size="md"
+                      icon={Send}
+                      className="w-full py-3 rounded-2xl font-bold text-xs shadow-lg shadow-komazi-coral/25 cursor-pointer"
+                    >
+                      Kirim Kode OTP ke Telegram
+                    </LoadingButton>
+
+                    {/* Server CLI Fallback Hint */}
+                    {/* <div className="pt-2 border-t border-komazi-border/50 text-[11px] text-komazi-muted leading-relaxed">
+                      <div className="flex items-start gap-1.5 text-komazi-text">
+                        <Terminal className="w-3.5 h-3.5 shrink-0 mt-0.5 text-komazi-teal-light" />
+                        <span>
+                          <strong>Jalan Keluar Darurat:</strong> Jika Telegram belum terhubung, pengelola server dapat menjalankan perintah terminal:
+                        </span>
+                      </div>
+                      <div className="mt-1 font-mono text-[10.5px] px-2.5 py-1 rounded bg-black/50 text-komazi-teal-light border border-komazi-border">
+                        npm run reset-owner
+                      </div>
+                    </div> */}
+                  </form>
+                )}
+
+                {/* Step 2: Input OTP & Set New Password */}
+                {ownerStep === 2 && (
+                  <form onSubmit={handleVerifyOtp} className="space-y-3.5">
+                    {modalSuccess && (
+                      <div className="p-3 rounded-xl bg-success/15 border border-success/30 text-success text-xs font-semibold flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span className="leading-tight">{modalSuccess}</span>
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted">
+                          Kode OTP Telegram (6 Digit):
+                        </label>
+                        <span className="text-[10px] text-komazi-coral font-semibold">Berlaku 5 menit</span>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        autoFocus
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                        className="w-full py-2.5 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-center font-mono text-lg font-bold tracking-widest text-komazi-text focus:border-komazi-coral focus:outline-none transition-colors"
+                        placeholder="••••••"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1">
+                        Kata Sandi Baru (Min. 8 Karakter):
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-komazi-muted absolute left-3.5 top-3" />
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none transition-colors"
+                          placeholder="Minimal 8 karakter"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-3 text-komazi-muted hover:text-komazi-text cursor-pointer"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-komazi-muted mb-1">
+                        Konfirmasi Kata Sandi Baru:
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-komazi-muted absolute left-3.5 top-3" />
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none transition-colors"
+                          placeholder="Ulangi kata sandi baru"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-3 text-komazi-muted hover:text-komazi-text cursor-pointer"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <LoadingButton
+                      type="submit"
+                      isLoading={verifyLoading}
+                      loadingText="Memperbarui Password..."
+                      variant="primary"
+                      size="md"
+                      icon={ShieldCheck}
+                      className="w-full py-3 rounded-2xl font-bold text-xs shadow-lg shadow-komazi-coral/25 cursor-pointer mt-1"
+                    >
+                      Simpan Kata Sandi Baru
+                    </LoadingButton>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOwnerStep(1);
+                          setOtp('');
+                          setModalError('');
+                        }}
+                        className="text-komazi-muted hover:text-komazi-text transition-colors cursor-pointer"
+                      >
+                        ← Ganti Username
+                      </button>
+
+                      {countdown > 0 ? (
+                        <span className="text-komazi-muted">Kirim ulang ({countdown}s)</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleRequestOtp}
+                          disabled={otpLoading}
+                          className="text-komazi-coral hover:text-komazi-coral-light font-semibold transition-colors cursor-pointer"
+                        >
+                          Kirim Ulang Kode OTP
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {/* Step 3: Success State */}
+                {ownerStep === 3 && (
+                  <div className="text-center py-4 space-y-4">
+                    <div className="w-14 h-14 mx-auto rounded-full bg-success/20 text-success flex items-center justify-center">
+                      <CheckCircle2 className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-base text-komazi-text">Kata Sandi Berhasil Diperbarui!</h4>
+                      <p className="text-xs text-komazi-muted max-w-xs mx-auto leading-relaxed">
+                        Akun Owner <strong>@{ownerUsername}</strong> telah memiliki kata sandi baru. Seluruh sesi login di perangkat lain telah otomatis dicabut demi keamanan.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="w-full py-3 rounded-2xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                    >
+                      Kembali ke Halaman Masuk
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: STAFF & CASHIER */}
+            {forgotTab === 'staff' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-400">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>Otorisasi Langsung oleh Owner Diperlukan</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    Demi keamanan data finansial dan operasional outlet, akun staf kasir/kitchen tidak dapat mereset mandiri tanpa izin Owner.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 text-xs text-komazi-text">
+                  <p className="font-semibold text-neutral-300 text-[11.5px]">Langkah Pemulihan Staf:</p>
+                  <div className="space-y-2 text-[11px] text-komazi-muted">
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
+                      <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">1</span>
+                      <span>Hubungi Owner outlet Anda secara langsung untuk mengonfirmasi identitas Anda.</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
+                      <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">2</span>
+                      <span>Owner akan membuka <strong>Manajemen Akun</strong> dan menerbitkan kode atau tautan reset sekali pakai (berlaku 15 menit).</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/50">
+                      <span className="w-5 h-5 rounded-full bg-komazi-coral/20 text-komazi-coral font-bold flex items-center justify-center text-[10px] shrink-0">3</span>
+                      <span>Buka halaman reset password dan masukkan kode token tersebut untuk membuat kata sandi baru.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotModal(false);
+                      navigate('/reset-password');
+                    }}
+                    className="w-full py-3 rounded-2xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    <span>Sudah Punya Token Reset? Buka Halaman Reset</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

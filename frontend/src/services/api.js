@@ -261,6 +261,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ token, newPassword, confirmPassword }),
       }),
+    requestOwnerResetOtp: (username) =>
+      request('/auth/password-reset/owner-request', {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      }),
+    verifyAndCompleteOwnerReset: ({ username, otp, newPassword, confirmPassword }) =>
+      request('/auth/password-reset/owner-verify', {
+        method: 'POST',
+        body: JSON.stringify({ username, otp, newPassword, confirmPassword }),
+      }),
     getProfile: () => request('/auth/me'),
     updateProfile: (data) => request('/auth/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   },

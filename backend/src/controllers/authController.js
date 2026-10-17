@@ -434,3 +434,35 @@ export async function completePasswordReset(req, res) {
     return errorResponse(res, err.message, 400);
   }
 }
+
+/**
+ * Endpoint publik: Owner meminta kode OTP 6-digit dikirim ke Telegram
+ */
+export async function requestOwnerResetOtp(req, res) {
+  try {
+    const { username } = req.body;
+    const result = await passwordResetService.requestOwnerResetOtp(username);
+    return successResponse(res, result, result.message);
+  } catch (err) {
+    return errorResponse(res, err.message, 400);
+  }
+}
+
+/**
+ * Endpoint publik: Owner memverifikasi OTP Telegram dan mengatur password baru
+ */
+export async function verifyAndCompleteOwnerReset(req, res) {
+  try {
+    const { username, otp, newPassword, confirmPassword } = req.body;
+    const result = await passwordResetService.verifyAndCompleteOwnerReset(
+      username,
+      otp,
+      newPassword,
+      confirmPassword
+    );
+    return successResponse(res, result, result.message);
+  } catch (err) {
+    return errorResponse(res, err.message, 400);
+  }
+}
+

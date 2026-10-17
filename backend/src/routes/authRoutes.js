@@ -4,6 +4,8 @@ import {
   register,
   verifyResetToken,
   completePasswordReset,
+  requestOwnerResetOtp,
+  verifyAndCompleteOwnerReset,
   getProfile,
   updateProfile,
   refreshToken,
@@ -15,6 +17,8 @@ import {
   loginSchema,
   completePasswordResetSchema,
   verifyPasswordResetTokenSchema,
+  requestOwnerResetOtpSchema,
+  verifyOwnerResetOtpSchema,
 } from '../validators/schemas.js';
 import rateLimit from 'express-rate-limit';
 
@@ -39,6 +43,10 @@ router.post('/register', authenticate, requireRole(['OWNER', 'MANAGER']), regist
 // Endpoint Lupa Password Aman Berbasis Token Sekali Pakai & Verifikasi Manual Owner
 router.post('/password-reset/verify-token', passwordResetLimiter, validate(verifyPasswordResetTokenSchema), verifyResetToken);
 router.post('/password-reset/complete', passwordResetLimiter, validate(completePasswordResetSchema), completePasswordReset);
+
+// Endpoint Lupa Password Mandiri Khusus Owner Berbasis OTP Telegram
+router.post('/password-reset/owner-request', passwordResetLimiter, validate(requestOwnerResetOtpSchema), requestOwnerResetOtp);
+router.post('/password-reset/owner-verify', passwordResetLimiter, validate(verifyOwnerResetOtpSchema), verifyAndCompleteOwnerReset);
 
 router.post('/refresh', refreshToken);
 router.get('/me', authenticate, getProfile);
