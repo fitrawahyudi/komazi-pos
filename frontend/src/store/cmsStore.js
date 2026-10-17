@@ -1,8 +1,11 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { cmsApi } from '../services/cmsApi';
 
-export const useCmsStore = create((set, get) => ({
-  // Data State
+export const useCmsStore = create(
+  persist(
+    (set, get) => ({
+      // Data State
   landingData: null,
   config: null,
   spotlights: [],
@@ -414,4 +417,12 @@ export const useCmsStore = create((set, get) => ({
       return { success: false, message: err.message };
     }
   }
-}));
+  }),
+  {
+    name: 'komazi-cms-store',
+    partialize: (state) => ({
+      landingData: state.landingData,
+      config: state.config,
+    }),
+  }
+));

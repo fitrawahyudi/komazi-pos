@@ -16,17 +16,20 @@ export default defineConfig({
       stream: path.resolve(__dirname, "src/utils/streamShim.js"),
     },
   },
-  esbuild: {
-      drop: ['console', 'debugger'],
-  },
   plugins: [
     react(),
     basicSsl(), // HTTPS self-signed cert — diperlukan oleh Web Bluetooth API
   ],
   build: {
     chunkSizeWarningLimit: 600,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
+        minify: {
+          compress: {
+            dropConsole: true,
+            dropDebugger: true,
+          },
+        },
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {

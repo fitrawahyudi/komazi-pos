@@ -78,7 +78,7 @@ export default function LandingPage() {
   const isLandingActive = landingData?.config?.isLandingPageActive ?? true;
 
   // ── 2. Jika Landing Page dimatikan (OFF) oleh Owner dan BUKAN pratinjau khusus: Alihkan ke Login / POS
-  if (!loading && landingData && !isLandingActive && !isPreview) {
+  if (landingData?.config && !isLandingActive && !isPreview) {
     if (!isAuthenticated) {
       return <Navigate to="/login" replace />;
     }
@@ -86,6 +86,11 @@ export default function LandingPage() {
       return <Navigate to="/kds-screen" replace />;
     }
     return <Navigate to="/pos" replace />;
+  }
+
+  // Jika data landing page belum siap dan bukan mode pratinjau, tahan render agar tidak terjadi flash
+  if (!landingData && !isPreview) {
+    return null;
   }
 
   const config = landingData?.config || {};

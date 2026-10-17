@@ -16,6 +16,7 @@ import { NotificationService } from './services/notification.service';
 import { useNotificationStore } from './store/notificationStore';
 import { useToastStore } from './store/toastStore';
 import { usePrinterStore } from './store/printerStore';
+import { useCmsStore } from './store/cmsStore';
 import { getSocket } from './services/socket';
 import { isAndroid, isNative, isInstalledApp } from './services/platform';
 
@@ -97,10 +98,26 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-// Root Route Resolver: Jika berjalan sebagai aplikasi terinstal (APK / Standalone PWA),
-// perangkat dikunci khusus POS sehingga langsung diarahkan ke POS kasir atau login.
+// Root Route Resolver: Menentukan tampilan root / secara instan tanpa flash
 function RootRoute() {
   const { user, isAuthenticated } = useAuthStore();
+  const landingData = useCmsStore((state) => state.landingData);
+  const fetchPublicLanding = useCmsStore((state) => state.fetchPublicLanding);
+  const isPreview = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === 'true';
+
+  const [hasResolved, setHasResolved] = useState(() => Boolean(landingData?.config));
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchPublicLanding().finally(() => {
+      if (isMounted) setHasResolved(true);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchPublicLanding]);
+
+  // 1. Jika berjalan sebagai aplikasi terinstal (APK / Standalone PWA), kunci langsung ke POS / Login
   if (isInstalledApp) {
     if (!isAuthenticated) {
       return <Navigate to="/login" replace />;
@@ -111,6 +128,26 @@ function RootRoute() {
     return <Navigate to="/pos" replace />;
   }
 
+  // 2. Jika konfigurasi landing page sudah ada dan NONAKTIF (bukan mode preview):
+  // Langsung arahkan ke POS / Login secara instan tanpa memuat komponen LandingPage
+  const isLandingActive = landingData?.config?.isLandingPageActive ?? true;
+  if (landingData?.config && !isLandingActive && !isPreview) {
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+    if (user?.role === 'KITCHEN' || user?.role === 'BARISTA') {
+      return <Navigate to="/kds-screen" replace />;
+    }
+    return <Navigate to="/pos" replace />;
+  }
+
+  // 3. Jika data belum pernah diambil (cache awal kosong) dan bukan mode pratinjau:
+  // Tampilkan skeleton netral sementara, JANGAN render LandingPage sebelum status aktif/nonaktif terkonfirmasi
+  if (!hasResolved && !landingData?.config && !isPreview) {
+    return <PageFallbackSkeleton />;
+  }
+
+  // 4. Jika landing page aktif atau sedang dibuka dengan parameter ?preview=true
   return (
     <Suspense fallback={<PageFallbackSkeleton />}>
       <LandingPage />
