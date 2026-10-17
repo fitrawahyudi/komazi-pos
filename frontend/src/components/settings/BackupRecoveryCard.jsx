@@ -101,18 +101,18 @@ export default function BackupRecoveryCard() {
     if (isBackingUp) return;
     try {
       setIsBackingUp(true);
-      toast.info('Memulai pencadangan database MySQL...');
+      toast.info('Membuat cadangan data baru...');
       const res = await api.backup.triggerManual({
         retentionCategory: 'MANUAL',
         isProtected: false,
       });
 
       if (res && res.success) {
-        toast.success('Pencadangan database berhasil dibuat & terverifikasi!');
+        toast.success('Cadangan data berhasil dibuat dan tersimpan aman!');
         loadSummary();
         loadHistory(1);
       } else {
-        toast.error(res?.message || 'Pencadangan gagal dieksekusi.');
+        toast.error(res?.message || 'Gagal membuat cadangan data.');
       }
     } catch (err) {
       toast.error('Gagal mencadangkan database: ' + err.message);
@@ -124,14 +124,14 @@ export default function BackupRecoveryCard() {
   // Handle Verify Integrity
   const handleVerify = async (record) => {
     try {
-      toast.info(`Memverifikasi integritas #${record.id}...`);
+      toast.info(`Memeriksa keamanan file cadangan #${record.id}...`);
       const res = await api.backup.verifyIntegrity(record.id);
       if (res && res.success) {
-        toast.success(`Integritas valid: Checksum SHA-256 cocok!`);
+        toast.success('Pemeriksaan berhasil: File cadangan aman dan utuh!');
         loadHistory(pagination.page);
         loadSummary();
       } else {
-        toast.error(res?.message || 'Verifikasi integritas gagal.');
+        toast.error(res?.message || 'Pemeriksaan file gagal.');
       }
     } catch (err) {
       toast.error('Gagal verifikasi: ' + err.message);
@@ -142,15 +142,15 @@ export default function BackupRecoveryCard() {
   const handleTestRestore = async (record) => {
     try {
       setIsTestingRestore(true);
-      toast.info('Menjalankan uji simulasi parsing SQL...');
+      toast.info('Sedang menguji file cadangan...');
       const res = await api.backup.testRestore(record.id);
       if (res && res.success) {
         setTestRestoreModalData(res.data);
       } else {
-        toast.error(res?.message || 'Uji restore gagal.');
+        toast.error(res?.message || 'Uji coba pemulihan gagal.');
       }
     } catch (err) {
-      toast.error('Uji restore gagal: ' + err.message);
+      toast.error('Uji coba pemulihan gagal: ' + err.message);
     } finally {
       setIsTestingRestore(false);
     }
@@ -160,26 +160,26 @@ export default function BackupRecoveryCard() {
   const handleExecuteRestoreSubmit = async (e) => {
     e.preventDefault();
     if (confirmationPhrase !== 'RESTORE-DATABASE') {
-      toast.error("Frasa konfirmasi salah. Harap ketik 'RESTORE-DATABASE'.");
+      toast.error("Kata konfirmasi belum sesuai. Harap ketik 'RESTORE-DATABASE'.");
       return;
     }
 
     try {
       setIsRestoring(true);
-      toast.info('Membuat safety backup darurat & memulihkan database...');
+      toast.info('Menyimpan cadangan pengaman & memulihkan data...');
       const res = await api.backup.executeRestore(restoreTargetRecord.id, confirmationPhrase);
 
       if (res && res.success) {
-        toast.success('Database berhasil dipulihkan!');
+        toast.success('Data toko berhasil dipulihkan!');
         setRestoreTargetRecord(null);
         setConfirmationPhrase('');
         loadSummary();
         loadHistory(1);
       } else {
-        toast.error(res?.message || 'Pemulihan database gagal.');
+        toast.error(res?.message || 'Pemulihan data belum berhasil.');
       }
     } catch (err) {
-      toast.error('Pemulihan gagal: ' + err.message);
+      toast.error('Pemulihan belum berhasil: ' + err.message);
     } finally {
       setIsRestoring(false);
     }
@@ -191,7 +191,7 @@ export default function BackupRecoveryCard() {
     navigator.clipboard.writeText(hash);
     setCopiedChecksum(hash);
     setTimeout(() => setCopiedChecksum(null), 2000);
-    toast.success('Checksum SHA-256 disalin ke clipboard');
+    toast.success('Kode keamanan berhasil disalin');
   };
 
   // Format File Size
@@ -213,13 +213,13 @@ export default function BackupRecoveryCard() {
           </div>
           <div>
             <h2 className="font-display font-black text-base text-komazi-text flex items-center gap-2">
-              <span>Database Backup & Disaster Recovery</span>
+              <span>Pencadangan & Pemulihan Data Toko</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Layer B & C Aktif
+                Perlindungan Aktif
               </span>
             </h2>
             <p className="text-xs text-komazi-muted mt-0.5">
-              Pencadangan logis MySQL, enkripsi AES-256-GCM, verifikasi SHA-256 & mitigasi bencana.
+              Salinan data penjualan, menu, dan stok tersimpan otomatis agar toko Anda selalu aman.
             </p>
           </div>
         </div>
@@ -251,7 +251,7 @@ export default function BackupRecoveryCard() {
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                <span>Backup Sekarang</span>
+                <span>Cadangkan Sekarang</span>
               </>
             )}
           </button>
@@ -305,25 +305,25 @@ export default function BackupRecoveryCard() {
         {/* Card 3: Keamanan & Enkripsi */}
         <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border space-y-2">
           <div className="flex items-center justify-between text-komazi-muted text-xs font-semibold">
-            <span>Standar Keamanan</span>
+            <span>Keamanan Data</span>
             <Lock className="w-4 h-4 text-amber-400" />
           </div>
           <div>
-            <p className="text-sm font-bold text-komazi-text">AES-256-GCM + SHA256</p>
+            <p className="text-sm font-bold text-komazi-text">Terkunci & Terlindungi</p>
             <p className="text-[11px] text-komazi-muted mt-0.5">
-              IV 96-bit • Tag 128-bit • Gzip Max
+              Berkas cadangan terproteksi dan tidak bisa diubah sembarangan
             </p>
           </div>
           <div className="pt-1 flex items-center gap-1.5 text-[10px] text-amber-400 font-medium">
             <Lock className="w-3.5 h-3.5" />
-            <span>Kunci Terisolasi dari DB</span>
+            <span>Sandi Keamanan Aktif</span>
           </div>
         </div>
 
         {/* Card 4: Kebijakan Retensi */}
         <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border space-y-2">
           <div className="flex items-center justify-between text-komazi-muted text-xs font-semibold">
-            <span>Kebijakan Retensi</span>
+            <span>Masa Simpan Data</span>
             <Archive className="w-4 h-4 text-sky-400" />
           </div>
           <div>
@@ -331,12 +331,12 @@ export default function BackupRecoveryCard() {
               {summary ? `${summary.totalCount} Cadangan Tersimpan` : 'Memuat...'}
             </p>
             <p className="text-[11px] text-komazi-muted mt-0.5">
-              Harian 14 hr • Mingguan 8 mgg • Bulanan 6 bln
+              Tersedia arsip harian, mingguan, dan bulanan
             </p>
           </div>
           <div className="pt-1 flex items-center gap-1.5 text-[10px] text-sky-400 font-medium">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Proteksi Cadangan Terakhir</span>
+            <span>Cadangan Terakhir Dilindungi</span>
           </div>
         </div>
       </div>
@@ -403,7 +403,7 @@ export default function BackupRecoveryCard() {
                   <th className="pb-3">Status</th>
                   <th className="pb-3">Ukuran & Tabel</th>
                   <th className="pb-3">Durasi</th>
-                  <th className="pb-3">Checksum SHA-256</th>
+                  <th className="pb-3">Kode Keamanan File</th>
                   <th className="pb-3">Pemicu</th>
                   <th className="pb-3 text-right pr-1">Aksi</th>
                 </tr>
@@ -468,7 +468,7 @@ export default function BackupRecoveryCard() {
                             type="button"
                             onClick={() => handleCopyChecksum(record.checksumSha256)}
                             className="flex items-center gap-1 font-mono text-[11px] text-komazi-muted hover:text-komazi-coral transition-colors"
-                            title="Klik untuk menyalin SHA-256"
+                            title="Klik untuk menyalin kode keamanan"
                           >
                             <span>{record.checksumSha256.slice(0, 10)}...</span>
                             {copiedChecksum === record.checksumSha256 ? (
@@ -493,7 +493,7 @@ export default function BackupRecoveryCard() {
                             type="button"
                             onClick={() => setDetailModalRecord(record)}
                             className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted hover:text-white transition-colors"
-                            title="Lihat Detail & Integritas"
+                            title="Lihat Rincian & Status File"
                           >
                             <FileText className="w-3.5 h-3.5" />
                           </button>
@@ -619,15 +619,15 @@ export default function BackupRecoveryCard() {
                 <div>
                   <span className="text-komazi-muted text-[11px]">Status Verifikasi:</span>
                   <p className="font-bold text-emerald-400">
-                    {detailModalRecord.isVerified ? 'Terverifikasi SHA-256' : 'Belum Terverifikasi'}
+                    {detailModalRecord.isVerified ? 'File Aman & Terverifikasi' : 'Belum Diverifikasi'}
                   </p>
                 </div>
               </div>
 
-              {/* Full SHA-256 Hash Box */}
+              {/* Full Hash Box */}
               <div>
                 <label className="block text-[11px] font-semibold text-komazi-muted mb-1">
-                  Checksum SHA-256 (Integritas Data):
+                  Kode Keamanan File (Verifikasi):
                 </label>
                 <div className="p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between gap-2">
                   <span className="font-mono text-[10px] text-komazi-text break-all">
@@ -760,10 +760,10 @@ export default function BackupRecoveryCard() {
 
             <div className="text-center space-y-1">
               <h3 className="font-display font-black text-base text-komazi-text">
-                Konfirmasi Pemulihan Database
+                Konfirmasi Pemulihan Data Toko
               </h3>
               <p className="text-xs text-komazi-muted leading-relaxed">
-                Anda akan memulihkan database dari snapshot tanggal{' '}
+                Anda akan memulihkan data dari salinan tanggal{' '}
                 <strong className="text-komazi-text">
                   {formatDateTime(restoreTargetRecord.startedAt)}
                 </strong>
@@ -775,22 +775,21 @@ export default function BackupRecoveryCard() {
             <div className="p-3.5 rounded-xl bg-danger/10 border border-danger/30 text-danger text-[11px] space-y-1.5 leading-relaxed">
               <div className="flex items-center gap-1.5 font-bold">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>PERHATIAN KRUSIAL:</span>
+                <span>PENTING DIKETAHUI:</span>
               </div>
               <ul className="list-disc list-inside space-y-1 text-danger/90">
-                <li>Data transaksi yang dibuat setelah waktu backup ini akan ditimpa.</li>
+                <li>Data transaksi baru setelah tanggal cadangan ini akan disesuaikan.</li>
                 <li>
-                  Sistem akan membuat <strong>Safety Backup Otomatis</strong> dari kondisi saat ini
-                  sebelum eksekusi.
+                  Sistem akan otomatis membuat <strong>cadangan pengaman</strong> dari data saat ini sebelum memulai.
                 </li>
-                <li>Operasi ini tidak boleh dihentikan di tengah jalan.</li>
+                <li>Jangan menutup halaman sampai proses selesai.</li>
               </ul>
             </div>
 
             <form onSubmit={handleExecuteRestoreSubmit} className="space-y-3 pt-1">
               <div>
                 <label className="block text-[11px] font-semibold text-komazi-muted mb-1">
-                  Ketik persis frasa <span className="text-danger font-mono font-bold">RESTORE-DATABASE</span> untuk konfirmasi:
+                  Ketik kata <span className="text-danger font-mono font-bold">RESTORE-DATABASE</span> untuk konfirmasi:
                 </label>
                 <input
                   type="text"

@@ -109,15 +109,18 @@ export const useServerStatusStore = create((set, get) => ({
 
         socket.on('disconnect', () => {
           set({
-            status: 'CONNECTING',
             isSocketConnected: false,
           });
+          if (!get().isServerReachable) {
+            set({ status: 'CONNECTING' });
+          }
           get().checkHealth();
         });
 
         socket.on('connect_error', (err) => {
+          const isReachable = get().isServerReachable;
           set({
-            status: 'DISCONNECTED',
+            status: isReachable ? 'CONNECTED' : 'DISCONNECTED',
             isSocketConnected: false,
             errorMessage: err?.message || 'Gagal koneksi Socket.IO',
           });
@@ -125,7 +128,9 @@ export const useServerStatusStore = create((set, get) => ({
         });
 
         socket.on('reconnect_attempt', () => {
-          set({ status: 'CONNECTING' });
+          if (!get().isServerReachable) {
+            set({ status: 'CONNECTING' });
+          }
         });
 
         socket.on('reconnect', () => {

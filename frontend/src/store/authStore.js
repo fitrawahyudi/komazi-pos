@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../services/api';
 import { NotificationService } from '../services/notification.service';
+import { syncSocketAuthToken } from '../services/socket';
 
 export const useAuthStore = create(
   persist(
@@ -19,6 +20,7 @@ export const useAuthStore = create(
           localStorage.removeItem('komazi-auth-token');
           localStorage.removeItem('komazi-refresh-token');
           set({ user: null, token: null, isAuthenticated: false, users: [] });
+          syncSocketAuthToken();
         }
       },
 
@@ -35,7 +37,8 @@ export const useAuthStore = create(
               token: res.data.token,
               isAuthenticated: true,
             });
-            // Sinkronkan token perangkat FCM dengan akun user yang baru login
+            // Sinkronkan token Socket.IO dan FCM dengan akun user yang baru login
+            syncSocketAuthToken();
             NotificationService.syncPushTokenWithBackend().catch(() => {});
             return { success: true, user: res.data.user };
           }
@@ -275,6 +278,7 @@ export const useAuthStore = create(
           isAuthenticated: false,
           users: [],
         });
+        syncSocketAuthToken();
       },
     }),
     {

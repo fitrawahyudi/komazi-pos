@@ -144,7 +144,11 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 app.use('/api/v1', apiRoutes);
 app.use('/api', apiRoutes);
 
-// Root route
+// Root & Health check routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'Komazi POS Backend API', timestamp: new Date().toISOString() });
+});
+
 app.get('/', (req, res) => {
   res.json({
     service: 'Komazi POS API',

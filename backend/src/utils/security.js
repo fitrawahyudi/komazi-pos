@@ -11,23 +11,25 @@ export function isAllowedOrigin(origin) {
   // Izinkan request tanpa origin (aplikasi native mobile Capacitor Android/iOS, curl, Postman)
   if (!origin) return true;
 
+  const cleanOrigin = origin.replace(/\/+$/, '');
+
   const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',')
-    .map((o) => o.trim())
+    .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
-  if (allowedOrigins.includes(origin)) return true;
+  if (allowedOrigins.includes(cleanOrigin)) return true;
 
   // Izinkan koneksi lokal / development LAN
   if (
     process.env.NODE_ENV !== 'production' ||
-    origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$/)
+    cleanOrigin.match(/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$/)
   ) {
     return true;
   }
 
-  // Khusus Vercel preview: Hanya izinkan subdomain spesifik komazi-pos
-  if (origin.match(/^https:\/\/komazi-pos(-[a-z0-9_-]+)?\.vercel\.app$/i)) {
+  // Khusus Vercel & Railway deployment: izinkan subdomain komazi-pos atau pos-komazi
+  if (cleanOrigin.match(/^https:\/\/(komazi-pos|pos-komazi)(-[a-z0-9_-]+)?\.(vercel\.app|up\.railway\.app)$/i)) {
     return true;
   }
 

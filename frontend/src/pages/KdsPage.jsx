@@ -647,7 +647,7 @@ export default function KdsPage() {
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                   : 'bg-red-500/10 text-red-400 border-red-500/30 animate-pulse'
               }`}
-              title={isConnected ? 'Socket.IO Realtime Terhubung' : 'Terputus dari server Socket.IO'}
+              title={isConnected ? 'Koneksi Langsung Aktif (Pesanan otomatis masuk)' : 'Koneksi terputus, sedang mencoba menyambungkan kembali'}
             >
               {isConnected ? (
                 <>
@@ -657,7 +657,7 @@ export default function KdsPage() {
               ) : (
                 <>
                   <WifiOff className="w-3 h-3 text-red-400" />
-                  <span>Reconnecting</span>
+                  <span>Menghubungkan...</span>
                 </>
               )}
             </div>

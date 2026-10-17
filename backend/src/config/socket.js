@@ -58,14 +58,18 @@ export function initSocket(httpServer) {
         return next();
       }
 
-      return next(new Error('Autentikasi WebSocket diperlukan (Token atau API Key tidak valid)'));
+      // 4. Di mode production, jika token tidak disertakan atau belum login,
+      // izinkan sebagai guest agar koneksi WebSocket dan indikator status tetap hidup,
+      // tetapi kunci akses ke room data pesanan privat (orders & station).
+      socket.isGuest = true;
+      return next();
     } catch (err) {
       return next(new Error('Gagal memproses autentikasi WebSocket'));
     }
   });
 
   io.on('connection', (socket) => {
-    console.log(`🔌 [Socket.IO] Client connected: ${socket.id}`);
+    console.log(`🔌 [Socket.IO] Client connected: ${socket.id} (${socket.user ? `User: ${socket.user.username || socket.user.id}` : socket.isApiKey ? 'KDS API Key' : 'Guest'})`);
 
     // Helper safely extract station code string from payload (string or { stationCode })
     const extractStationCode = (payload) => {
@@ -80,6 +84,10 @@ export function initSocket(httpServer) {
 
     // Join room berdasarkan station (misal: 'KITCHEN_MAIN', 'BAR_MAIN', 'KITCHEN', 'BAR')
     socket.on('station:join', (payload) => {
+      if (socket.isGuest && process.env.NODE_ENV === 'production') {
+        console.warn(`[Socket.IO] Guest socket ${socket.id} ditolak dari station room`);
+        return;
+      }
       const code = extractStationCode(payload);
       if (code) {
         const room = `station:${code.toUpperCase()}`;
@@ -99,6 +107,10 @@ export function initSocket(httpServer) {
 
     // POS / Monitoring global room
     socket.on('orders:join', () => {
+      if (socket.isGuest && process.env.NODE_ENV === 'production') {
+        console.warn(`[Socket.IO] Guest socket ${socket.id} ditolak dari room orders`);
+        return;
+      }
       socket.join('orders');
       console.log(`📡 [Socket.IO] Client ${socket.id} joined room: orders`);
     });

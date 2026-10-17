@@ -49,31 +49,31 @@ export default function SyncStatusBadge({ className = '' }) {
         }`}
         title={
           isFullyConnected
-            ? 'Sistem Online & Terkoneksi'
+            ? 'Sistem Terhubung (Online)'
             : isConnecting
-              ? 'Menghubungkan ke sistem... Klik untuk mencoba lagi.'
-              : 'Sistem sedang Offline. Klik untuk mencoba menghubungkan kembali.'
+              ? 'Sedang menghubungkan ke server... Klik untuk tes ulang.'
+              : 'Koneksi terputus. Klik untuk menyambungkan kembali.'
         }
       >
         {isFullyConnected ? (
           <>
             <Wifi className="w-3 h-3 text-success shrink-0" />
             <span className="hidden xl:inline text-[10px] font-medium opacity-90">
-              Online
+              Terhubung
             </span>
           </>
         ) : isConnecting ? (
           <>
             <RefreshCw className="w-3 h-3 animate-spin text-amber-300 shrink-0" />
             <span className="hidden xl:inline text-[10px] font-medium opacity-90">
-              Menyambung
+              Menghubungkan...
             </span>
           </>
         ) : (
           <>
             <WifiOff className="w-3 h-3 text-danger shrink-0" />
             <span className="hidden xl:inline text-[10px] font-medium opacity-90">
-              Offline
+              Terputus
             </span>
           </>
         )}
@@ -108,26 +108,26 @@ export default function SyncStatusBadge({ className = '' }) {
         }`}
         title={
           isPrinterConnecting
-            ? 'Menyambungkan ke Printer Bluetooth... Klik untuk kelola'
+            ? 'Sedang menyambungkan ke printer... Klik untuk kelola'
             : isPrinterConnected
-              ? 'Printer Thermal Bluetooth Aktif (Klik untuk kelola)'
-              : 'Printer Bluetooth Belum Terhubung (Klik untuk menghubungkan)'
+              ? 'Printer Siap Digunakan (Klik untuk kelola)'
+              : 'Printer Belum Tersambung (Klik untuk menyambungkan)'
         }
       >
         {isPrinterConnecting ? (
           <>
             <RefreshCw className="w-3 h-3 animate-spin text-amber-300 shrink-0" />
-            <span className="hidden sm:inline">Menyambung...</span>
+            <span className="hidden sm:inline">Menghubungkan...</span>
           </>
         ) : isPrinterConnected ? (
           <>
             <Printer className="w-3 h-3 text-komazi-teal-light shrink-0" />
-            <span className="hidden sm:inline">Printer Ready</span>
+            <span className="hidden sm:inline">Printer Siap</span>
           </>
         ) : (
           <>
             <Printer className="w-3 h-3 opacity-60 shrink-0" />
-            <span className="hidden md:inline text-komazi-muted/70">Printer Standby</span>
+            <span className="hidden md:inline text-komazi-muted/70">Printer Belum Konek</span>
           </>
         )}
       </button>

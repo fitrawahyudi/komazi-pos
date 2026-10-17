@@ -74,7 +74,7 @@ export default function SettingsPage() {
     { id: 'printer', label: 'Printer & Hardware', icon: Printer, desc: 'Koneksi thermal printer, Bluetooth, USB & laci uang' },
     { id: 'integrations', label: 'Notifikasi & Bot', icon: Send, desc: 'Notifikasi & Bot Telegram' },
     { id: 'security', label: 'Keamanan & PIN', icon: ShieldCheck, desc: 'PIN otorisasi void transaksi, refund dana & tautan modul HRIS' },
-    { id: 'backup', label: 'Backup & Recovery', icon: Database, desc: 'Pencadangan database MySQL, retensi, snapshot terverifikasi & pemulihan' },
+    { id: 'backup', label: 'Cadangkan & Pulihkan', icon: Database, desc: 'Pencadangan data toko otomatis, riwayat file cadangan & pemulihan data' },
   ];
 
   const resolvedTab = rawTab === 'users' ? 'security' : rawTab;

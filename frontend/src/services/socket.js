@@ -47,24 +47,44 @@ export function getSocketUrl() {
   return 'http://localhost:4000';
 }
 
+export function getStoredToken() {
+  if (typeof localStorage === 'undefined') return '';
+  return (
+    localStorage.getItem('komazi-auth-token') ||
+    localStorage.getItem('token') ||
+    localStorage.getItem('komazi_token') ||
+    ''
+  );
+}
+
+export function syncSocketAuthToken() {
+  if (socket) {
+    const token = getStoredToken();
+    socket.auth = { token };
+    if (!socket.connected) {
+      socket.connect();
+    }
+  }
+}
+
 export function getSocket() {
   if (!socket) {
     const socketUrl = getSocketUrl();
-    const storedToken =
-      typeof localStorage !== 'undefined'
-        ? localStorage.getItem('token') || localStorage.getItem('komazi_token') || ''
-        : '';
 
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
-      auth: {
-        token: storedToken,
+      auth: (cb) => {
+        cb({ token: getStoredToken() });
       },
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+    });
+
+    socket.on('reconnect_attempt', () => {
+      socket.auth = { token: getStoredToken() };
     });
 
     socket.on('connect', () => {
