@@ -1,5 +1,6 @@
 package com.komazipos;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -146,6 +147,28 @@ public class KdsForegroundService extends Service {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        Log.w(TAG, "Aplikasi di-swipe dari recent apps. Mempertahankan KdsForegroundService...");
+        try {
+            Intent restartServiceIntent = new Intent(getApplicationContext(), KdsForegroundService.class);
+            restartServiceIntent.setPackage(getPackageName());
+            PendingIntent restartPendingIntent = PendingIntent.getService(
+                this,
+                1,
+                restartServiceIntent,
+                PendingIntent.FLAG_ONE_SHOT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+            );
+            AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager != null) {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, restartPendingIntent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Gagal menjadwalkan restart service: " + e.getMessage());
+        }
     }
 
     @Override
