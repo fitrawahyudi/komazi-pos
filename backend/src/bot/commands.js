@@ -1,5 +1,6 @@
 const COMMON = [
   { command: 'menu', description: 'Tampilkan menu utama' },
+  { command: 'tutup_menu', description: 'Sembunyikan tombol menu bawah' },
   { command: 'whoami', description: 'Info akun saya' },
   { command: 'infobot', description: 'Status & performa sistem bot' },
   { command: 'batal', description: 'Batalkan proses berjalan' },
@@ -36,9 +37,9 @@ export const ROLE_COMMANDS = {
     { command: 'profit', description: 'Estimasi laba bersih (P&L)' },
     { command: 'laporan', description: 'Laporan ringkasan hari ini' },
     { command: 'workspace', description: 'Status area workspace' },
-    { command: 'jobs', description: 'Daftar jadwal otomatis & cron' },
+    { command: 'jobs', description: 'Daftar jadwal tugas & pengingat' },
     { command: 'cron', description: 'Kelola jadwal & pengingat (/cron)' },
-    { command: 'job_help', description: 'Bantuan sistem cron & jobs' },
+    { command: 'job_help', description: 'Panduan jadwal & tugas otomatis' },
   ],
   OWNER: [
     { command: 'ai', description: 'Tanya asisten cerdas Komazi AI' },
@@ -52,9 +53,9 @@ export const ROLE_COMMANDS = {
     { command: 'waste', description: 'Catat bahan terbuang/tumpah/kalibrasi' },
     { command: 'approval', description: 'Persetujuan menunggu' },
     { command: 'stok', description: 'Cek stok bahan' },
-    { command: 'jobs', description: 'Kelola jadwal otomatis & cron' },
+    { command: 'jobs', description: 'Daftar jadwal tugas & pengingat' },
     { command: 'cron', description: 'Kelola jadwal & pengingat (/cron)' },
-    { command: 'job_help', description: 'Bantuan sistem cron & jobs' },
+    { command: 'job_help', description: 'Panduan jadwal & tugas otomatis' },
     { command: 'tautkan', description: 'Buat kode tautan akun staf' },
   ],
 };

@@ -20,13 +20,13 @@ export function mainMenu(role) {
     case 'MANAGER':
       kb.text('✅ Approval', 'go:approval').text('📦 Cek Stok', 'go:stock').row()
         .text('🚫 Menu Habis', 'go:soldout').text('📊 Laporan', 'go:report').row()
-        .text('⏰ Jadwal Cron', 'go:jobs').text('🤖 Asisten AI', 'go:ai_menu').row()
+        .text('⏰ Jadwal Otomatis', 'go:jobs').text('🤖 Asisten AI', 'go:ai_menu').row()
         .text('ℹ️ Status Bot', 'go:infobot');
       break;
     case 'OWNER':
       kb.text('📊 Ringkasan Omzet', 'go:summary').text('✅ Approval', 'go:approval').row()
         .text('📦 Stok', 'go:stock').text('🔗 Tautkan Staf', 'go:link').row()
-        .text('⏰ Jadwal Cron', 'go:jobs').text('🤖 Asisten AI', 'go:ai_menu').row()
+        .text('⏰ Jadwal Otomatis', 'go:jobs').text('🤖 Asisten AI', 'go:ai_menu').row()
         .text('ℹ️ Status Bot', 'go:infobot');
       break;
     default:

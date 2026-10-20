@@ -257,77 +257,159 @@ export async function bulkCreateStaff(req, res) {
     }
 
     const isOwner = req.user?.role === 'OWNER';
+    const roleMapping = {
+      KASIR: 'CASHIER',
+      CASHIER: 'CASHIER',
+      MANAJER: 'MANAGER',
+      MANAGER: 'MANAGER',
+      DAPUR: 'KITCHEN',
+      KITCHEN: 'KITCHEN',
+      BARISTA: 'BARISTA',
+      BAR: 'BARISTA',
+      OWNER: 'OWNER',
+      PEMILIK: 'OWNER',
+    };
+
     const validRoles = ['OWNER', 'MANAGER', 'CASHIER', 'KITCHEN', 'BARISTA'];
-    const createdList = [];
+    const candidates = [];
     const skippedList = [];
+    const seenUsernames = new Set();
 
-    await prisma.$transaction(async (tx) => {
-      for (const item of staff) {
-        const name = String(item.name || '').trim();
-        const username = String(item.username || '').trim().toLowerCase();
-        const password = String(item.password || '').trim();
+    // 1. Validasi awal & filter duplikat di payload input
+    for (const item of staff) {
+      const name = String(item.name || '').trim();
+      const username = String(item.username || '').trim().toLowerCase();
+      const password = String(item.password || '').trim();
 
-        if (!name || !username || !password || password.length < 6) {
-          skippedList.push({ username: username || name, reason: 'Data nama/username/password tidak lengkap atau password < 6 karakter' });
-          continue;
-        }
-
-        let role = String(item.role || 'CASHIER').toUpperCase().trim();
-        if (!validRoles.includes(role)) role = 'CASHIER';
-
-        if (!isOwner && role === 'OWNER') {
-          role = 'CASHIER';
-        }
-
-        const existing = await tx.user.findUnique({ where: { username } });
-        if (existing) {
-          skippedList.push({ username, reason: 'Username sudah digunakan' });
-          continue;
-        }
-
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const newStaff = await tx.user.create({
-          data: {
-            name,
-            username,
-            password: hashedPassword,
-            role,
-            phone: item.phone ? String(item.phone).trim() : null,
-            department: item.department ? String(item.department).trim() : 'Operasional',
-            jobTitle: item.jobTitle ? String(item.jobTitle).trim() : null,
-            employmentType: item.employmentType || 'FULL_TIME',
-            joinDate: item.joinDate || new Date().toISOString().split('T')[0],
-            baseSalary: isOwner && item.baseSalary ? Number(item.baseSalary) : 0,
-            dailyAllowance: isOwner && item.dailyAllowance ? Number(item.dailyAllowance) : 0,
-            hourlyOvertimeRate: isOwner && item.hourlyOvertimeRate ? Number(item.hourlyOvertimeRate) : 0,
-            isActive: true,
-          },
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            role: true,
-            phone: true,
-            department: true,
-            jobTitle: true,
-            isActive: true,
-          },
+      if (!name || !username || !password || password.length < 6) {
+        skippedList.push({
+          username: username || name,
+          reason: 'Data nama/username/password tidak lengkap atau password kurang dari 6 karakter',
         });
-
-        createdList.push(newStaff);
+        continue;
       }
-    });
+
+      if (seenUsernames.has(username)) {
+        skippedList.push({
+          username,
+          reason: 'Username duplikat dalam file impor yang sama',
+        });
+        continue;
+      }
+      seenUsernames.add(username);
+
+      const rawRole = String(item.role || 'CASHIER').toUpperCase().trim();
+      let role = roleMapping[rawRole] || 'CASHIER';
+      if (!validRoles.includes(role)) role = 'CASHIER';
+
+      if (!isOwner && role === 'OWNER') {
+        role = 'CASHIER';
+      }
+
+      let defaultDepartment = 'Operasional';
+      if (role === 'BARISTA') defaultDepartment = 'Bar & Minuman';
+      else if (role === 'KITCHEN') defaultDepartment = 'Dapur & Makanan';
+      else if (role === 'CASHIER') defaultDepartment = 'Kasir';
+      else if (role === 'MANAGER' || role === 'OWNER') defaultDepartment = 'Manajemen';
+
+      candidates.push({
+        name,
+        username,
+        password,
+        role,
+        phone: item.phone ? String(item.phone).trim() : null,
+        department: item.department ? String(item.department).trim() : defaultDepartment,
+        jobTitle: item.jobTitle ? String(item.jobTitle).trim() : null,
+        employmentType: item.employmentType || 'FULL_TIME',
+        joinDate: item.joinDate || new Date().toISOString().split('T')[0],
+        baseSalary: isOwner && item.baseSalary ? Number(item.baseSalary) : 0,
+        dailyAllowance: isOwner && item.dailyAllowance ? Number(item.dailyAllowance) : 0,
+        hourlyOvertimeRate: isOwner && item.hourlyOvertimeRate ? Number(item.hourlyOvertimeRate) : 0,
+      });
+    }
+
+    if (candidates.length === 0) {
+      return errorResponse(res, 'Tidak ada baris data staf valid yang siap diimpor', 400, { skipped: skippedList });
+    }
+
+    // 2. Pre-hash password di luar transaksi database untuk menghindari Prisma transaction timeout
+    const salt = await bcrypt.genSalt(10);
+    const preparedCandidates = await Promise.all(
+      candidates.map(async (c) => ({
+        ...c,
+        hashedPassword: await bcrypt.hash(c.password, salt),
+      }))
+    );
+
+    const createdList = [];
+
+    // 3. Eksekusi transaksi database yang cepat dan terlindungi
+    await prisma.$transaction(
+      async (tx) => {
+        // Ambil semua username yang sudah terdaftar di database sekaligus
+        const candidateUsernames = preparedCandidates.map((c) => c.username);
+        const existingUsers = await tx.user.findMany({
+          where: { username: { in: candidateUsernames } },
+          select: { username: true },
+        });
+        const existingUsernameSet = new Set(existingUsers.map((u) => u.username));
+
+        for (const item of preparedCandidates) {
+          if (existingUsernameSet.has(item.username)) {
+            skippedList.push({ username: item.username, reason: 'Username sudah digunakan oleh akun lain di sistem' });
+            continue;
+          }
+
+          const newStaff = await tx.user.create({
+            data: {
+              name: item.name,
+              username: item.username,
+              password: item.hashedPassword,
+              role: item.role,
+              phone: item.phone,
+              department: item.department,
+              jobTitle: item.jobTitle,
+              employmentType: item.employmentType,
+              joinDate: item.joinDate,
+              baseSalary: item.baseSalary,
+              dailyAllowance: item.dailyAllowance,
+              hourlyOvertimeRate: item.hourlyOvertimeRate,
+              isActive: true,
+            },
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              role: true,
+              phone: true,
+              department: true,
+              jobTitle: true,
+              isActive: true,
+            },
+          });
+
+          createdList.push(newStaff);
+        }
+      },
+      { timeout: 30000 }
+    );
 
     if (req.user?.id) {
-      await logHrisAudit(req.user.id, 'STAFF_BULK_CREATE', 'STAFF', null, { createdCount: createdList.length, skippedCount: skippedList.length }, req);
+      await logHrisAudit(
+        req.user.id,
+        'STAFF_BULK_CREATE',
+        'STAFF',
+        null,
+        { createdCount: createdList.length, skippedCount: skippedList.length },
+        req
+      );
     }
 
     return successResponse(
       res,
       { created: createdList, skipped: skippedList, count: createdList.length },
-      `Berhasil mengimpor ${createdList.length} staf baru` + (skippedList.length > 0 ? ` (${skippedList.length} dilewati)` : ''),
+      `Berhasil mengimpor ${createdList.length} staf baru` +
+        (skippedList.length > 0 ? ` (${skippedList.length} dilewati)` : ''),
       201
     );
   } catch (err) {

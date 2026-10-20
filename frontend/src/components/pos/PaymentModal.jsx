@@ -655,7 +655,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                     {/* Ringkasan Nominal & Merchant */}
                     <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-center space-y-1">
                       <span className="text-[11px] uppercase tracking-wider font-semibold text-komazi-muted">
-                        Nominal Pembayaran (Terkunci Pas):
+                        Nominal Pembayaran:
                       </span>
                       <p className="font-mono font-black text-2xl text-komazi-coral">
                         {formatRupiah(summary.grandTotal)}
@@ -666,7 +666,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                     </div>
 
                     {/* SOP Verifikasi Kasir Tanpa Gateway */}
-                    <div className="p-3 rounded-xl bg-komazi-surface border border-komazi-border/80 text-left space-y-1.5 text-xs">
+                    {/* <div className="p-3 rounded-xl bg-komazi-surface border border-komazi-border/80 text-left space-y-1.5 text-xs">
                       <div className="flex items-center gap-1.5 font-bold text-komazi-text">
                         <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span>SOP Verifikasi Kasir:</span>
@@ -674,12 +674,12 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                       <p className="text-[11px] text-komazi-muted leading-relaxed">
                         1. Arahkan pelanggan scan QRIS via BCA, Livin', GoPay, ShopeePay, atau DANA.<br />
                         2. Cek bukti transfer centang hijau / dengar speaker QRIS Soundbox.<br />
-                        3. Klik tombol <b className="text-komazi-coral">Konfirmasi QRIS Lunas</b> di bawah.
+                        3. Klik tombol <b className="text-komazi-coral">Konfirmasi QRIS</b> di bawah.
                       </p>
-                    </div>
+                    </div> */}
 
                     {/* Input Opsional Nomor Referensi / RRN */}
-                    <div className="text-left space-y-1">
+                    {/* <div className="text-left space-y-1">
                       <label className="block text-[11px] font-semibold text-komazi-muted">
                         No. Referensi / 4 Digit RRN Bukti Bayar (Opsional):
                       </label>
@@ -691,7 +691,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                         onFocus={scrollInputIntoViewOnFocus}
                         className="w-full px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
                       />
-                    </div>
+                    </div> */}
 
                     {/* Standby Status & Quick Test */}
                     {/* <div className="pt-1 flex items-center justify-between text-[11px] text-komazi-muted border-t border-komazi-border/50">
@@ -848,7 +848,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             title="Cetak struk tagihan (Bill) dahulu sebelum konfirmasi pembayaran"
           >
             <Printer className="w-4 h-4 text-komazi-coral" />
-            <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span>
+            {/* <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span> */}
           </button>
 
           <LoadingButton
@@ -861,7 +861,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             onClick={() => handleConfirmPayment()}
             className="flex-1 h-11 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white shadow-md flex items-center justify-center"
           >
-            {method === 'QRIS' ? 'Konfirmasi QRIS Lunas' : 'Konfirmasi Pembayaran'}
+            {method === 'QRIS' ? 'Konfirmasi QRIS' : 'Konfirmasi Pembayaran'}
           </LoadingButton>
         </div>
       </div>

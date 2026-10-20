@@ -1,15 +1,18 @@
 name: Build & Release Android APK
 
 on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (contoh: v1.0.1). Kosongkan jika hanya ingin build artifact pengujian.'
+        description: 'Release Tag (contoh: v1.0.1). Kosongkan untuk build latest otomatis.'
         required: false
         default: ''
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -82,21 +85,28 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_tag }}" ]; then
             echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+            echo "name=Komazi POS Android ${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "name=Komazi POS Android $TAG_NAME" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ] && ([[ "${{ github.ref }}" == refs/heads/main ]] || [[ "${{ github.ref }}" == refs/heads/master ]]); then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "name=Komazi POS Android (Latest Auto-Build)" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
           else
             echo "should_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish to GitHub Releases
+      # Solusi 1: Publish ke Internal / Private GitHub Releases
+      - name: Publish to Private GitHub Releases
         if: steps.tag_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag_check.outputs.tag }}
-          name: Komazi POS Android ${{ steps.tag_check.outputs.tag }}
+          name: ${{ steps.tag_check.outputs.name }}
           draft: false
           prerelease: false
           files: dist-apk/komazi-pos.apk
@@ -109,8 +119,36 @@ jobs:
             - **Package:** `com.komazipos`
             - **Minimum Android:** Android 7.0+ (API 24+)
             - **SHA-256 Checksum:** `${{ steps.prep.outputs.sha256 }}`
+            - **Commit SHA:** `${{ github.sha }}`
             
             #### 🛠 Cara Instalasi di Tablet:
             1. Unduh berkas `komazi-pos.apk`.
             2. Buka berkas dan aktifkan *"Izinkan dari sumber ini"* (Unknown Sources).
             3. Beri izin Bluetooth untuk menghubungkan printer thermal kasir ESC/POS.
+
+      # Solusi 2: Publish ke Public Releases Repo (Tanpa Source Code) jika RELEASE_PAT dikonfigurasi
+      - name: Publish to Public Distribution Repo (Zero Source Code Leak)
+        if: steps.tag_check.outputs.should_release == 'true' && env.HAS_RELEASE_PAT == 'true'
+        uses: softprops/action-gh-release@v2
+        env:
+          HAS_RELEASE_PAT: ${{ secrets.RELEASE_PAT != '' }}
+        with:
+          repository: ${{ secrets.PUBLIC_RELEASE_REPO || 'fitrawahyudi/komazi-pos-releases' }}
+          token: ${{ secrets.RELEASE_PAT }}
+          tag_name: ${{ steps.tag_check.outputs.tag }}
+          name: ${{ steps.tag_check.outputs.name }}
+          draft: false
+          prerelease: false
+          files: dist-apk/komazi-pos.apk
+          body: |
+            ### 📱 Komazi POS Android Public Release (${{ steps.tag_check.outputs.tag }})
+            
+            Distribusi resmi berkas APK tablet Komazi POS (Aplikasi Kasir Coffee Shop & Workspace).
+            
+            - **Nama Berkas:** `komazi-pos.apk`
+            - **SHA-256 Checksum:** `${{ steps.prep.outputs.sha256 }}`
+            - **Target:** Android 7.0+ (Nougat s/d 15)
+            - **Waktu Rilis:** ${{ steps.tag_check.outputs.name }}
+            
+            > Berkas ini didistribusikan secara aman tanpa menyertakan kode sumber internal.
+

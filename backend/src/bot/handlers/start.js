@@ -14,32 +14,31 @@ import { renderJobsList } from './jobs.js';
  */
 export function formatBotInfoCaption(data, callerName, callerRole, telegramId) {
   return `
-🤖 <b>STATUS & PERFORMA ASISTEN KOMAZI</b>
+🤖 <b>STATUS &amp; PERFORMA ASISTEN KOMAZI</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 <b>Status:</b> ONLINE
-⏱ <b>Uptime:</b> <b>${esc(data.bot.uptime)}</b>
-⚡ <b>Mode:</b> ${esc(data.bot.mode)}
-🧠 <b>RAM:</b> ${esc(data.bot.memory.heapUsed)} / RSS ${esc(data.bot.memory.rss)}
+🟢 <b>Status Sistem:</b> ONLINE (Lancar)
+⏱ <b>Waktu Aktif:</b> <b>${esc(data.bot.uptime)}</b>
+⚡ <b>Mode Layanan:</b> ${esc(data.bot.mode)}
+🧠 <b>Penggunaan Memori:</b> ${esc(data.bot.memory.heapUsed)}
 
-🗄️ <b>Database</b>
-• Status: <b>${data.database.status === 'CONNECTED' ? '🟢 Terhubung' : '🔴 Gangguan'}</b> (${esc(data.database.latency)})
-• Model Entitas: <b>${data.database.modelsCount} Model</b>
+🗄️ <b>Penyimpanan Data (Database)</b>
+• Status: <b>${data.database.status === 'CONNECTED' ? '🟢 Terhubung Lancar' : '🔴 Gangguan'}</b> (${esc(data.database.latency)})
 
-👥 <b>Statistik Akun Staf</b>
-• Tertaut: <b>${data.staff.linked} dari ${data.staff.total} Staf</b>
+👥 <b>Akun Staf Terhubung</b>
+• Terhubung: <b>${data.staff.linked} dari ${data.staff.total} Staf</b>
 • Peran: Owner (${data.staff.roles.OWNER.linked}/${data.staff.roles.OWNER.total}) • Mgr (${data.staff.roles.MANAGER.linked}/${data.staff.roles.MANAGER.total}) • Kasir (${data.staff.roles.CASHIER.linked}/${data.staff.roles.CASHIER.total}) • Barista (${data.staff.roles.BARISTA.linked}/${data.staff.roles.BARISTA.total}) • Dapur (${data.staff.roles.KITCHEN.linked}/${data.staff.roles.KITCHEN.total})
 
-☕ <b>Operasional Komazi</b>
-• Shift Kasir: <b>${data.operations.openShifts} Sesi</b> 
-• Pesanan: <b>${data.operations.orders}</b>
-• Menu: <b>${data.operations.products}</b> 
-• Bahan: <b>${data.operations.ingredients}</b> (Kritis: <b>${data.operations.lowStock}</b>)
+☕ <b>Operasional Kedai Komazi</b>
+• Shift Kasir: <b>${data.operations.openShifts} Sesi Aktif</b> 
+• Pesanan: <b>${data.operations.orders} Transaksi</b>
+• Menu Produk: <b>${data.operations.products} Menu</b> 
+• Bahan Baku: <b>${data.operations.ingredients} Bahan</b> (Kritis: <b>${data.operations.lowStock}</b>)
 
-🔔 <b>Otomasi & Notifikasi</b>
+🔔 <b>Pengingat &amp; Notifikasi Otomatis</b>
 • Notif Transaksi: ${data.notifications.transaction ? 'Aktif ✅' : 'Nonaktif ❌'} 
 • Stok Menipis: ${data.notifications.lowStock ? 'Aktif ✅' : 'Nonaktif ❌'}
 • Tutup Buku (22:00 WIB): ${data.notifications.dailySummary ? 'Aktif ✅' : 'Nonaktif ❌'}
-• AI Scheduler: Morning & Evening Brief ✅
+• Asisten Pintar AI: Aktif ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🤖 <i>@komazi-assistant</i>
   `.trim();

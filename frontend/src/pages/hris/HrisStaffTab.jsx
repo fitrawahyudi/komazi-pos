@@ -20,7 +20,7 @@ import {
   Eye,
   EyeOff,
   Sparkles,
-  FileSpreadsheet,
+  Upload,
 } from 'lucide-react';
 import Pagination from '../../components/ui/Pagination';
 import AlertModal from '../../components/ui/AlertModal';
@@ -278,7 +278,7 @@ export default function HrisStaffTab({
               className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-komazi-text font-bold text-xs shadow-sm transition-all active:scale-95 shrink-0"
               title="Import banyak akun staf sekaligus via file Excel"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <Upload className="w-4 h-4 text-emerald-400" />
               <span>Import Excel</span>
             </button>
 

@@ -90,7 +90,7 @@ export async function executeAiQuery(ctx, rawQuery, options = { fromDirectChat: 
       .text('🔄 Refresh Status', 'sentinel_action:refresh')
       .text('⏰ Atur Jadwal', 'sentinel_action:schedule_menu')
       .row()
-      .text('📋 Kelola Semua Jadwal Cron', 'go:jobs');
+      .text('📋 Kelola Semua Jadwal Otomatis', 'go:jobs');
     appendTurn(ctx.user.id, rawQuery, replyHtml, ctx.user);
     return ctx.reply(replyHtml, { parse_mode: 'HTML', reply_markup: kb });
   }

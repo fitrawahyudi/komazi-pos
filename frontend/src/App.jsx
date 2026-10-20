@@ -59,6 +59,7 @@ const CmsFacilitiesPage = lazy(() => import('./pages/cms/CmsFacilitiesPage'));
 const CmsTestimonialsPage = lazy(() => import('./pages/cms/CmsTestimonialsPage'));
 const CmsOutletPage = lazy(() => import('./pages/cms/CmsOutletPage'));
 const CmsSeoPage = lazy(() => import('./pages/cms/CmsSeoPage'));
+const DownloadPage = lazy(() => import('./pages/DownloadPage'));
 
 // Index Redirect Component
 function IndexRedirect() {
@@ -282,6 +283,19 @@ export default function App() {
             </Suspense>
           }
         />
+
+        {/* Dedicated Public Download & Comprehensive User Guide Route */}
+        <Route
+          path="/download"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <DownloadPage />
+            </Suspense>
+          }
+        />
+        <Route path="/unduh" element={<Navigate to="/download" replace />} />
+        <Route path="/apk" element={<Navigate to="/download" replace />} />
+        <Route path="/panduan" element={<Navigate to="/download" replace />} />
 
         {/* Dedicated Standalone KDS Screen (No Sidebar, No Navbar - Dedicated for Kitchen/Bar Display) */}
         <Route

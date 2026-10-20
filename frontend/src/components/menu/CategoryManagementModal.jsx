@@ -38,8 +38,8 @@ export default function CategoryManagementModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  // Filter out pseudo category 'Semua' if id === 1
-  const editableCategories = categories.filter((c) => c.id !== 1 && c.id !== 'all');
+  // Filter out pseudo category 'Semua' if id === 'all' or name === 'Semua'
+  const editableCategories = categories.filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua');
 
   const getProductCount = (category) => {
     if (category._count?.products !== undefined) {

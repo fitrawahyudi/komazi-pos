@@ -21,7 +21,8 @@ function renderOrdersPage(orders, page, totalPages, totalCount) {
   const formatItem = (o, idx) => {
     const tableInfo = o.tableNo ? `(Meja ${esc(o.tableNo)})` : '';
     const itemCount = o.items?.length || 0;
-    return `[ ${idx + 1} ] <b>${esc(o.invoiceNo)}</b> [${o.type} ${tableInfo}]\n• Total: <b>${rupiah(o.total)}</b> (${itemCount} item) | Status: <code>${o.status}</code>`;
+    const statusText = o.status === 'PENDING' ? 'Belum Bayar' : o.status === 'PAID' ? 'Lunas' : o.status;
+    return `[ ${idx + 1} ] <b>${esc(o.invoiceNo)}</b> [${o.type === 'TAKE_AWAY' ? 'Take-away 🛍️' : 'Dine-in 🍽️'} ${tableInfo}]\n• Total: <b>${rupiah(o.total)}</b> (${itemCount} item) | Status: <b>${statusText}</b>`;
   };
 
   const text = formatPaginatedList({
@@ -151,7 +152,7 @@ export function registerCashier(bot) {
 • Pelanggan: <b>${esc(order.customerName || 'Tamu')}</b>
 • Kasir Bertugas: ${esc(order.cashier?.name || 'Kasir')}
 • Waktu Transaksi: ${fmtTime(order.createdAt)}
-• Status Pembayaran: <code>${order.status}</code>
+• Status Pembayaran: <b>${order.status === 'PENDING' ? '⏳ Belum Dibayar' : order.status === 'PAID' ? '✅ Lunas' : esc(order.status)}</b>
 
 <b>Daftar Menu:</b>
 ${itemsLines}

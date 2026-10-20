@@ -11,7 +11,12 @@ import { jobRunnerService } from '../../services/cron/jobRunnerService.js';
 import { openclawAutomationAdapter } from '../../services/cron/openclawAutomationAdapter.js';
 import prisma from '../../config/db.js';
 import { esc } from '../utils/format.js';
-import logger from '../../utils/logger.js';
+import {
+  formatCronToIndonesian,
+  parseHumanScheduleInput,
+  formatJobTypeIndonesian,
+  formatTargetRolesIndonesian,
+} from '../../services/cron/cronHumanizer.js';
 
 function formatWib(date) {
   if (!date) return '-';
@@ -175,26 +180,42 @@ export function registerJobHandlers(bot) {
         const id = parseInt(arg1);
         if (!id || isNaN(id)) {
           return ctx.reply(
-            '⚠️ Format: <code>/cron ubah &lt;id&gt; &lt;ekspresi_baru&gt;</code>\nContoh:\n• <code>/cron ubah 1 0 21 * * *</code> (tiap 21:00 WIB)\n• <code>/cron ubah 1 30m</code> (tiap 30 menit)',
+            '⚠️ Format: <code>/cron ubah &lt;id&gt; &lt;waktu_baru&gt;</code>\nContoh:\n• <code>/cron ubah 1 20:00</code> (tiap 20:00 WIB)\n• <code>/cron ubah 1 30m</code> (tiap 30 menit)',
             { parse_mode: 'HTML' }
           );
         }
 
-        const newExpression = restArgs ? `${parts[2]} ${parts.slice(3).join(' ')}`.trim() : '';
-        if (!newExpression) {
+        const rawTimeInput = restArgs ? `${parts[2]} ${parts.slice(3).join(' ')}`.trim() : '';
+        if (!rawTimeInput) {
           return renderJobEditPrompt(ctx, id);
         }
 
         try {
-          const isInterval = /^(\d+)\s*(s|m|h|d)$/i.test(newExpression);
-          const scheduleType = isInterval ? 'interval' : 'cron';
+          const parsed = parseHumanScheduleInput(rawTimeInput);
+          if (!parsed) {
+            return ctx.reply(
+              `⚠️ Format waktu <i>"${esc(rawTimeInput)}"</i> tidak dikenali.\n\n` +
+              `<b>Contoh Format Mudah:</b>\n` +
+              `• <code>/cron ubah ${id} 20:00</code> (Setiap hari jam 20:00 WIB)\n` +
+              `• <code>/cron ubah ${id} 22:00</code> (Setiap hari jam 22:00 WIB)\n` +
+              `• <code>/cron ubah ${id} 08:30</code> (Setiap hari jam 08:30 WIB)\n` +
+              `• <code>/cron ubah ${id} tiap 30 menit</code> (atau <code>30m</code>)\n` +
+              `• <code>/cron ubah ${id} tiap 1 jam</code> (atau <code>1h</code>)\n` +
+              `• <code>/cron ubah ${id} tiap senin 09:00</code>`,
+              { parse_mode: 'HTML' }
+            );
+          }
+
           const updated = await jobRegistryService.updateJob(
             id,
-            { scheduleType, scheduleExpression: newExpression },
+            { scheduleType: parsed.scheduleType, scheduleExpression: parsed.scheduleExpression },
             { type: 'USER', id: String(ctx.user.id), name: ctx.user.name }
           );
+
+          const humanSchedule = formatCronToIndonesian(updated.scheduleExpression, updated.scheduleType);
+
           return ctx.reply(
-            `✅ <b>Jadwal #${updated.id} Berhasil Diubah!</b>\n━━━━━━━━━━━━━━━━━━\n• Pola Baru: <code>${esc(updated.scheduleExpression)}</code> (${updated.scheduleType})\n• Eksekusi Berikutnya: <b>${formatWib(updated.nextRunAt)}</b>`,
+            `✅ <b>Jadwal #${updated.id} Berhasil Diubah!</b>\n━━━━━━━━━━━━━━━━━━\n• Waktu Baru: <b>${esc(humanSchedule)}</b>\n• Eksekusi Berikutnya: <b>${formatWib(updated.nextRunAt)}</b>`,
             {
               parse_mode: 'HTML',
               reply_markup: new InlineKeyboard().text('🔍 Lihat Detail', `job_detail:${updated.id}`),
@@ -220,7 +241,7 @@ export function registerJobHandlers(bot) {
           .text(`🗑️ Ya, Hapus Jadwal #${id}`, `job_del_exec:${id}`)
           .text('❌ Batal', `job_detail:${id}`);
         return ctx.reply(
-          `⚠️ <b>Konfirmasi Penghapusan Jadwal #${id}</b>\n━━━━━━━━━━━━━━━━━━\nNama: <b>${esc(job.name)}</b>\nTipe: <code>${job.jobType}</code>\nJadwal: <code>${esc(job.scheduleExpression)}</code>\n\nApakah Anda yakin ingin menonaktifkan & menghapus jadwal ini?`,
+          `⚠️ <b>Konfirmasi Penghapusan Jadwal #${id}</b>\n━━━━━━━━━━━━━━━━━━\nNama: <b>${esc(job.name)}</b>\nJenis Tugas: <b>${esc(formatJobTypeIndonesian(job.jobType))}</b>\nWaktu: <b>${esc(formatCronToIndonesian(job.scheduleExpression, job.scheduleType))}</b>\n\nApakah Anda yakin ingin menonaktifkan & menghapus jadwal ini?`,
           { parse_mode: 'HTML', reply_markup: kb }
         );
       }
@@ -247,7 +268,7 @@ export function registerJobHandlers(bot) {
             name: ctx.user.name,
           });
           return ctx.reply(
-            `⏭️ <b>Occurrence Jadwal #${id} Berhasil Dilewati!</b>\n━━━━━━━━━━━━━━━━━━\n• Jadwal yang Dilewati: <i>${formatWib(result.skippedRunAt)}</i>\n• Eksekusi Berikutnya: <b>${formatWib(result.nextRunAt)}</b>`,
+            `⏭️ <b>Jadwal Pengiriman #${id} Berhasil Dilewati!</b>\n━━━━━━━━━━━━━━━━━━\n• Jadwal yang Dilewati: <i>${formatWib(result.skippedRunAt)}</i>\n• Jadwal Pengiriman Berikutnya: <b>${formatWib(result.nextRunAt)}</b>`,
             {
               parse_mode: 'HTML',
               reply_markup: new InlineKeyboard().text('🔍 Lihat Detail', `job_detail:${id}`),
@@ -324,7 +345,7 @@ export function registerJobHandlers(bot) {
       });
 
       return ctx.reply(
-        `✅ <b>Jadwal Berhasil Dibuat!</b>\n━━━━━━━━━━━━━━━━━━\n<b>ID:</b> #${created.id}\n<b>Nama:</b> ${esc(created.name)}\n<b>Tipe:</b> <code>${created.jobType}</code>\n<b>Ekspresi:</b> <code>${esc(created.scheduleExpression)}</code>\n<b>Jadwal Berikutnya:</b> ${formatWib(created.nextRunAt)}\n\nKetik <code>/job_show ${created.id}</code> untuk memeriksa konfigurasi lengkap.`,
+        `✅ <b>Jadwal Berhasil Dibuat!</b>\n━━━━━━━━━━━━━━━━━━\n<b>ID:</b> #${created.id}\n<b>Nama:</b> ${esc(created.name)}\n<b>Jenis Tugas:</b> <b>${esc(formatJobTypeIndonesian(created.jobType))}</b>\n<b>Waktu:</b> <b>${esc(formatCronToIndonesian(created.scheduleExpression, created.scheduleType))}</b>\n<b>Jadwal Berikutnya:</b> ${formatWib(created.nextRunAt)}\n\nKetik <code>/job_show ${created.id}</code> untuk memeriksa konfigurasi lengkap.`,
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard()
@@ -353,7 +374,7 @@ export function registerJobHandlers(bot) {
         id: String(ctx.user.id),
         name: ctx.user.name,
       });
-      return ctx.reply(`⏸ <b>Jadwal #${updated.id} Ditangguhkan (Paused).</b>\nNama: <b>${esc(updated.name)}</b>`, {
+      return ctx.reply(`⏸ <b>Jadwal #${updated.id} Berhasil Dijeda.</b>\nNama: <b>${esc(updated.name)}</b>`, {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text('▶️ Lanjutkan Jadwal', `job_resume:${updated.id}`),
       });
@@ -442,25 +463,25 @@ export function registerJobHandlers(bot) {
   // ==========================================
   bot.command('job_help', requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const text = `
-⚙️ <b>PANDUAN AUTOMATION KOMAZI</b>
+⚙️ <b>PANDUAN JADWAL OTOMATIS KOMAZI</b>
 ━━━━━━━━━━━━━━━━━━
-<b>📋 Format Perintah:</b>
-• <code>/jobs [page]</code> — Daftar jadwal aktif & status
-• <code>/job_show &lt;id&gt;</code> — Detail konfigurasi jadwal
-• <code>/job_create &lt;json&gt;</code> — Buat jadwal baru
-• <code>/job_pause &lt;id&gt;</code> — Jeda jadwal sementara
-• <code>/job_resume &lt;id&gt;</code> — Lanjutkan jadwal
+<b>📋 Format Perintah Cepat:</b>
+• <code>/jobs [halaman]</code> — Daftar seluruh jadwal tugas aktif & status
+• <code>/job_show &lt;id&gt;</code> — Detail konfigurasi & waktu tugas
+• <code>/job_create</code> — Panduan interaktif buat jadwal baru
+• <code>/job_pause &lt;id&gt;</code> — Jeda jadwal tugas sementara
+• <code>/job_resume &lt;id&gt;</code> — Aktifkan kembali jadwal tugas
 • <code>/job_cancel &lt;id&gt;</code> — Hapus/batalkan jadwal
-• <code>/job_run &lt;id&gt;</code> — Eksekusi langsung on-demand
-• <code>/job_runs &lt;id&gt; [page]</code> — Riwayat eksekusi job
+• <code>/job_run &lt;id&gt;</code> — Jalankan tugas sekarang juga
+• <code>/job_runs &lt;id&gt; [halaman]</code> — Riwayat pengiriman tugas
 • <code>/job_help</code> — Panduan ini
 
-<b>🎯 Tipe Job yang Didukung:</b>
-1. <b>REPORT</b> — Generate & kirim ringkasan omzet / sales card visual
-2. <b>BACKUP</b> — Snapshot audit integritas data & SHA256 verification
-3. <b>MONITORING</b> — Cek latensi database, memori & kesehatan sistem POS
-4. <b>REMINDER</b> — Pengingat operasional ke staf / peran spesifik
-5. <b>AI_TASK</b> — Tugas analitik terarah Komazi AI Engine
+<b>🎯 Jenis Tugas yang Didukung:</b>
+1. <b>Laporan Penjualan (REPORT)</b> — Pengiriman otomatis ringkasan penjualan & omzet
+2. <b>Pencadangan Data (BACKUP)</b> — Salinan cadangan aman data transaksi & inventaris POS
+3. <b>Pemantauan Sistem (MONITORING)</b> — Cek koneksi server, database & kesiapan kasir
+4. <b>Pengingat Tugas (REMINDER)</b> — Pengingat tugas operasional ke tim staf kedai
+5. <b>Analisis Cerdas AI (AI_TASK)</b> — Proyeksi jam sibuk & rekomendasi stok dari Komazi AI
     `.trim();
 
     return ctx.reply(text, { parse_mode: 'HTML' });
@@ -527,7 +548,7 @@ export function registerJobHandlers(bot) {
         name: ctx.user?.name || 'User',
       });
       await ctx.reply(
-        `⏭️ <b>Occurrence Jadwal #${id} Berhasil Dilewati!</b>\n━━━━━━━━━━━━━━━━━━\n• Dilewati: <i>${formatWib(result.skippedRunAt)}</i>\n• Eksekusi Berikutnya: <b>${formatWib(result.nextRunAt)}</b>`,
+        `⏭️ <b>Jadwal Pengiriman #${id} Berhasil Dilewati!</b>\n━━━━━━━━━━━━━━━━━━\n• Dilewati: <i>${formatWib(result.skippedRunAt)}</i>\n• Eksekusi Berikutnya: <b>${formatWib(result.nextRunAt)}</b>`,
         { parse_mode: 'HTML' }
       );
       await renderJobDetail(ctx, id, false);
@@ -545,18 +566,24 @@ export function registerJobHandlers(bot) {
   bot.callbackQuery(/^job_preset_edit:(\d+):(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery('Mengubah jadwal...').catch(() => {});
     const id = parseInt(ctx.match[1]);
-    const expr = ctx.match[2].trim();
-    const isInterval = /^(\d+)\s*(s|m|h|d)$/i.test(expr);
-    const scheduleType = isInterval ? 'interval' : 'cron';
+    const rawExpr = ctx.match[2].trim();
 
     try {
+      const parsed = parseHumanScheduleInput(rawExpr);
+      if (!parsed) {
+        throw new Error(`Pilihan jadwal '${rawExpr}' tidak dikenali.`);
+      }
+
       const updated = await jobRegistryService.updateJob(
         id,
-        { scheduleType, scheduleExpression: expr },
+        { scheduleType: parsed.scheduleType, scheduleExpression: parsed.scheduleExpression },
         { type: 'USER', id: String(ctx.user?.id || 'telegram'), name: ctx.user?.name || 'User' }
       );
+
+      const humanSchedule = formatCronToIndonesian(updated.scheduleExpression, updated.scheduleType);
+
       await ctx.editMessageText(
-        `✅ <b>Jadwal #${updated.id} Berhasil Diperbarui!</b>\n━━━━━━━━━━━━━━━━━━\n• Pola Baru: <code>${esc(updated.scheduleExpression)}</code> (${updated.scheduleType})\n• Eksekusi Berikutnya: <b>${formatWib(updated.nextRunAt)}</b>`,
+        `✅ <b>Jadwal #${updated.id} Berhasil Diperbarui!</b>\n━━━━━━━━━━━━━━━━━━\n• Waktu Baru: <b>${esc(humanSchedule)}</b>\n• Eksekusi Berikutnya: <b>${formatWib(updated.nextRunAt)}</b>`,
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard().text('🔍 Lihat Detail', `job_detail:${updated.id}`),
@@ -579,7 +606,7 @@ export function registerJobHandlers(bot) {
       .text('❌ Batal', `job_detail:${id}`);
 
     return ctx.editMessageText(
-      `⚠️ <b>Konfirmasi Penghapusan Jadwal #${id}</b>\n━━━━━━━━━━━━━━━━━━\nNama: <b>${esc(job.name)}</b>\nTipe: <code>${job.jobType}</code>\nJadwal: <code>${esc(job.scheduleExpression)}</code>\n\nApakah Anda yakin ingin menonaktifkan & menghapus jadwal ini?`,
+      `⚠️ <b>Konfirmasi Penghapusan Jadwal #${id}</b>\n━━━━━━━━━━━━━━━━━━\nNama: <b>${esc(job.name)}</b>\nJenis Tugas: <b>${esc(formatJobTypeIndonesian(job.jobType))}</b>\nWaktu: <b>${esc(formatCronToIndonesian(job.scheduleExpression, job.scheduleType))}</b>\n\nApakah Anda yakin ingin menonaktifkan & menghapus jadwal ini?`,
       { parse_mode: 'HTML', reply_markup: kb }
     );
   });
@@ -686,21 +713,23 @@ export async function renderJobsList(ctx, page = 1, isEdit = false) {
   const { items, pagination } = result;
 
   if (items.length === 0) {
-    const text = '📭 <b>Belum ada jadwal cron yang terdaftar.</b>\nKlik tombol di bawah untuk membuat jadwal baru:';
+    const text = '📭 <b>Belum ada jadwal tugas otomatis yang terdaftar.</b>\nKlik tombol di bawah untuk membuat jadwal baru:';
     const emptyKb = new InlineKeyboard().text('➕ Buat Jadwal Baru', 'job:create_wizard');
     if (isEdit) return ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: emptyKb });
     return ctx.reply(text, { parse_mode: 'HTML', reply_markup: emptyKb });
   }
 
-  let text = `⏰ <b>DAFTAR JADWAL CRON KOMAZI</b> (Hal ${pagination.page}/${pagination.totalPages})\n━━━━━━━━━━━━━━━━━━\n`;
+  let text = `⏰ <b>DAFTAR JADWAL TUGAS OTOMATIS</b> (Hal ${pagination.page}/${pagination.totalPages})\n━━━━━━━━━━━━━━━━━━\n`;
 
   const keyboard = new InlineKeyboard();
 
   items.forEach((j) => {
     const badge = getStatusBadge(j);
-    text += `<b>#${j.id} [${j.jobType}] ${esc(j.name)}</b>\n`;
+    const humanSchedule = formatCronToIndonesian(j.scheduleExpression, j.scheduleType);
+    const typeLabel = formatJobTypeIndonesian(j.jobType);
+    text += `<b>#${j.id} [${typeLabel}] ${esc(j.name)}</b>\n`;
     text += `• Status: ${badge}\n`;
-    text += `• Jadwal: <code>${esc(j.scheduleExpression)}</code> (${j.scheduleType})\n`;
+    text += `• Waktu: <b>${esc(humanSchedule)}</b>\n`;
     text += `• Berikutnya: <i>${formatWib(j.nextRunAt)}</i>\n\n`;
 
     keyboard.text(`🔍 #${j.id}`, `job_detail:${j.id}`);
@@ -734,35 +763,35 @@ async function renderJobDetail(ctx, id, isEdit = false) {
 
     const badge = getStatusBadge(job);
     const targetRoles = Array.isArray(job.targetRoles) ? job.targetRoles.join(', ') : '-';
+    const humanSchedule = formatCronToIndonesian(job.scheduleExpression, job.scheduleType);
 
     let text = `
-🔍 <b>DETAIL JADWAL CRON #${job.id}</b>
+🔍 <b>DETAIL JADWAL #${job.id}</b>
 ━━━━━━━━━━━━━━━━━━
 <b>Nama:</b> ${esc(job.name)}
-<b>Tipe:</b> <code>${job.jobType}</code>
+<b>Jenis Tugas:</b> <b>${esc(formatJobTypeIndonesian(job.jobType))}</b>
 <b>Status:</b> ${badge}
 <b>Deskripsi:</b> ${esc(job.description || '-')}
 
 <b>Pengaturan Waktu:</b>
-• Pola: <code>${esc(job.scheduleExpression)}</code> (${job.scheduleType})
+• Waktu Pelaksanaan: <b>${esc(humanSchedule)}</b>
 • Zona Waktu: <code>${job.timezone}</code>
 • Terakhir Jalan: ${formatWib(job.lastRunAt)}
 • Jadwal Berikutnya: <b>${formatWib(job.nextRunAt)}</b>
 
-<b>Pengaturan Eksekusi:</b>
-• Batas Timeout: ${job.timeoutSeconds} detik
-• Batas Retry: ${job.retryLimit}x
-• Target Role: <code>${targetRoles}</code>
+<b>Pengaturan Pelaksanaan:</b>
+• Penerima Notifikasi: <b>${esc(formatTargetRolesIndonesian(job.targetRoles))}</b>
+• Waktu Tunggu Maksimal: ${job.timeoutSeconds} detik
+• Percobaan Ulang: ${job.retryLimit > 0 ? `${job.retryLimit} kali jika gagal` : 'Tidak ada'}
 ━━━━━━━━━━━━━━━━━━
 🤖 <i>@komazi-assistant</i>
     `.trim();
 
     if (recentRuns.length > 0) {
-      text += `\n\n<b>3 Eksekusi Terakhir:</b>\n`;
+      text += `\n\n<b>3 Pengiriman Terakhir:</b>\n`;
       recentRuns.slice(0, 3).forEach((r) => {
         const runBadge = getRunStatusBadge(r.status);
-        const duration = r.finishedAt && r.startedAt ? `${r.finishedAt - r.startedAt}ms` : '-';
-        text += `• Run #${r.id}: ${runBadge} (${formatWib(r.startedAt)}, ${duration})\n`;
+        text += `• Riwayat #${r.id}: ${runBadge} (${formatWib(r.startedAt)})\n`;
       });
     }
 
@@ -802,22 +831,21 @@ async function renderJobRuns(ctx, jobId, page = 1, isEdit = false) {
     const { items, pagination } = await openclawAutomationAdapter.getJobRuns(jobId, { page, limit });
 
     if (items.length === 0) {
-      const text = `📋 <b>Belum ada riwayat eksekusi untuk Jadwal #${jobId}.</b>`;
+      const text = `📋 <b>Belum ada riwayat pengiriman untuk Jadwal #${jobId}.</b>`;
       const kb = new InlineKeyboard().text('⬅️ Kembali', `job_detail:${jobId}`);
       if (isEdit) return ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
       return ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     }
 
-    let text = `📋 <b>RIWAYAT EKSEKUSI JADWAL #${jobId}</b> (Hal ${pagination.page}/${pagination.totalPages})\n━━━━━━━━━━━━━━━━━━\n`;
+    let text = `📋 <b>RIWAYAT PENGIRIMAN JADWAL #${jobId}</b> (Hal ${pagination.page}/${pagination.totalPages})\n━━━━━━━━━━━━━━━━━━\n`;
 
     items.forEach((r) => {
       const statusBadge = getRunStatusBadge(r.status);
-      const duration = r.finishedAt && r.startedAt ? `${r.finishedAt - r.startedAt}ms` : '-';
-      text += `<b>Run #${r.id}</b> — ${statusBadge}\n`;
+      text += `<b>Riwayat #${r.id}</b> — ${statusBadge}\n`;
       text += `• Waktu: ${formatWib(r.startedAt)}\n`;
-      text += `• Durasi: ${duration} (Percobaan #${r.attempt})\n`;
+      text += `• Percobaan: Ke-${r.attempt}\n`;
       if (r.errorMessageRedacted) {
-        text += `• Error: <i>${esc(r.errorMessageRedacted.slice(0, 80))}</i>\n`;
+        text += `• Catatan: <i>${esc(r.errorMessageRedacted.slice(0, 80))}</i>\n`;
       }
       text += `\n`;
     });
@@ -825,10 +853,10 @@ async function renderJobRuns(ctx, jobId, page = 1, isEdit = false) {
 
     const keyboard = new InlineKeyboard();
     if (pagination.page > 1) {
-      keyboard.text('⬅️ Prev', `job_runs:${jobId}:${pagination.page - 1}`);
+      keyboard.text('⬅️ Sebelumnya', `job_runs:${jobId}:${pagination.page - 1}`);
     }
     if (pagination.page < pagination.totalPages) {
-      keyboard.text('Next ➡️', `job_runs:${jobId}:${pagination.page + 1}`);
+      keyboard.text('Berikutnya ➡️', `job_runs:${jobId}:${pagination.page + 1}`);
     }
     keyboard.row();
     keyboard.text('⬅️ Kembali ke Detail', `job_detail:${jobId}`);
@@ -838,7 +866,7 @@ async function renderJobRuns(ctx, jobId, page = 1, isEdit = false) {
     }
     return ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
   } catch (err) {
-    const errText = `❌ Gagal mengambil riwayat eksekusi: ${esc(err.message)}`;
+    const errText = `❌ Gagal mengambil riwayat pengiriman: ${esc(err.message)}`;
     if (isEdit) return ctx.editMessageText(errText, { parse_mode: 'HTML' });
     return ctx.reply(errText, { parse_mode: 'HTML' });
   }
@@ -865,7 +893,7 @@ async function executeJobManualTrigger(ctx, id) {
       return ctx.api.editMessageText(
         ctx.chat.id,
         loadingMsg.message_id,
-        `⚠️ <b>Eksekusi Ditangguhkan</b>\nJadwal #${id} sedang berjalan di worker lain (idempotent dedupe).`,
+        `⚠️ <b>Tugas Sedang Berjalan</b>\nJadwal #${id} saat ini sedang aktif diproses oleh sistem.`,
         { parse_mode: 'HTML' }
       );
     }
@@ -874,7 +902,7 @@ async function executeJobManualTrigger(ctx, id) {
       return ctx.api.editMessageText(
         ctx.chat.id,
         loadingMsg.message_id,
-        `✅ <b>Eksekusi Manual Berhasil!</b>\n━━━━━━━━━━━━━━━━━━\n<b>Jadwal:</b> #${id}\n<b>Run ID:</b> #${result.runId}\n<b>Durasi:</b> ${duration}ms\n\nNotifikasi hasil telah diteruskan ke channel terkait.`,
+        `✅ <b>Tugas Berhasil Dijalankan!</b>\n━━━━━━━━━━━━━━━━━━\n<b>Jadwal:</b> #${id}\n<b>Status:</b> Selesai ✅\n\nLaporan / pengingat telah diteruskan ke penerima terkait.`,
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard().text('🔍 Lihat Detail', `job_detail:${id}`),
@@ -886,7 +914,7 @@ async function executeJobManualTrigger(ctx, id) {
       return ctx.api.editMessageText(
         ctx.chat.id,
         loadingMsg.message_id,
-        `🔄 <b>Eksekusi Mengalami Kendala (Dalam Antrean Retry)</b>\nPercobaan #${result.attempt} gagal. Dijadwalkan coba ulang otomatis.`,
+        `🔄 <b>Tugas Mengalami Kendala</b>\nPercobaan ke-${result.attempt} belum berhasil. Sistem akan mencoba kembali secara otomatis.`,
         { parse_mode: 'HTML' }
       );
     }
@@ -894,7 +922,7 @@ async function executeJobManualTrigger(ctx, id) {
     return ctx.api.editMessageText(
       ctx.chat.id,
       loadingMsg.message_id,
-      `❌ <b>Eksekusi Gagal Total:</b>\n${esc(result.error || 'Terjadi kesalahan sistem.')}`,
+      `❌ <b>Tugas Gagal Dijalankan:</b>\n${esc(result.error || 'Terjadi kesalahan sistem.')}`,
       { parse_mode: 'HTML' }
     );
   } catch (err) {
@@ -912,24 +940,24 @@ async function executeJobManualTrigger(ctx, id) {
  */
 export function renderCronHelpMenu(ctx) {
   const text = `
-⏰ <b>KOMAZI CRON & AUTOMATION CONTROL (/cron)</b>
+⏰ <b>PENGATURAN JADWAL OTOMATIS & PENGINGAT (/cron)</b>
 ━━━━━━━━━━━━━━━━━━
-Kelola seluruh tugas terjadwal, pengingat, backup, dan laporan otomatis.
+Kelola seluruh tugas terjadwal, pengingat operasional, cadangan data, dan laporan otomatis.
 
 <b>📋 Perintah Cepat:</b>
-• <code>/cron buat</code> — Mulai panduan interaktif pembuatan jadwal
-• <code>/cron saya</code> — Daftar semua jadwal aktif milik kedai
-• <code>/cron detail &lt;id&gt;</code> — Detail konfigurasi & riwayat eksekusi
+• <code>/cron buat</code> — Buat jadwal tugas baru dengan panduan interaktif
+• <code>/cron saya</code> — Daftar seluruh jadwal aktif kedai
+• <code>/cron detail &lt;id&gt;</code> — Detail konfigurasi & riwayat pengiriman
 • <code>/cron jeda &lt;id&gt;</code> — Nonaktifkan jadwal sementara
-• <code>/cron aktifkan &lt;id&gt;</code> — Aktifkan kembali jadwal
-• <code>/cron ubah &lt;id&gt; &lt;ekspresi&gt;</code> — Ubah waktu/frekuensi
-• <code>/cron hapus &lt;id&gt;</code> — Hapus jadwal dengan konfirmasi
-• <code>/cron jalankan &lt;id&gt;</code> — Eksekusi manual sekarang
-• <code>/cron lewati &lt;id&gt;</code> — Lewati jadwal occurrence berikutnya
-• <code>/cron riwayat &lt;id&gt;</code> — Log hasil eksekusi terakhir
+• <code>/cron aktifkan &lt;id&gt;</code> — Aktifkan kembali jadwal yang dijeda
+• <code>/cron ubah &lt;id&gt; &lt;waktu&gt;</code> — Ubah waktu/jam pelaksanaan (cth: 20:00, 30m, 1h)
+• <code>/cron hapus &lt;id&gt;</code> — Hapus jadwal tugas
+• <code>/cron jalankan &lt;id&gt;</code> — Jalankan tugas sekarang juga
+• <code>/cron lewati &lt;id&gt;</code> — Lewati pengiriman jadwal berikutnya
+• <code>/cron riwayat &lt;id&gt;</code> — Lihat catatan pengiriman tugas
 • <code>/cron batal</code> — Batalkan percakapan berjalan
 
-<b>💡 Bahasa Alami (Tanpa Garis Miring):</b>
+<b>💡 Menjadwalkan Dengan Bahasa Sehari-hari:</b>
 Anda juga dapat langsung mengetik di chat:
 • <i>"Kirim ringkasan transaksi setiap hari jam 22.00"</i>
 • <i>"Ingatkan aku setiap jam 7 malam untuk cek stok susu"</i>
@@ -952,21 +980,21 @@ Anda juga dapat langsung mengetik di chat:
  */
 export function renderJobEditPrompt(ctx, id, isEdit = false) {
   const text = `
-✏️ <b>UBAH JADWAL CRON #${id}</b>
+✏️ <b>UBAH WAKTU JADWAL #${id}</b>
 ━━━━━━━━━━━━━━━━━━
-Pilih preset frekuensi di bawah atau ketik perintah perubahan:
-<code>/cron ubah ${id} &lt;ekspresi_cron&gt;</code>
+Pilih preset waktu di bawah atau ketik perintah perubahan:
+<code>/cron ubah ${id} &lt;jam_atau_frekuensi&gt;</code>
 
-<b>Contoh Sintaks:</b>
-• <code>/cron ubah ${id} 0 20 * * *</code> (Setiap hari jam 20:00 WIB)
-• <code>/cron ubah ${id} 0 22 * * *</code> (Setiap hari jam 22:00 WIB)
-• <code>/cron ubah ${id} 30m</code> (Setiap 30 menit)
-• <code>/cron ubah ${id} 1h</code> (Setiap 1 jam)
+<b>💡 Format Yang Didukung:</b>
+• <b>Jam Spesifik:</b> <code>/cron ubah ${id} 20:00</code> (atau <code>20.00</code> / <code>jam 20:00</code>)
+• <b>Hari Tertentu:</b> <code>/cron ubah ${id} tiap senin 09:00</code>
+• <b>Interval Menit:</b> <code>/cron ubah ${id} 30m</code> (atau <code>tiap 30 menit</code>)
+• <b>Interval Jam:</b> <code>/cron ubah ${id} 1h</code> (atau <code>tiap 1 jam</code>)
   `.trim();
 
   const kb = new InlineKeyboard()
-    .text('🕒 Tiap Jam 20:00', `job_preset_edit:${id}:0 20 * * *`)
-    .text('🌙 Tiap Jam 22:00', `job_preset_edit:${id}:0 22 * * *`)
+    .text('🕒 Tiap Jam 20:00', `job_preset_edit:${id}:20:00`)
+    .text('🌙 Tiap Jam 22:00', `job_preset_edit:${id}:22:00`)
     .row()
     .text('⏱️ Tiap 30 Menit', `job_preset_edit:${id}:30m`)
     .text('⌛ Tiap 1 Jam', `job_preset_edit:${id}:1h`)

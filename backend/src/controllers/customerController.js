@@ -491,52 +491,98 @@ export async function adjustCustomerPoints(req, res) {
 
 /**
  * POST /api/customers/sync-batch
- * Memungkinkan migrasi data dari LocalStorage ke database secara mulus.
+ * Mendukung migrasi / import data pelanggan massal dari Excel atau LocalStorage.
  */
 export async function syncBatchCustomers(req, res) {
   try {
     const { customers } = req.body;
     if (!Array.isArray(customers) || customers.length === 0) {
-      return errorResponse(res, 'Data pelanggan kosong', 400);
+      return errorResponse(res, 'Data pelanggan kosong atau tidak valid', 400);
     }
 
     let inserted = 0;
+    let updated = 0;
     let skipped = 0;
+    const seenPhones = new Set();
 
     for (const item of customers) {
-      if (!item.name || !item.phone) {
+      const name = String(item.name || '').trim();
+      const rawPhone = String(item.phone || '').trim();
+
+      if (!name || !rawPhone) {
         skipped++;
         continue;
       }
 
-      const cleanPhone = String(item.phone).trim().replace(/[-\s]/g, '');
+      // Normalisasi nomor telepon
+      const cleanPhone = rawPhone.replace(/[-\s]/g, '');
+      if (seenPhones.has(cleanPhone)) {
+        skipped++;
+        continue;
+      }
+      seenPhones.add(cleanPhone);
+
+      // Normalisasi tier
+      const rawTier = String(item.tier || '').toUpperCase().trim();
+      let resolvedTier = 'SILVER';
+      if (['SILVER', 'GOLD', 'PLATINUM'].includes(rawTier)) {
+        resolvedTier = rawTier;
+      } else if (rawTier === 'REGULAR') {
+        resolvedTier = 'SILVER';
+      } else if (rawTier === 'VIP') {
+        resolvedTier = 'PLATINUM';
+      }
+
+      const points = item.points !== undefined && item.points !== null && !isNaN(Number(item.points))
+        ? Math.max(0, parseInt(item.points))
+        : 10;
+
       const existing = await prisma.customer.findUnique({
         where: { phone: cleanPhone },
       });
 
       if (existing) {
-        skipped++;
-        continue;
+        await prisma.customer.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            email: item.email ? String(item.email).trim() : existing.email,
+            notes: item.notes ? String(item.notes).trim() : existing.notes,
+            ...(item.points !== undefined && !isNaN(Number(item.points)) && { points }),
+            ...(rawTier && { tier: resolvedTier }),
+            isActive: true,
+          },
+        });
+        updated++;
+      } else {
+        await prisma.customer.create({
+          data: {
+            name,
+            phone: cleanPhone,
+            email: item.email ? String(item.email).trim() : null,
+            notes: item.notes ? String(item.notes).trim() : null,
+            points,
+            tier: resolvedTier,
+            totalSpent: Number(item.totalSpent) || 0,
+            visitCount: Number(item.visitCount) || 0,
+            isActive: true,
+          },
+        });
+        inserted++;
       }
+    }
 
-      await prisma.customer.create({
-        data: {
-          name: String(item.name).trim(),
-          phone: cleanPhone,
-          email: item.email ? String(item.email).trim() : null,
-          points: Number(item.points) || 10,
-          tier: ['SILVER', 'GOLD', 'PLATINUM'].includes(item.tier) ? item.tier : 'SILVER',
-          totalSpent: Number(item.totalSpent) || 0,
-          visitCount: Number(item.visitCount) || 0,
-        },
-      });
-      inserted++;
+    try {
+      emitCustomerEvent('customers:changed', { action: 'BATCH_SYNC', inserted, updated });
+    } catch (e) {
+      console.warn('[Socket.IO] Emit customers:changed error:', e);
     }
 
     return successResponse(
       res,
-      { inserted, skipped },
-      `Sinkronisasi selesai: ${inserted} pelanggan baru disimpan, ${skipped} diabaikan (duplikat/tidak valid)`
+      { inserted, updated, skipped, total: inserted + updated },
+      `Impor pelanggan selesai: ${inserted} member baru ditambahkan, ${updated} member diperbarui` +
+        (skipped > 0 ? ` (${skipped} diabaikan)` : '')
     );
   } catch (err) {
     return errorResponse(res, err.message, 500);

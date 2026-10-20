@@ -53,6 +53,7 @@ import {
   Percent,
   UserCheck,
   Utensils,
+  Download,
 } from 'lucide-react';
 import EditProfileModal from '../profile/EditProfileModal';
 import { usePrinterStore } from '../../store/printerStore';
@@ -188,7 +189,7 @@ export default function Sidebar() {
         items: [
           {
             to: '/menu',
-            label: 'Menu & Produk',
+            label: 'Menu',
             icon: UtensilsCrossed,
             allowed: isManagerOrOwner,
           },
@@ -330,13 +331,13 @@ export default function Sidebar() {
           },
           {
             to: '/reports/categories',
-            label: 'Laporan Kategori',
+            label: 'Kategori',
             icon: Tag,
             allowed: isManagerOrOwner,
           },
           {
             to: '/reports/customers',
-            label: 'Laporan Pelanggan',
+            label: 'Pelanggan',
             icon: Users,
             allowed: isManagerOrOwner,
           },
@@ -354,25 +355,25 @@ export default function Sidebar() {
           },
           {
             to: '/reports/taxes',
-            label: 'Laporan Pajak',
+            label: 'Pajak',
             icon: Receipt,
             allowed: isManagerOrOwner,
           },
           {
             to: '/reports/discounts',
-            label: 'Laporan Diskon',
+            label: 'Diskon',
             icon: Percent,
             allowed: isManagerOrOwner,
           },
           {
             to: '/reports/staff',
-            label: 'Laporan Pegawai',
+            label: 'Pegawai',
             icon: UserCheck,
             allowed: isManagerOrOwner,
           },
           {
             to: '/reports/cash-drawer',
-            label: 'Laporan Kas Kasir',
+            label: 'Kas Kasir',
             icon: Wallet,
             allowed: isManagerOrOwner,
           },
@@ -717,16 +718,6 @@ export default function Sidebar() {
                 {isKitchen ? 'Dapur (Kitchen)' : isBarista ? 'Barista (Bar)' : user?.role}
               </span>
             </div>
-          </button>
-
-          {/* Quick Logout / Switch Account Button */}
-          <button
-            type="button"
-            onClick={logout}
-            title="Keluar / Ganti Akun"
-            className="p-2 rounded-xl text-komazi-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none"
-          >
-            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

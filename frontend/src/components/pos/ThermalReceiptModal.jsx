@@ -624,9 +624,6 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-komazi-text">Pengaturan Cetak</h3>
-                  <p className="text-[11px] text-komazi-muted font-mono truncate">
-                    {order.invoiceNo || `KMZ-${order.id}`}
-                  </p>
                 </div>
               </div>
               <button

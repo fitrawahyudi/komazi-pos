@@ -20,6 +20,7 @@ import {
 import prisma from '../../config/db.js';
 import { checkSystemHealth, formatSentinelStatusHtml } from '../../services/cron/handlers/monitoringHandler.js';
 import { computeNextRunAt } from '../../services/cron/jobRegistryService.js';
+import { formatCronToIndonesian, parseHumanScheduleInput } from '../../services/cron/cronHumanizer.js';
 
 function buildSentinelKeyboard(sentinelJob) {
   const kb = new InlineKeyboard()
@@ -34,7 +35,7 @@ function buildSentinelKeyboard(sentinelJob) {
     }
   }
 
-  kb.row().text('📋 Kelola Semua Jadwal Cron', 'go:jobs');
+  kb.row().text('📋 Kelola Semua Jadwal Otomatis', 'go:jobs');
   return kb;
 }
 
@@ -471,19 +472,18 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
     );
   });
 
-  // 7) Atur Jadwal Sentinel Langsung (/sentinel_schedule <cron>)
+  // 7) Atur Jadwal Sentinel Langsung (/sentinel_schedule <waktu>)
   bot.command('sentinel_schedule', requireRole('OWNER'), async (ctx) => {
     const expr = (ctx.match || '').trim();
     if (!expr) {
       return ctx.reply(
         '⚙️ <b>PANDUAN PENGATURAN JADWAL SENTINEL</b>\n━━━━━━━━━━━━━━━━━━\n' +
-        'Gunakan format:\n<code>/sentinel_schedule &lt;ekspresi_cron&gt;</code>\n\n' +
-        '<b>Pilihan Cepat yang Sering Digunakan:</b>\n' +
-        '• <code>/sentinel_schedule 0 8 * * *</code> — Setiap hari jam 08:00 WIB pagi\n' +
-        '• <code>/sentinel_schedule 0 8,20 * * *</code> — Pagi (08:00) & Malam (20:00)\n' +
-        '• <code>/sentinel_schedule 0 */6 * * *</code> — Setiap 6 jam\n' +
-        '• <code>/sentinel_schedule */30 * * * *</code> — Setiap 30 menit (bawaan)\n' +
-        '• <code>/sentinel_schedule manual</code> — Matikan otomatis (hanya tampil saat diketik /sentinel)\n\n' +
+        'Gunakan format:\n<code>/sentinel_schedule &lt;waktu_atau_frekuensi&gt;</code>\n\n' +
+        '<b>💡 Contoh Penggunaan Mudah:</b>\n' +
+        '• <code>/sentinel_schedule 08:00</code> — Setiap hari pukul 08:00 WIB\n' +
+        '• <code>/sentinel_schedule 30m</code> — Setiap 30 menit (atau <code>tiap 30 menit</code>)\n' +
+        '• <code>/sentinel_schedule 1h</code> — Setiap 1 jam (atau <code>tiap 1 jam</code>)\n' +
+        '• <code>/sentinel_schedule manual</code> — Matikan otomatis (hanya saat dipanggil)\n\n' +
         '<i>Atau ketik <code>/sentinel</code> lalu tekan tombol <b>"⏰ Atur Jadwal"</b> untuk memilih via tombol.</i>',
         { parse_mode: 'HTML' }
       );
@@ -492,7 +492,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
     const sentinelJob = await prisma.scheduledJob.findFirst({
       where: { jobType: 'MONITORING', name: { contains: 'Sentinel' }, deletedAt: null },
     });
-    if (!sentinelJob) return ctx.reply('⚠️ Jadwal Sentinel tidak ditemukan di database.');
+    if (!sentinelJob) return ctx.reply('⚠️ Jadwal pemantauan sistem Sentinel tidak ditemukan.');
 
     if (expr.toLowerCase() === 'manual' || expr.toLowerCase() === 'pause' || expr.toLowerCase() === 'off') {
       await prisma.scheduledJob.update({
@@ -510,13 +510,21 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
       );
     }
 
+    const parsed = parseHumanScheduleInput(expr);
+    if (!parsed) {
+      return ctx.reply(
+        '❌ <b>Format waktu tidak dikenali.</b>\nContoh yang bisa diketik: <code>08:00</code>, <code>30m</code>, <code>tiap 1 jam</code>, atau <code>manual</code>.',
+        { parse_mode: 'HTML' }
+      );
+    }
+
     try {
-      const nextRunAt = computeNextRunAt('cron', expr, 'Asia/Jakarta');
+      const nextRunAt = computeNextRunAt(parsed.scheduleType, parsed.scheduleExpression, 'Asia/Jakarta');
       const updated = await prisma.scheduledJob.update({
         where: { id: sentinelJob.id },
         data: {
-          scheduleExpression: expr,
-          scheduleType: 'cron',
+          scheduleExpression: parsed.scheduleExpression,
+          scheduleType: parsed.scheduleType,
           nextRunAt,
           enabled: true,
           version: { increment: 1 },
@@ -528,7 +536,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
         : '-';
 
       return ctx.reply(
-        `✅ <b>Jadwal Sentinel Berhasil Diatur!</b>\n━━━━━━━━━━━━━━━━━━\n• Ekspresi Cron: <code>${esc(expr)}</code>\n• Eksekusi Berikutnya: <b>${nextStr}</b>\n\nSentinel akan memeriksa sistem otomatis pada jadwal ini, atau kapan saja saat Anda meminta dengan /sentinel.`,
+        `✅ <b>Jadwal Sentinel Berhasil Diatur!</b>\n━━━━━━━━━━━━━━━━━━\n• Jadwal: <b>${esc(parsed.humanDescription)}</b>\n• Eksekusi Berikutnya: <b>${nextStr}</b>\n\nSentinel akan memeriksa sistem otomatis pada jadwal ini, atau kapan saja saat Anda meminta dengan /sentinel.`,
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard()
@@ -537,7 +545,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
         }
       );
     } catch (err) {
-      return ctx.reply(`❌ Format ekspresi cron tidak valid: ${esc(err.message)}`, { parse_mode: 'HTML' });
+      return ctx.reply(`❌ Format jadwal tidak valid: ${esc(err.message)}`, { parse_mode: 'HTML' });
     }
   });
 
@@ -583,7 +591,7 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
 • <b>Setiap 1 Jam / 30 Menit</b>: Pengawasan intensif
 • <b>Hanya Manual</b>: Hanya tampil saat Anda mengetik /sentinel
 
-<i>Atau gunakan perintah:</i> <code>/sentinel_schedule &lt;ekspresi_cron&gt;</code>
+<i>Atau gunakan perintah:</i> <code>/sentinel_schedule &lt;waktu&gt;</code> (cth: 08:00, 30m, 1h)
     `.trim();
 
     return ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
@@ -631,8 +639,9 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
         ? new Date(updated.nextRunAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
         : '-';
 
+      const humanSched = formatCronToIndonesian(choice, 'cron');
       return ctx.editMessageText(
-        `✅ <b>Jadwal Sentinel Berhasil Diperbarui!</b>\n━━━━━━━━━━━━━━━━━━\n• Ekspresi Cron: <code>${esc(choice)}</code>\n• Eksekusi Berikutnya: <b>${nextStr}</b>\n\nSentinel akan memeriksa sistem otomatis pada jadwal ini, atau kapan saja saat Anda meminta dengan /sentinel.`,
+        `✅ <b>Jadwal Sentinel Berhasil Diperbarui!</b>\n━━━━━━━━━━━━━━━━━━\n• Jadwal: <b>${esc(humanSched)}</b>\n• Eksekusi Berikutnya: <b>${nextStr}</b>\n\nSentinel akan memeriksa sistem otomatis pada jadwal ini, atau kapan saja saat Anda meminta dengan /sentinel.`,
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard()

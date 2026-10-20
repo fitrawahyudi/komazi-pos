@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../services/api';
 import KomaziLogo from '../components/ui/KomaziLogo';
@@ -20,6 +20,7 @@ import {
   EyeOff,
   MessageSquare,
   Terminal,
+  Download,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -324,7 +325,7 @@ export default function LoginPage() {
           </form>
 
           {/* Security & Access Notice */}
-          <div className="pt-3 border-t border-komazi-border text-center space-y-1.5">
+          <div className="pt-3 border-t border-komazi-border text-center space-y-2">
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-komazi-muted">
               <ShieldCheck className="w-3.5 h-3.5 text-komazi-teal-light" />
               <span className="font-semibold text-komazi-text">Akses Terotorisasi & Hak Akses Ketat</span>

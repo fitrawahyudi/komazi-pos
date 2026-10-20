@@ -223,3 +223,161 @@ export async function getCogsOverview(req, res) {
     return errorResponse(res, err.message, 500);
   }
 }
+
+/**
+ * POST /api/products/recipes/bulk
+ * Import/update multiple product recipes (BOM) from Excel.
+ * Body: { recipes: [ { sku, variantName, ingredientName, quantity } ] }
+ */
+export async function bulkSaveRecipes(req, res) {
+  try {
+    const { recipes = [] } = req.body;
+    if (!Array.isArray(recipes) || recipes.length === 0) {
+      return errorResponse(res, 'Daftar baris resep tidak valid atau kosong', 400);
+    }
+
+    // 1. Fetch all products and master ingredients
+    const products = await prisma.product.findMany({
+      include: { variants: true },
+    });
+    const ingredients = await prisma.ingredient.findMany();
+
+    const skuMap = new Map();
+    const nameMap = new Map();
+    products.forEach((p) => {
+      if (p.sku) skuMap.set(p.sku.toLowerCase().trim(), p);
+      nameMap.set(p.name.toLowerCase().trim(), p);
+    });
+
+    const ingMap = new Map();
+    ingredients.forEach((ing) => {
+      ingMap.set(ing.name.toLowerCase().trim(), ing);
+      ingMap.set(String(ing.id), ing);
+    });
+
+    // 2. Group recipe items by target product
+    const productRecipesMap = new Map();
+    let skippedCount = 0;
+    const skippedItems = [];
+
+    for (const item of recipes) {
+      const rawSku = String(item.sku || item.productSku || '').toLowerCase().trim();
+      const rawProdName = String(item.productName || '').toLowerCase().trim();
+      const matchedProduct = (rawSku && skuMap.get(rawSku)) || (rawProdName && nameMap.get(rawProdName));
+
+      if (!matchedProduct) {
+        skippedCount++;
+        skippedItems.push({
+          item,
+          reason: `Produk dengan SKU/Nama "${item.sku || item.productName}" tidak terdaftar di sistem`,
+        });
+        continue;
+      }
+
+      const ingName = String(item.ingredientName || item.name || '').trim();
+      if (!ingName) {
+        skippedCount++;
+        skippedItems.push({ item, reason: 'Nama bahan baku kosong' });
+        continue;
+      }
+
+      const quantity = Math.max(0.0001, parseFloat(item.quantity) || 1);
+      const variantName = String(item.variantName || '').trim().toLowerCase();
+
+      let matchedVariantId = null;
+      if (variantName) {
+        const matchedVariant = (matchedProduct.variants || []).find(
+          (v) => v.name.toLowerCase().trim() === variantName
+        );
+        if (matchedVariant) {
+          matchedVariantId = matchedVariant.id;
+        }
+      }
+
+      if (!productRecipesMap.has(matchedProduct.id)) {
+        productRecipesMap.set(matchedProduct.id, {
+          product: matchedProduct,
+          items: [],
+        });
+      }
+
+      productRecipesMap.get(matchedProduct.id).items.push({
+        ingredientName: ingName,
+        quantity,
+        variantId: matchedVariantId,
+      });
+    }
+
+    if (productRecipesMap.size === 0) {
+      return errorResponse(res, 'Tidak ada baris resep yang cocok dengan produk yang terdaftar', 400, {
+        skipped: skippedItems,
+      });
+    }
+
+    // 3. Execute in transaction
+    let totalItemsSaved = 0;
+    const updatedProducts = [];
+
+    await prisma.$transaction(
+      async (tx) => {
+        for (const [productId, { product, items }] of productRecipesMap.entries()) {
+          // Delete existing recipe items for this product
+          await tx.productRecipeItem.deleteMany({
+            where: { productId },
+          });
+
+          const itemsToCreate = [];
+          for (const it of items) {
+            let ing = ingMap.get(it.ingredientName.toLowerCase().trim());
+            if (!ing) {
+              // Auto-create ingredient if not existing!
+              ing = await tx.ingredient.create({
+                data: {
+                  name: it.ingredientName,
+                  unit: 'gram',
+                  stock: 0,
+                  minStock: 0,
+                  costPerUnit: 0,
+                },
+              });
+              ingMap.set(ing.name.toLowerCase().trim(), ing);
+              ingMap.set(String(ing.id), ing);
+            }
+
+            itemsToCreate.push({
+              productId,
+              ingredientId: ing.id,
+              quantity: it.quantity,
+              variantId: it.variantId,
+            });
+          }
+
+          if (itemsToCreate.length > 0) {
+            await tx.productRecipeItem.createMany({
+              data: itemsToCreate,
+            });
+            totalItemsSaved += itemsToCreate.length;
+            updatedProducts.push(product.name);
+          }
+        }
+      },
+      { timeout: 30000 }
+    );
+
+    return successResponse(
+      res,
+      {
+        totalItemsSaved,
+        productsUpdatedCount: updatedProducts.length,
+        updatedProducts,
+        skippedCount,
+      },
+      `Berhasil memperbarui resep untuk ${updatedProducts.length} produk (${totalItemsSaved} bahan baku)` +
+        (skippedCount > 0 ? ` (${skippedCount} dilewati)` : ''),
+      200
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+

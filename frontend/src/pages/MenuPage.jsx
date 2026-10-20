@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Download,
+  Upload,
   FileSpreadsheet,
 } from 'lucide-react';
 import ImageUpload from '../components/ui/ImageUpload';
@@ -74,7 +75,7 @@ export default function MenuPage() {
   // Multi-select state
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isBulkCatModalOpen, setIsBulkCatModalOpen] = useState(false);
-  const [bulkTargetCatId, setBulkTargetCatId] = useState(2);
+  const [bulkTargetCatId, setBulkTargetCatId] = useState('');
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
@@ -105,6 +106,7 @@ export default function MenuPage() {
   const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
+  const [isRecipeImportModalOpen, setIsRecipeImportModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState('info'); // 'info' | 'variants' | 'modifiers'
 
   const handleExportMenu = () => {
@@ -131,7 +133,7 @@ export default function MenuPage() {
   // Form states
   const [formData, setFormData] = useState({
     name: '',
-    categoryId: 2,
+    categoryId: '',
     price: 25000,
     isDynamicPrice: false,
     minPrice: 0,
@@ -143,11 +145,18 @@ export default function MenuPage() {
   });
 
   const handleOpenAdd = () => {
+    const validCats = categories.filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua');
+    if (validCats.length === 0) {
+      toast.error('Belum ada kategori menu. Silakan tambahkan kategori terlebih dahulu.');
+      setIsAddCatModalOpen(true);
+      return;
+    }
+    const defaultCatId = validCats[0]?.id || '';
     setEditingProduct(null);
     setModalTab('info');
     setFormData({
       name: '',
-      categoryId: categories[1]?.id || 2,
+      categoryId: defaultCatId,
       price: 25000,
       isDynamicPrice: false,
       minPrice: 0,
@@ -297,9 +306,20 @@ export default function MenuPage() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const cat = categories.find((c) => c.id === Number(formData.categoryId));
+
+    const catIdNum = Number(formData.categoryId);
+    if (!catIdNum || isNaN(catIdNum)) {
+      toast.error('Silakan pilih kategori produk terlebih dahulu');
+      return;
+    }
+
+    const cat = categories.find((c) => c.id === catIdNum);
+    if (!cat) {
+      toast.error('Kategori yang dipilih tidak valid atau belum tersedia');
+      return;
+    }
 
     // Sanitize variants & modifiers: filter out blank names
     const cleanVariants = (formData.variants || [])
@@ -320,6 +340,7 @@ export default function MenuPage() {
 
     const payload = {
       ...formData,
+      categoryId: catIdNum,
       price: Number(formData.price) || 0,
       isDynamicPrice: Boolean(formData.isDynamicPrice),
       minPrice: Number(formData.minPrice) || 0,
@@ -329,13 +350,22 @@ export default function MenuPage() {
     };
 
     if (editingProduct) {
-      updateProduct(editingProduct.id, payload);
-      toast.success(`Produk "${formData.name}" berhasil diperbarui!`);
+      const res = await updateProduct(editingProduct.id, payload);
+      if (res && res.id) {
+        toast.success(`Produk "${formData.name}" berhasil diperbarui!`);
+        setIsProductModalOpen(false);
+      } else {
+        toast.error(res?.message || 'Gagal memperbarui produk. Periksa kembali input data.');
+      }
     } else {
-      addProduct(payload);
-      toast.success(`Produk "${formData.name}" berhasil ditambahkan ke katalog!`);
+      const res = await addProduct(payload);
+      if (res && res.id) {
+        toast.success(`Produk "${formData.name}" berhasil ditambahkan ke katalog!`);
+        setIsProductModalOpen(false);
+      } else {
+        toast.error(res?.message || 'Gagal menambahkan produk. Periksa kembali kategori.');
+      }
     }
-    setIsProductModalOpen(false);
   };
 
   const filtered = useMemo(() => {
@@ -529,8 +559,18 @@ export default function MenuPage() {
             className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
             title="Import katalog menu massal dari file Excel atau CSV"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Import Excel</span>
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import Menu</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsRecipeImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
+            title="Import resep dan Bill of Materials (BOM) produk dari Excel atau CSV"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import Resep</span>
           </button>
 
           <button
@@ -598,16 +638,6 @@ export default function MenuPage() {
                 </button>
               );
             })}
-
-            <button
-              type="button"
-              onClick={() => navigate('/categories')}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap bg-komazi-surface-2/60 text-komazi-muted hover:text-komazi-coral border border-dashed border-komazi-border flex items-center gap-1 transition-colors ml-1"
-              title="Buka Halaman Manajemen Kategori Terpisah"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Kategori</span>
-            </button>
           </div>
         </div>
 
@@ -1058,8 +1088,8 @@ export default function MenuPage() {
             <button
               type="button"
               onClick={() => {
-                const defaultCat = categories.find((c) => c.id !== 1)?.id || 2;
-                setBulkTargetCatId(defaultCat);
+                const validCat = categories.find((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua')?.id || categories[0]?.id || '';
+                setBulkTargetCatId(validCat);
                 setIsBulkCatModalOpen(true);
               }}
               className="px-2.5 py-1.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text border border-komazi-border text-xs font-semibold transition-all flex items-center gap-1 active:scale-95"
@@ -1197,12 +1227,19 @@ export default function MenuPage() {
                           value={formData.categoryId}
                           onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
                           className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
+                          required
                         >
-                          {categories.filter((c) => c.id !== 1).map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
+                          {categories.filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua').length === 0 ? (
+                            <option value="" disabled>Belum ada kategori (Buat kategori terlebih dahulu)</option>
+                          ) : (
+                            categories
+                              .filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua')
+                              .map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))
+                          )}
                         </select>
                       </div>
 
@@ -1212,8 +1249,8 @@ export default function MenuPage() {
                         </label>
                         <input
                           type="number"
-                          step="1000"
-                          min="0"
+                          // step="1000"
+                          min=""
                           required={!formData.isDynamicPrice}
                           value={formData.price}
                           onChange={(e) => setFormData({ ...formData, price: e.target.value })}
@@ -1732,7 +1769,7 @@ export default function MenuPage() {
                 className="w-full px-3 py-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
               >
                 {categories
-                  .filter((c) => c.id !== 1)
+                  .filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua')
                   .map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
@@ -1785,7 +1822,7 @@ export default function MenuPage() {
         />
       )}
 
-      {/* Excel Import Modal */}
+      {/* Excel Import Modal for Menu */}
       <ExcelImportModal
         isOpen={isExcelImportModalOpen}
         onClose={() => setIsExcelImportModalOpen(false)}
@@ -1793,10 +1830,25 @@ export default function MenuPage() {
         type="MENU"
         categories={categories}
         onSuccess={() => {
-          usePosStore.getState().fetchProducts();
+          usePosStore.getState().fetchCategories?.();
+          usePosStore.getState().fetchProducts?.();
           useRecipeStore.getState().fetchCogsOverview?.();
           useStockStore.getState().fetchIngredients?.();
-          toast.success('Katalog produk & perhitungan HPP berhasil diimpor!');
+          toast.success('Katalog produk & kategori berhasil diimpor!');
+        }}
+      />
+
+      {/* Excel Import Modal for Recipe / BOM */}
+      <ExcelImportModal
+        isOpen={isRecipeImportModalOpen}
+        onClose={() => setIsRecipeImportModalOpen(false)}
+        title="Import Resep & Bill of Materials (BOM)"
+        type="RECIPE"
+        onSuccess={() => {
+          usePosStore.getState().fetchProducts?.();
+          useRecipeStore.getState().fetchCogsOverview?.();
+          useStockStore.getState().fetchIngredients?.();
+          toast.success('Resep (BOM) berhasil diimpor!');
         }}
       />
     </div>

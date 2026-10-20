@@ -12,6 +12,8 @@ import {
   Calculator,
   TrendingUp,
   Sparkles,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import {
   parseExcelFile,
@@ -30,6 +32,7 @@ import { useStockStore } from '../../store/stockStore';
 import { useRecipeStore } from '../../store/useRecipeStore';
 import { usePosStore } from '../../store/posStore';
 import { useHrisStore } from '../../store/hrisStore';
+import { useCustomerStore } from '../../store/customerStore';
 
 /**
  * Helper to parse recipe string from Excel into structured items with cost lookup.
@@ -143,7 +146,9 @@ export default function ExcelImportModal({
   const [isParsing, setIsParsing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const dragCounterRef = useRef(0);
 
   // Auto-fetch master ingredients when opening modal for Menu import
   useEffect(() => {
@@ -200,7 +205,19 @@ export default function ExcelImportModal({
     const name = String(row['Nama Produk*'] || row['Nama Produk'] || row['name'] || '').trim();
     const rawPrice = row['Harga Jual*'] || row['Harga Jual'] || row['price'] || 0;
     const price = parseFloat(rawPrice);
-    const category = String(row['Kategori*'] || row['Kategori'] || row['category'] || '').trim();
+    const category = String(
+      row['Kategori*'] ||
+      row['Kategori'] ||
+      row['Kategori Menu'] ||
+      row['Kategori Produk'] ||
+      row['Nama Kategori'] ||
+      row['Category'] ||
+      row['category'] ||
+      row['categoryName'] ||
+      ''
+    ).trim();
+    const rawCatId = row['ID Kategori'] || row['categoryId'] || row['CatId'] || null;
+    const categoryId = rawCatId && !isNaN(parseInt(rawCatId)) ? parseInt(rawCatId) : null;
 
     // Parse harga dinamis & batas harga minimum
     const dynamicRaw = String(row['Harga Dinamis?'] || row['Harga Dinamis'] || row['isDynamicPrice'] || '').toLowerCase().trim();
@@ -276,6 +293,7 @@ export default function ExcelImportModal({
         isDynamicPrice,
         minPrice,
         categoryName: category,
+        categoryId,
         sku: String(row['SKU'] || '').trim(),
         description: String(row['Deskripsi'] || '').trim(),
         imageUrl,
@@ -295,15 +313,33 @@ export default function ExcelImportModal({
 
   // Validasi baris data Bahan Baku
   const validateIngredientRow = (row) => {
-    const name = String(row['Nama Bahan*'] || row['Nama Bahan'] || row['name'] || '').trim();
-    const unit = String(row['Satuan* (gram/ml/pcs/kg)'] || row['Satuan*'] || row['Satuan'] || row['unit'] || 'pcs').trim();
-    const rawStock = row['Stok Awal*'] || row['Stok Awal'] || row['stock'] || 0;
-    const rawMin = row['Stok Minimum*'] || row['Stok Minimum'] || row['minStock'] || 0;
-    const rawCost = row['Harga Modal per Satuan (Rp)*'] || row['Harga Modal'] || row['costPerUnit'] || 0;
+    const name = String(
+      row['Nama Bahan*'] ||
+      row['Nama Bahan'] ||
+      row['Nama Sumber Persediaan*'] ||
+      row['Nama Sumber Persediaan'] ||
+      row['Bahan Baku'] ||
+      row['Bahan'] ||
+      row['name'] ||
+      ''
+    ).trim();
 
-    const stock = parseFloat(rawStock);
-    const minStock = parseFloat(rawMin);
-    const costPerUnit = parseFloat(rawCost);
+    const unit = String(
+      row['Satuan* (gram/ml/pcs/kg)'] ||
+      row['Satuan*'] ||
+      row['Satuan'] ||
+      row['Unit'] ||
+      row['unit'] ||
+      'pcs'
+    ).trim();
+
+    const rawStock = row['Stok Awal*'] ?? row['Stok Awal'] ?? row['Stok'] ?? row['Jumlah Stok'] ?? row['Stok Saat Ini'] ?? row['stock'] ?? 0;
+    const rawMin = row['Stok Minimum*'] ?? row['Stok Minimum'] ?? row['Stok Min'] ?? row['Min Stock'] ?? row['minStock'] ?? 0;
+    const rawCost = row['Harga Modal per Satuan (Rp)*'] ?? row['Harga Modal per Satuan'] ?? row['Harga Modal'] ?? row['Harga per Satuan'] ?? row['Harga Beli Satuan (Rp)*'] ?? row['Harga Beli'] ?? row['costPerUnit'] ?? 0;
+
+    const stock = parseFloat(String(rawStock).replace(',', '.'));
+    const minStock = parseFloat(String(rawMin).replace(',', '.'));
+    const costPerUnit = parseFloat(String(rawCost).replace(/[^0-9.-]+/g, ''));
 
     const errors = [];
     if (!name) errors.push('Nama bahan wajib diisi');
@@ -312,8 +348,25 @@ export default function ExcelImportModal({
     if (isNaN(minStock) || minStock < 0) errors.push('Stok minimum harus berupa angka valid');
     if (isNaN(costPerUnit) || costPerUnit < 0) errors.push('Harga modal harus berupa angka valid');
 
-    const supplierName = String(row['Nama Supplier'] || row['Supplier'] || row['Pemasok'] || '').trim();
-    const supplierPhone = String(row['No WhatsApp Supplier'] || row['Kontak Supplier'] || row['WhatsApp'] || '').trim();
+    const supplierName = String(
+      row['Nama Supplier'] ||
+      row['Supplier'] ||
+      row['Pemasok'] ||
+      row['Vendor'] ||
+      row['Nama Pemasok / Supplier*'] ||
+      row['Nama Pemasok'] ||
+      ''
+    ).trim();
+
+    const supplierPhone = String(
+      row['No WhatsApp Supplier'] ||
+      row['Kontak Supplier'] ||
+      row['WhatsApp'] ||
+      row['No. WA Supplier'] ||
+      row['Nomor Supplier'] ||
+      row['Telepon Supplier'] ||
+      ''
+    ).trim();
 
     return {
       isValid: errors.length === 0,
@@ -327,6 +380,147 @@ export default function ExcelImportModal({
         costPerUnit: isNaN(costPerUnit) ? 0 : costPerUnit,
         supplierName,
         supplierPhone,
+      },
+      original: row,
+    };
+  };
+
+  // Validasi baris data Pelanggan (CRM)
+  const validateCustomerRow = (row) => {
+    const name = String(
+      row['Nama Pelanggan*'] ||
+      row['Nama Pelanggan'] ||
+      row['Nama Member'] ||
+      row['Nama'] ||
+      row['name'] ||
+      row['customerName'] ||
+      ''
+    ).trim();
+
+    const rawPhone = String(
+      row['Nomor WhatsApp / HP*'] ||
+      row['Nomor WhatsApp / HP'] ||
+      row['Nomor WhatsApp'] ||
+      row['No WhatsApp'] ||
+      row['Nomor HP'] ||
+      row['No HP'] ||
+      row['Telepon'] ||
+      row['phone'] ||
+      row['whatsapp'] ||
+      ''
+    ).trim();
+
+    const cleanPhone = rawPhone.replace(/[-\s]/g, '');
+
+    const email = String(
+      row['Email'] ||
+      row['Surel'] ||
+      row['email'] ||
+      ''
+    ).trim();
+
+    const rawPoints = row['Poin Awal'] ?? row['Poin'] ?? row['Saldo Poin'] ?? row['points'] ?? 10;
+    const points = Math.max(0, parseInt(rawPoints) || 0);
+
+    const rawTier = String(
+      row['Tier Member'] ||
+      row['Tier'] ||
+      row['Level'] ||
+      row['tier'] ||
+      'SILVER'
+    ).trim().toUpperCase();
+
+    let tier = 'SILVER';
+    if (['SILVER', 'GOLD', 'PLATINUM'].includes(rawTier)) {
+      tier = rawTier;
+    } else if (rawTier === 'REGULAR') {
+      tier = 'SILVER';
+    } else if (rawTier === 'VIP') {
+      tier = 'PLATINUM';
+    }
+
+    const notes = String(
+      row['Catatan / Alergi'] ||
+      row['Catatan'] ||
+      row['Alergi'] ||
+      row['notes'] ||
+      ''
+    ).trim();
+
+    const errors = [];
+    if (!name) errors.push('Nama pelanggan wajib diisi');
+    if (!cleanPhone) {
+      errors.push('Nomor WhatsApp / HP wajib diisi');
+    } else if (cleanPhone.length < 8) {
+      errors.push('Nomor telepon minimal 8 digit');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings: [],
+      transformed: {
+        name,
+        phone: cleanPhone,
+        email: email || null,
+        points,
+        tier,
+        notes: notes || null,
+      },
+      original: row,
+    };
+  };
+
+  // Validasi baris data Resep (BOM)
+  const validateRecipeRow = (row) => {
+    const sku = String(
+      row['SKU Produk*'] ||
+      row['SKU Produk'] ||
+      row['SKU'] ||
+      row['Kode Produk'] ||
+      row['sku'] ||
+      row['productSku'] ||
+      row['Nama Produk*'] ||
+      row['Nama Produk'] ||
+      ''
+    ).trim();
+
+    const variantName = String(
+      row['Nama Varian'] ||
+      row['Varian'] ||
+      row['Variant'] ||
+      row['variantName'] ||
+      ''
+    ).trim();
+
+    const ingredientName = String(
+      row['Nama Sumber Persediaan*'] ||
+      row['Nama Sumber Persediaan'] ||
+      row['Nama Bahan*'] ||
+      row['Nama Bahan'] ||
+      row['Bahan Baku'] ||
+      row['Bahan'] ||
+      row['ingredientName'] ||
+      ''
+    ).trim();
+
+    const rawQty = row['Jumlah per 1 Produk*'] ?? row['Jumlah per 1 Produk'] ?? row['Jumlah per Produk'] ?? row['Jumlah'] ?? row['Kuantitas'] ?? row['Qty'] ?? row['quantity'] ?? 0;
+    const quantity = Math.max(0, parseFloat(String(rawQty).replace(',', '.')) || 0);
+
+    const errors = [];
+    if (!sku) errors.push('SKU / Nama produk wajib diisi');
+    if (!ingredientName) errors.push('Nama bahan baku wajib diisi');
+    if (isNaN(quantity) || quantity <= 0) errors.push('Jumlah per 1 produk harus lebih besar dari 0');
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings: [],
+      transformed: {
+        sku,
+        variantName: variantName || null,
+        ingredientName,
+        quantity,
       },
       original: row,
     };
@@ -400,10 +594,41 @@ export default function ExcelImportModal({
     };
   };
 
-  // Handle upload & parsing file
-  const handleFileChange = async (e) => {
-    const selectedFile = e.target.files?.[0];
+  // Helper format ukuran file
+  const formatFileSize = (bytes) => {
+    if (!bytes || isNaN(bytes)) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  // Proses validasi dan parsing file Excel/CSV
+  const processFile = async (selectedFile) => {
     if (!selectedFile) return;
+
+    // Validasi format/ekstensi file (.xlsx, .xls, .csv)
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileName = selectedFile.name ? selectedFile.name.toLowerCase() : '';
+    const isValidExt = validExtensions.some((ext) => fileName.endsWith(ext));
+
+    if (!isValidExt) {
+      setErrorMsg('Format file tidak didukung. Mohon unggah file Excel (.xlsx, .xls) atau CSV.');
+      setFile(null);
+      setParsedRows([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    // Validasi batas ukuran file (maks. 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (selectedFile.size > MAX_SIZE) {
+      setErrorMsg('Ukuran file melebihi batas maksimal 5MB.');
+      setFile(null);
+      setParsedRows([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
     setErrorMsg('');
     setFile(selectedFile);
@@ -423,6 +648,8 @@ export default function ExcelImportModal({
       const validated = rows.map((r) => {
         if (type === 'MENU') return validateMenuRow(r);
         if (type === 'STAFF') return validateStaffRow(r);
+        if (type === 'CUSTOMER') return validateCustomerRow(r);
+        if (type === 'RECIPE') return validateRecipeRow(r);
         return validateIngredientRow(r);
       });
       setParsedRows(validated);
@@ -432,6 +659,67 @@ export default function ExcelImportModal({
     } finally {
       setIsParsing(false);
     }
+  };
+
+  // Event handler input file biasa
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      processFile(selectedFile);
+    }
+  };
+
+  // Drag & drop event handlers
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.dataTransfer.dropEffect = 'copy';
+    } catch {
+      // ignore
+    }
+    if (!isDragging) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      setIsDragging(false);
+      dragCounterRef.current = 0;
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    const droppedFile = e.dataTransfer?.files?.[0];
+    if (droppedFile) {
+      processFile(droppedFile);
+    }
+  };
+
+  const handleRemoveFile = (e) => {
+    e?.stopPropagation();
+    setFile(null);
+    setParsedRows([]);
+    setErrorMsg('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Submit bulk data to backend
@@ -454,6 +742,12 @@ export default function ExcelImportModal({
       } else if (type === 'STAFF') {
         endpoint = '/hris/staff/bulk';
         payloadKey = 'staff';
+      } else if (type === 'CUSTOMER') {
+        endpoint = '/customers/sync-batch';
+        payloadKey = 'customers';
+      } else if (type === 'RECIPE') {
+        endpoint = '/products/recipes/bulk';
+        payloadKey = 'recipes';
       }
 
       const res = await api.post(endpoint, { [payloadKey]: validItems });
@@ -462,8 +756,9 @@ export default function ExcelImportModal({
         throw new Error(res?.message || 'Gagal mengimpor data ke server.');
       }
 
-      // Refresh stores so everything reflects new products, HPP and recipes immediately
+      // Refresh stores so everything reflects new products, categories, HPP and recipes immediately
       if (type === 'MENU') {
+        usePosStore.getState().fetchCategories?.();
         usePosStore.getState().fetchProducts?.();
         useRecipeStore.getState().fetchCogsOverview?.();
         useStockStore.getState().fetchIngredients?.();
@@ -472,6 +767,12 @@ export default function ExcelImportModal({
       } else if (type === 'STAFF') {
         useHrisStore.getState().fetchStaff?.();
         useHrisStore.getState().fetchOverview?.();
+      } else if (type === 'CUSTOMER') {
+        useCustomerStore.getState().fetchCustomers?.();
+      } else if (type === 'RECIPE') {
+        useRecipeStore.getState().fetchCogsOverview?.();
+        useStockStore.getState().fetchIngredients?.();
+        usePosStore.getState().fetchProducts?.();
       }
 
       if (onSuccess) {
@@ -489,6 +790,8 @@ export default function ExcelImportModal({
     setFile(null);
     setParsedRows([]);
     setErrorMsg('');
+    setIsDragging(false);
+    dragCounterRef.current = 0;
     if (fileInputRef.current) fileInputRef.current.value = '';
     onClose();
   };
@@ -507,13 +810,23 @@ export default function ExcelImportModal({
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
+    >
       <div className="bg-komazi-surface border border-komazi-border w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-komazi-border flex items-center justify-between bg-komazi-surface-2/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
-              <FileSpreadsheet className="w-5 h-5" />
+              <Upload className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -524,6 +837,14 @@ export default function ExcelImportModal({
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="p-2 rounded-xl text-komazi-muted hover:text-white hover:bg-komazi-surface-3 transition-colors"
+            title="Tutup Modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Content Area */}
@@ -541,6 +862,10 @@ export default function ExcelImportModal({
                     ? 'Template ini dilengkapi kolom "HPP / Modal (Rp)", "Resep / Bahan Baku", dan sheet referensi Data Bahan Baku.'
                     : type === 'STAFF'
                     ? 'Template registrasi staf lengkap: Nama, Username, Password Sementara, Peran, Dept, Jabatan, dan Komponen Gaji.'
+                    : type === 'CUSTOMER'
+                    ? 'Template member loyalty CRM: Nama Pelanggan, Nomor WhatsApp, Email, Tier, Poin Awal, dan Catatan / Alergi.'
+                    : type === 'RECIPE'
+                    ? 'Template resep BOM produk: SKU Produk, Nama Varian, Nama Sumber Persediaan, dan Jumlah Takaran.'
                     : 'Gunakan format kolom standar Komazi agar data terbaca otomatis dan bebas error.'}
                 </p>
               </div>
@@ -555,31 +880,104 @@ export default function ExcelImportModal({
             </button>
           </div>
 
-          {/* Step 2: Upload File Zone */}
+          {/* Step 2: Upload File Zone (Drag & Drop) */}
           <div>
             <label className="block text-xs font-bold text-komazi-text mb-2">
-              2. Pilih File Excel / CSV yang Sudah Diisi
+              2. Pilih atau Seret File Excel / CSV yang Sudah Diisi
             </label>
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-komazi-border hover:border-komazi-coral/60 rounded-2xl p-6 text-center cursor-pointer bg-komazi-surface-2/40 hover:bg-komazi-surface-2 transition-all group"
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`relative border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 group ${
+                isDragging
+                  ? 'border-komazi-coral bg-komazi-coral/10 scale-[1.01] shadow-lg shadow-komazi-coral/10 ring-4 ring-komazi-coral/20'
+                  : file
+                  ? 'border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10'
+                  : 'border-komazi-border hover:border-komazi-coral/60 bg-komazi-surface-2/40 hover:bg-komazi-surface-2'
+              }`}
             >
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx, .xls, .csv"
                 onChange={handleFileChange}
+                onClick={(e) => {
+                  e.target.value = '';
+                }}
                 className="hidden"
               />
-              <div className="w-12 h-12 rounded-2xl bg-komazi-coral/10 group-hover:bg-komazi-coral/20 text-komazi-coral flex items-center justify-center mx-auto mb-3 transition-colors">
-                <Upload className="w-6 h-6" />
-              </div>
-              <p className="font-bold text-sm text-komazi-text">
-                {file ? file.name : 'Klik untuk memilih file atau drag & drop ke sini'}
-              </p>
-              <p className="text-xs text-komazi-muted mt-1">
-                Mendukung format Microsoft Excel (.xlsx, .xls) dan CSV (maks. 5MB)
-              </p>
+
+              {isDragging ? (
+                <div className="pointer-events-none flex flex-col items-center justify-center py-2 animate-pulse">
+                  <div className="w-14 h-14 rounded-2xl bg-komazi-coral/20 text-komazi-coral flex items-center justify-center mb-3 scale-110 transition-transform">
+                    <Upload className="w-7 h-7 animate-bounce" />
+                  </div>
+                  <p className="font-bold text-base text-komazi-coral">
+                    Lepaskan file Excel / CSV di sini
+                  </p>
+                  <p className="text-xs text-komazi-muted mt-1">
+                    File akan otomatis dipindai dan divalidasi oleh sistem
+                  </p>
+                </div>
+              ) : file ? (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 text-left overflow-hidden">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                      <FileSpreadsheet className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-komazi-text truncate max-w-[240px] sm:max-w-md block">
+                          {file.name}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/30 shrink-0">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-komazi-muted mt-0.5">
+                        Tarik & lepas file baru atau klik "Ganti File" untuk mengganti
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-xs font-bold text-komazi-text transition-colors flex items-center gap-1.5 active:scale-95 shadow-sm"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-komazi-coral" />
+                      <span>Ganti File</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveFile}
+                      className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-xs font-bold text-red-400 transition-colors flex items-center gap-1.5 active:scale-95"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="pointer-events-none flex flex-col items-center justify-center py-2">
+                  <div className="w-12 h-12 rounded-2xl bg-komazi-coral/10 group-hover:bg-komazi-coral/20 text-komazi-coral flex items-center justify-center mb-3 transition-all group-hover:scale-105">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                  <p className="font-bold text-sm text-komazi-text">
+                    Klik untuk memilih file atau <span className="text-komazi-coral underline decoration-komazi-coral/40 underline-offset-4">drag & drop</span> ke sini
+                  </p>
+                  <p className="text-xs text-komazi-muted mt-1">
+                    Mendukung format Microsoft Excel (.xlsx, .xls) dan CSV (maks. 5MB)
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -677,13 +1075,53 @@ export default function ExcelImportModal({
                   <thead className="bg-komazi-surface-2 text-komazi-muted sticky top-0 border-b border-komazi-border font-bold text-[11px] z-10">
                     <tr>
                       <th className="p-2.5 pl-3">Status</th>
-                      <th className="p-2.5">{type === 'MENU' ? 'Nama Produk' : type === 'STAFF' ? 'Nama Pegawai' : 'Nama Bahan'}</th>
-                      <th className="p-2.5">{type === 'MENU' ? 'Kategori' : type === 'STAFF' ? 'Username' : 'Satuan'}</th>
-                      <th className="p-2.5">{type === 'MENU' ? 'Harga Jual' : type === 'STAFF' ? 'Peran / Dept' : 'Stok Awal'}</th>
-                      {type === 'MENU' && <th className="p-2.5">HPP (Modal)</th>}
-                      {type === 'MENU' && <th className="p-2.5">Margin Laba</th>}
-                      <th className="p-2.5">{type === 'MENU' ? 'Resep / Varian' : type === 'STAFF' ? 'Jabatan / Tipe' : 'Harga Modal'}</th>
-                      {type === 'STAFF' && <th className="p-2.5">Gaji Pokok</th>}
+                      {type === 'MENU' && (
+                        <>
+                          <th className="p-2.5">Nama Produk</th>
+                          <th className="p-2.5">Kategori</th>
+                          <th className="p-2.5">Harga Jual</th>
+                          <th className="p-2.5">HPP (Modal)</th>
+                          <th className="p-2.5">Margin Laba</th>
+                          <th className="p-2.5">Resep / Varian</th>
+                        </>
+                      )}
+                      {type === 'STAFF' && (
+                        <>
+                          <th className="p-2.5">Nama Pegawai</th>
+                          <th className="p-2.5">Username</th>
+                          <th className="p-2.5">Peran / Dept</th>
+                          <th className="p-2.5">Jabatan / Tipe</th>
+                          <th className="p-2.5">Gaji Pokok</th>
+                        </>
+                      )}
+                      {type === 'CUSTOMER' && (
+                        <>
+                          <th className="p-2.5">Nama Member</th>
+                          <th className="p-2.5">Nomor WhatsApp</th>
+                          <th className="p-2.5">Email</th>
+                          <th className="p-2.5 text-center">Tier Member</th>
+                          <th className="p-2.5 text-right">Poin Awal</th>
+                          <th className="p-2.5">Catatan / Alergi</th>
+                        </>
+                      )}
+                      {type === 'RECIPE' && (
+                        <>
+                          <th className="p-2.5">SKU / Produk</th>
+                          <th className="p-2.5">Nama Varian</th>
+                          <th className="p-2.5">Nama Bahan Baku</th>
+                          <th className="p-2.5 text-right">Jumlah Takaran</th>
+                        </>
+                      )}
+                      {type !== 'MENU' && type !== 'STAFF' && type !== 'CUSTOMER' && type !== 'RECIPE' && (
+                        <>
+                          <th className="p-2.5">Nama Bahan</th>
+                          <th className="p-2.5">Satuan</th>
+                          <th className="p-2.5">Stok Awal</th>
+                          <th className="p-2.5">Stok Min</th>
+                          <th className="p-2.5">Harga Modal</th>
+                          <th className="p-2.5">Supplier / Kontak</th>
+                        </>
+                      )}
                       <th className="p-2.5 pr-3">Keterangan</th>
                     </tr>
                   </thead>
@@ -706,150 +1144,209 @@ export default function ExcelImportModal({
                             )}
                           </td>
 
-                          {/* Nama Produk / Pegawai / Bahan */}
-                          <td className="p-2.5">
-                            <div className="flex flex-col max-w-[150px]">
-                              <span className="font-bold text-komazi-text truncate">{t.name || '-'}</span>
-                              {t.sku && <span className="text-[10px] text-komazi-muted font-mono">{t.sku}</span>}
-                              {type === 'STAFF' && t.phone && (
-                                <span className="text-[10px] text-komazi-muted">{t.phone}</span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Kategori / Username / Satuan */}
-                          <td className="p-2.5 text-komazi-muted">
-                            {type === 'MENU' ? (
-                              t.categoryName || '-'
-                            ) : type === 'STAFF' ? (
-                              <span className="font-mono text-komazi-coral font-semibold">@{t.username}</span>
-                            ) : (
-                              t.unit
-                            )}
-                          </td>
-
-                          {/* Harga Jual / Peran & Dept / Stok Awal */}
-                          <td className="p-2.5 font-mono text-komazi-text">
-                            {type === 'MENU' ? (
-                              t.isDynamicPrice ? (
-                                <div className="flex flex-col">
-                                  <span className="text-amber-400 font-bold text-[10px]">⚡ Dinamis</span>
-                                  <span className="text-[10px] text-komazi-muted">
-                                    {t.minPrice > 0 ? `Min: Rp ${t.minPrice.toLocaleString('id-ID')}` : 'Bebas'}
-                                  </span>
-                                </div>
-                              ) : (
-                                `Rp ${t.price.toLocaleString('id-ID')}`
-                              )
-                            ) : type === 'STAFF' ? (
-                              <div className="flex flex-col">
-                                <span className="font-bold text-[11px] text-komazi-text">{t.role}</span>
-                                <span className="text-[10px] text-komazi-muted">{t.department}</span>
-                              </div>
-                            ) : (
-                              `${t.stock} ${t.unit}`
-                            )}
-                          </td>
-
-                          {/* Kolom HPP (khusus MENU) */}
+                          {/* MENU */}
                           {type === 'MENU' && (
-                            <td className="p-2.5 font-mono">
-                              {t.hpp > 0 ? (
-                                <div className="flex flex-col">
-                                  <span className="font-bold text-komazi-text text-xs">
-                                    Rp {t.hpp.toLocaleString('id-ID')}
-                                  </span>
-                                  <span className="text-[10px] text-komazi-muted flex items-center gap-1">
-                                    {t.hppSource === 'calculated' && (
-                                      <span className="text-emerald-400 font-medium flex items-center gap-0.5">
-                                        <Calculator className="w-2.5 h-2.5" /> Hitung Resep
-                                      </span>
-                                    )}
-                                    {t.hppSource === 'manual_and_recipe' && (
-                                      <span className="text-cyan-400 font-medium flex items-center gap-0.5">
-                                        <Sparkles className="w-2.5 h-2.5" /> Input + Resep
-                                      </span>
-                                    )}
-                                    {t.hppSource === 'direct' && (
-                                      <span>Input Modal</span>
-                                    )}
-                                  </span>
+                            <>
+                              <td className="p-2.5">
+                                <div className="flex flex-col max-w-[150px]">
+                                  <span className="font-bold text-komazi-text truncate">{t.name || '-'}</span>
+                                  {t.sku && <span className="text-[10px] text-komazi-muted font-mono">{t.sku}</span>}
                                 </div>
-                              ) : (
-                                <span className="text-komazi-muted/60 italic text-[11px]">Rp 0</span>
-                              )}
-                            </td>
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                {t.categoryName || '-'}
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text">
+                                {t.isDynamicPrice ? (
+                                  <div className="flex flex-col">
+                                    <span className="text-amber-400 font-bold text-[10px]">⚡ Dinamis</span>
+                                    <span className="text-[10px] text-komazi-muted">
+                                      {t.minPrice > 0 ? `Min: Rp ${t.minPrice.toLocaleString('id-ID')}` : 'Bebas'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  `Rp ${t.price.toLocaleString('id-ID')}`
+                                )}
+                              </td>
+                              <td className="p-2.5 font-mono">
+                                {t.hpp > 0 ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-bold text-komazi-text text-xs">
+                                      Rp {t.hpp.toLocaleString('id-ID')}
+                                    </span>
+                                    <span className="text-[10px] text-komazi-muted flex items-center gap-1">
+                                      {t.hppSource === 'calculated' && (
+                                        <span className="text-emerald-400 font-medium flex items-center gap-0.5">
+                                          <Calculator className="w-2.5 h-2.5" /> Hitung Resep
+                                        </span>
+                                      )}
+                                      {t.hppSource === 'manual_and_recipe' && (
+                                        <span className="text-cyan-400 font-medium flex items-center gap-0.5">
+                                          <Sparkles className="w-2.5 h-2.5" /> Input + Resep
+                                        </span>
+                                      )}
+                                      {t.hppSource === 'direct' && <span>Input Modal</span>}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-komazi-muted/60 italic text-[11px]">Rp 0</span>
+                                )}
+                              </td>
+                              <td className="p-2.5">
+                                {t.hpp > 0 && (t.price > 0 || t.minPrice > 0) ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span
+                                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold w-fit ${
+                                        t.marginPercent >= 60
+                                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                          : t.marginPercent >= 20
+                                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                      }`}
+                                    >
+                                      {t.marginPercent}%
+                                    </span>
+                                    <span className="text-[10px] font-mono text-komazi-muted">
+                                      {t.grossProfit >= 0 ? '+' : ''}Rp {t.grossProfit.toLocaleString('id-ID')}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-komazi-muted/60">-</span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                <div className="flex flex-col gap-0.5 max-w-[140px]">
+                                  {t.recipeItems?.length > 0 && (
+                                    <span
+                                      className="text-[10px] text-komazi-text font-medium truncate"
+                                      title={t.recipeItems.map((r) => `${r.ingredientName} (${r.quantity} ${r.unit})`).join(', ')}
+                                    >
+                                      🥄 {t.recipeItems.length} bahan baku
+                                    </span>
+                                  )}
+                                  {t.variants?.length > 0 && (
+                                    <span className="text-[10px] text-komazi-muted truncate">
+                                      🏷️ {t.variants.length} varian
+                                    </span>
+                                  )}
+                                  {(!t.recipeItems || t.recipeItems.length === 0) && (!t.variants || t.variants.length === 0) && (
+                                    <span className="text-komazi-muted/60 text-[11px]">-</span>
+                                  )}
+                                </div>
+                              </td>
+                            </>
                           )}
 
-                          {/* Kolom Margin (khusus MENU) */}
-                          {type === 'MENU' && (
-                            <td className="p-2.5">
-                              {t.hpp > 0 && (t.price > 0 || t.minPrice > 0) ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <span
-                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold w-fit ${
-                                      t.marginPercent >= 60
-                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                        : t.marginPercent >= 20
-                                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                        : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                                    }`}
-                                  >
-                                    {t.marginPercent}%
-                                  </span>
-                                  <span className="text-[10px] font-mono text-komazi-muted">
-                                    {t.grossProfit >= 0 ? '+' : ''}Rp {t.grossProfit.toLocaleString('id-ID')}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-komazi-muted/60">-</span>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Resep / Jabatan / Harga Modal */}
-                          <td className="p-2.5 text-komazi-muted">
-                            {type === 'MENU' ? (
-                              <div className="flex flex-col gap-0.5 max-w-[140px]">
-                                {t.recipeItems?.length > 0 && (
-                                  <span
-                                    className="text-[10px] text-komazi-text font-medium truncate"
-                                    title={t.recipeItems.map((r) => `${r.ingredientName} (${r.quantity} ${r.unit})`).join(', ')}
-                                  >
-                                    🥄 {t.recipeItems.length} bahan baku
-                                  </span>
-                                )}
-                                {t.variants?.length > 0 && (
-                                  <span className="text-[10px] text-komazi-muted truncate">
-                                    🏷️ {t.variants.length} varian
-                                  </span>
-                                )}
-                                {(!t.recipeItems || t.recipeItems.length === 0) && (!t.variants || t.variants.length === 0) && (
-                                  <span className="text-komazi-muted/60 text-[11px]">-</span>
-                                )}
-                              </div>
-                            ) : type === 'STAFF' ? (
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-komazi-text font-medium">{t.jobTitle || '-'}</span>
-                                <span className="text-[10px] text-komazi-muted">{t.employmentType}</span>
-                              </div>
-                            ) : (
-                              `Rp ${t.costPerUnit.toLocaleString('id-ID')}`
-                            )}
-                          </td>
-
-                          {/* Gaji Pokok (khusus STAFF) */}
+                          {/* STAFF */}
                           {type === 'STAFF' && (
-                            <td className="p-2.5 font-mono text-komazi-text text-xs">
-                              Rp {t.baseSalary.toLocaleString('id-ID')}
-                            </td>
+                            <>
+                              <td className="p-2.5">
+                                <div className="flex flex-col max-w-[150px]">
+                                  <span className="font-bold text-komazi-text truncate">{t.name || '-'}</span>
+                                  {t.phone && <span className="text-[10px] text-komazi-muted">{t.phone}</span>}
+                                </div>
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                <span className="font-mono text-komazi-coral font-semibold">@{t.username}</span>
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-[11px] text-komazi-text">{t.role}</span>
+                                  <span className="text-[10px] text-komazi-muted">{t.department}</span>
+                                </div>
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-komazi-text font-medium">{t.jobTitle || '-'}</span>
+                                  <span className="text-[10px] text-komazi-muted">{t.employmentType}</span>
+                                </div>
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text text-xs">
+                                Rp {t.baseSalary.toLocaleString('id-ID')}
+                              </td>
+                            </>
+                          )}
+
+                          {/* CUSTOMER */}
+                          {type === 'CUSTOMER' && (
+                            <>
+                              <td className="p-2.5">
+                                <span className="font-bold text-komazi-text">{t.name || '-'}</span>
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text">
+                                {t.phone || '-'}
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                {t.email || '-'}
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-komazi-surface-2 border border-komazi-border text-komazi-coral">
+                                  {t.tier}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-komazi-coral">
+                                {t.points} pts
+                              </td>
+                              <td className="p-2.5 text-komazi-muted max-w-[180px] truncate" title={t.notes}>
+                                {t.notes || '-'}
+                              </td>
+                            </>
+                          )}
+
+                          {/* RECIPE */}
+                          {type === 'RECIPE' && (
+                            <>
+                              <td className="p-2.5">
+                                <span className="font-bold font-mono text-komazi-coral">{t.sku || '-'}</span>
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                {t.variantName || <span className="italic text-komazi-muted/60">Semua Varian</span>}
+                              </td>
+                              <td className="p-2.5 font-semibold text-komazi-text">
+                                {t.ingredientName || '-'}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-komazi-text">
+                                {t.quantity}
+                              </td>
+                            </>
+                          )}
+
+                          {/* INGREDIENT (DEFAULT) */}
+                          {type !== 'MENU' && type !== 'STAFF' && type !== 'CUSTOMER' && type !== 'RECIPE' && (
+                            <>
+                              <td className="p-2.5">
+                                <span className="font-bold text-komazi-text">{t.name || '-'}</span>
+                              </td>
+                              <td className="p-2.5 text-komazi-muted">
+                                {t.unit}
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text">
+                                {t.stock} {t.unit}
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-muted">
+                                {t.minStock} {t.unit}
+                              </td>
+                              <td className="p-2.5 font-mono text-komazi-text">
+                                Rp {t.costPerUnit.toLocaleString('id-ID')}
+                              </td>
+                              <td className="p-2.5 text-komazi-muted text-[11px]">
+                                {t.supplierName ? (
+                                  <div>
+                                    <span className="font-medium text-komazi-text">{t.supplierName}</span>
+                                    {t.supplierPhone && <span className="block text-[10px] text-komazi-muted">{t.supplierPhone}</span>}
+                                  </div>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                            </>
                           )}
 
                           {/* Keterangan */}
                           <td className="p-2.5 pr-3 text-[11px]">
                             {row.isValid ? (
                               <div className="flex flex-col">
-                                <span className="text-emerald-400 font-medium">✓ Siap diimpor</span>
+                                <span className="text-emerald-400 font-medium">Siap diimpor</span>
                                 {row.warnings?.length > 0 && (
                                   <span className="text-amber-400 text-[10px]">
                                     ⚠ {row.warnings.join(', ')}
@@ -896,7 +1393,7 @@ export default function ExcelImportModal({
               </>
             ) : (
               <>
-                <FileSpreadsheet className="w-4 h-4" />
+                <Upload className="w-4 h-4" />
                 <span>Import {validCount} Baris Data</span>
               </>
             )}

@@ -76,9 +76,9 @@ export function registerStaffMenu(bot) {
     return ctx.reply(text, { parse_mode: 'HTML' });
   });
 
-  // 11. Jadwal Cron & Otomasi
-  bot.hears('⏰ Jadwal Cron', async (ctx) => {
-    const text = ensureWatermark('⏰ Ketik <code>/cron</code> untuk mengelola jadwal otomasi dan pengingat.');
+  // 11. Jadwal Otomatis & Pengingat
+  bot.hears(['⏰ Jadwal Otomatis', '⏰ Jadwal Cron'], async (ctx) => {
+    const text = ensureWatermark('⏰ Ketik <code>/cron</code> untuk mengelola jadwal tugas otomatis dan pengingat kedai.');
     return ctx.reply(text, { parse_mode: 'HTML' });
   });
 
@@ -113,4 +113,30 @@ export function registerStaffMenu(bot) {
     );
     return ctx.reply(text, { parse_mode: 'HTML' });
   });
+
+  // 16. Sembunyikan Menu / Tutup Keyboard Bawah
+  bot.hears(['❌ Sembunyikan Menu', '❌ Tutup Menu', 'Tutup Menu'], async (ctx) => {
+    return ctx.reply(
+      ensureWatermark(
+        '⌨️ <b>Tombol menu bawah telah disembunyikan.</b>\n\nKetik <code>/menu</code> kapan saja untuk menampilkan kembali tombol menu.'
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true },
+      }
+    );
+  });
+
+  bot.command(['tutup_menu', 'sembunyikan_menu', 'hide_keyboard'], async (ctx) => {
+    return ctx.reply(
+      ensureWatermark(
+        '⌨️ <b>Tombol menu bawah telah ditutup.</b>\n\nKetik <code>/menu</code> kapan saja untuk menampilkan kembali tombol menu.'
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true },
+      }
+    );
+  });
 }
+

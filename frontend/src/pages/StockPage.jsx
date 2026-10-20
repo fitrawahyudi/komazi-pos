@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   FileSpreadsheet,
   Download,
+  Upload,
   MessageCircle,
   Edit2,
   ExternalLink,
@@ -486,7 +487,7 @@ export default function StockPage() {
             className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
             title="Import bahan baku massal dari file Excel atau CSV"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <Upload className="w-3.5 h-3.5" />
             <span>Import Excel</span>
           </button>
 
@@ -974,8 +975,8 @@ export default function StockPage() {
               className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-all flex items-center gap-1.5 active:scale-95"
               title="Ekspor seluruh riwayat mutasi stok ke Excel"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Ekspor Riwayat (.xlsx)</span>
+              <Download className="w-3.5 h-3.5" />
+              <span>Ekspor Excel</span>
             </button>
           </div>
         </div>

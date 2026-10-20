@@ -11,6 +11,7 @@ import { pingOpenClawGateway } from '../../../bot/ai/openclawClient.js';
 import { stockService } from '../../stock.service.js';
 import { notifier } from '../../../bot/notifier.js';
 import logger from '../../../utils/logger.js';
+import { formatCronToIndonesian } from '../cronHumanizer.js';
 
 /**
  * Pengecekan kesehatan sistem komprehensif (dapat dipanggil on-demand atau via scheduler).
@@ -105,25 +106,30 @@ export function formatSentinelStatusHtml(statusObj, { isManual = false, jobConfi
   let scheduleInfo = '';
   if (jobConfig) {
     const statusText = jobConfig.deletedAt ? '🛑 Dibatalkan' : jobConfig.enabled ? '🟢 Aktif' : '⏸ Dijeda';
-    scheduleInfo = `\n\n<b>⚙️ Pengaturan Sentinel:</b>\n• Status: ${statusText}\n• Jadwal: <code>${jobConfig.scheduleExpression || '-'}</code>\n• Eksekusi Berikutnya: <b>${jobConfig.nextRunAt ? new Date(jobConfig.nextRunAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'}</b>`;
+    const humanSched = formatCronToIndonesian(jobConfig.scheduleExpression, jobConfig.scheduleType);
+    scheduleInfo = `\n\n<b>⚙️ Pengaturan Sentinel:</b>\n• Status: ${statusText}\n• Waktu Pemeriksaan: <b>${humanSched}</b>\n• Eksekusi Berikutnya: <b>${jobConfig.nextRunAt ? new Date(jobConfig.nextRunAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'}</b>`;
   }
 
   let issuesSection = '';
   if (statusObj.hasIssues && statusObj.issues?.length > 0) {
-    issuesSection = `\n\n<b>Isu yang Terdeteksi:</b>\n${statusObj.issues.map((i) => `• ⚠️ ${i}`).join('\n')}`;
+    issuesSection = `\n\n<b>Catatan Operasional:</b>\n${statusObj.issues.map((i) => `• ⚠️ ${i}`).join('\n')}`;
   }
 
-  const header = isManual ? '🛡️ <b>STATUS SISTEM &amp; SENTINEL (ON-DEMAND)</b>' : '🚨 <b>ALERT SENTINEL</b>';
+  const header = isManual ? '🛡️ <b>STATUS KESEHATAN SISTEM (SENTINEL)</b>' : '🚨 <b>PERINGATAN SISTEM SENTINEL</b>';
+
+  const dbStatusText = statusObj.database === 'ONLINE' ? '🟢 Terhubung Normal' : statusObj.database;
+  const botStatusText = statusObj.botMode === 'POLLING' || statusObj.botMode === 'WEBHOOK' ? '🟢 Aktif' : statusObj.botMode;
+  const aiStatusText = statusObj.openclaw.includes('ONLINE') ? '🟢 Aktif' : statusObj.openclaw;
 
   return `
 ${header}
 ━━━━━━━━━━━━━━━━━━
-<b>Status Terkini:</b>
-• Database MySQL: <b>${statusObj.database}</b> (${statusObj.dbLatencyMs}ms)
-• Bot Telegram: <b>${statusObj.botMode}</b>
-• Komazi AI: <b>${statusObj.openclaw}</b>
-• Bahan Kritis: <b>${statusObj.criticalStockCount} item</b>
-• RAM Node.js: <b>${statusObj.memoryHeapUsedMb} MB</b>
+<b>Status Operasional:</b>
+• Server Database: <b>${dbStatusText}</b>
+• Bot Telegram: <b>${botStatusText}</b>
+• Asisten Pintar AI: <b>${aiStatusText}</b>
+• Bahan Baku Kritis: <b>${statusObj.criticalStockCount} item</b>
+• Beban Memori: <b>${statusObj.memoryHeapUsedMb} MB</b>
 ━━━━━━━━━━━━━━━━━━
 ${statusEmoji} ${statusSummary}${issuesSection}
 <i>Diperiksa pada: ${timeWib}</i>${scheduleInfo}

@@ -169,7 +169,7 @@ export default function QrisUploader({
             <div className="text-center">
               <p className="text-xs font-bold text-komazi-text">
                 {processingStatus === 'uploading'
-                  ? 'Menyimpan foto QRIS ke Cloudinary...'
+                  ? 'Menyimpan QRIS...'
                   : 'Mendeteksi & Mengekstrak QR Code...'}
               </p>
               <p className="text-[11px] text-komazi-muted mt-0.5">
@@ -250,10 +250,6 @@ export default function QrisUploader({
             <div className="flex items-center gap-2 pt-1 text-[10px] text-komazi-muted font-medium">
               <span className="px-2 py-0.5 rounded bg-komazi-surface border border-komazi-border">
                 PNG, JPG, WebP
-              </span>
-              <span>•</span>
-              <span className="text-komazi-coral font-semibold">
-                Auto-Decode EMVCo & Cloudinary
               </span>
             </div>
           </div>

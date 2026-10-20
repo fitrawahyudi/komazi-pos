@@ -241,9 +241,8 @@ events.on('shift.opened', async ({ shift, cashier, openingCash, register }) => {
     const text = `
 🟢 <b>NOTIFIKASI BUKA SHIFT KASIR</b>
 ━━━━━━━━━━━━━━━━━━
-ID Sesi: <b>#${shiftId}</b>
 Kasir: <b>${esc(cashierName)}</b>
-Terminal: <b>${esc(regName)} (${esc(regCode)})</b>
+Terminal: <b>${esc(regName)}</b>
 Modal Awal Kas: <b>${rupiah(initialCash)}</b>
 Waktu: ${new Date().toLocaleTimeString('id-ID')} WIB
 ━━━━━━━━━━━━━━━━━━

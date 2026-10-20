@@ -236,7 +236,7 @@ export function renderSalesReportCard(data = {}) {
  * 23. CardDailyCloseBook - Laporan Tutup Buku Harian EOD (22:00 WIB)
  */
 export function renderDailyCloseBookCard(data = {}) {
-  const outletName = data.outletName || 'Komazi Coffee & Workspace (Medan)';
+  const outletName = data.outletName || 'Komazi Coffee & Workspace';
   const dateFormatted = data.dateFormatted || formatDateWib();
   const grossSales = Number(data.grossSales || data.totalRevenue || 0);
   const discounts = Number(data.totalDiscounts || data.discounts || 0);
@@ -310,10 +310,6 @@ export function renderDailyCloseBookCard(data = {}) {
             <span style="color:#9CA3AF;">Total Potongan Diskon:</span>
             <span style="font-weight:700;color:#EF4444;">-${formatRupiah(discounts)}</span>
           </div>
-          <div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:6px;">
-            <span style="color:#9CA3AF;">Status Penutupan Kasir:</span>
-            <span style="font-weight:700;color:#10B981;">Semua Shift Ditutup (Balanced)</span>
-          </div>
           <div style="display:flex;justify-content:space-between;">
             <span style="color:#9CA3AF;">Outlet Penanggung Jawab:</span>
             <span style="font-weight:700;color:#FFF;">${escapeHtml(outletName)}</span>
@@ -329,7 +325,7 @@ export function renderDailyCloseBookCard(data = {}) {
           topProducts.slice(0, 3).map((p, idx) => `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-bottom:8px;">
               <span style="font-weight:600;font-size:13px;color:#FFF;">#${idx + 1} ${escapeHtml(p.name)}</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#10B981;">${p.qty} cup</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#10B981;">${p.qty}</span>
             </div>
           `).join('') || '<div style="color:#6B7280;font-style:italic;">Data menu tuntas diarsipkan</div>'
         }

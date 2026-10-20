@@ -19,7 +19,8 @@ import {
   RefreshCw,
   MessageCircle,
   ExternalLink,
-  FileSpreadsheet,
+  Download,
+  Upload,
   Filter,
   Calendar,
   ArrowUpDown,
@@ -28,6 +29,7 @@ import {
 } from 'lucide-react';
 import AlertModal from '../components/ui/AlertModal';
 import Pagination from '../components/ui/Pagination';
+import ExcelImportModal from '../components/common/ExcelImportModal';
 import { toast } from '../store/toastStore';
 import { scrollInputIntoViewOnFocus } from '../utils/keyboard';
 import { exportToExcel } from '../utils/excel';
@@ -52,6 +54,7 @@ export default function CustomersPage() {
   const [sortBy, setSortBy] = usePersistentState('customers_sortBy', 'recent');            // 'recent' | 'oldest' | 'points_desc' | 'points_asc' | 'spent_desc' | 'spent_asc' | 'visits_desc' | 'name_asc' | 'name_desc'
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [redeemCustomer, setRedeemCustomer] = useState(null);
@@ -364,8 +367,18 @@ export default function CustomersPage() {
             className="px-3.5 py-2 rounded-xl bg-komazi-surface border border-komazi-border hover:border-emerald-500/50 hover:text-emerald-400 text-komazi-text text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
             title="Ekspor Data Member ke Excel"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <Download className="w-4 h-4 text-emerald-400" />
             <span className="hidden sm:inline">Ekspor Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsExcelImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95"
+            title="Import Data Pelanggan dari Excel atau CSV"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="hidden sm:inline">Import Excel</span>
           </button>
 
           <button
@@ -973,6 +986,18 @@ export default function CustomersPage() {
         message={`Apakah Anda yakin ingin menghapus "${customerToDelete?.name}" dari daftar member? Seluruh poin yang dimiliki akan hangus.`}
         confirmText="Ya, Hapus Member"
         cancelText="Batal"
+      />
+
+      {/* Excel Import Modal for Customers */}
+      <ExcelImportModal
+        isOpen={isExcelImportModalOpen}
+        onClose={() => setIsExcelImportModalOpen(false)}
+        title="Import Data Pelanggan & Member"
+        type="CUSTOMER"
+        onSuccess={() => {
+          fetchCustomers();
+          toast.success('Data pelanggan berhasil diimpor!');
+        }}
       />
     </div>
   );

@@ -32,11 +32,13 @@ import backupRoutes from './backupRoutes.js';
 import expenseRoutes from './expenseRoutes.js';
 import assetRoutes from './assetRoutes.js';
 import depreciationRoutes from './depreciationRoutes.js';
+import downloadRoutes from './downloadRoutes.js';
 
 const router = Router();
 
-// Public & Marketing CMS Endpoints
+// Public & Marketing CMS & Download Endpoints
 router.use('/public', publicRoutes);
+router.use('/download', downloadRoutes);
 router.use('/cms', cmsRoutes);
 
 router.use('/backup', backupRoutes);

@@ -226,11 +226,11 @@ export default function ReportsPage({ tab: propTab }) {
   const totalPayments = filteredOrders.length;
   const paymentMethodsData = totalPayments > 0 ? [
     { name: 'QRIS', count: paymentCounts.QRIS, value: Math.round((paymentCounts.QRIS / totalPayments) * 100), color: '#FF5A4D' },
-    { name: 'Tunai (Cash)', count: paymentCounts.CASH, value: Math.round((paymentCounts.CASH / totalPayments) * 100), color: '#1F6F6B' },
+    { name: 'Tunai', count: paymentCounts.CASH, value: Math.round((paymentCounts.CASH / totalPayments) * 100), color: '#1F6F6B' },
     { name: 'Transfer Bank', count: paymentCounts.TRANSFER, value: Math.round((paymentCounts.TRANSFER / totalPayments) * 100), color: '#F5B544' },
   ] : [
     { name: 'QRIS', count: 0, value: 0, color: '#FF5A4D' },
-    { name: 'Tunai (Cash)', count: 0, value: 0, color: '#1F6F6B' },
+    { name: 'Tunai', count: 0, value: 0, color: '#1F6F6B' },
     { name: 'Transfer Bank', count: 0, value: 0, color: '#F5B544' },
   ];
 
@@ -319,62 +319,62 @@ export default function ReportsPage({ tab: propTab }) {
       icon: TrendingUp,
     },
     PRODUCTS: {
-      title: 'Laporan Penjualan Produk',
+      title: 'Penjualan Produk',
       desc: 'Analisis kuantitas terjual, omzet menu, takaran HPP, dan margin laba kotor per item produk.',
       icon: Package,
     },
     CATEGORIES: {
-      title: 'Laporan Kategori Menu',
+      title: 'Kategori',
       desc: 'Distribusi penjualan dan kontribusi omzet per kategori menu makanan, minuman, dan workspace.',
       icon: Tag,
     },
     CUSTOMERS: {
-      title: 'Laporan Pelanggan & Tamu',
+      title: 'Pelanggan',
       desc: 'Statistik loyalitas pelanggan, frekuensi kunjungan, dan akumulasi nilai transaksi pelanggan.',
       icon: Users,
     },
     ORDER_TYPES: {
-      title: 'Laporan Tipe Pesanan',
+      title: 'Tipe Pesanan',
       desc: 'Perbandingan omzet dan transaksi antara layanan Dine-In (makan di tempat) vs Take-Away.',
       icon: Utensils,
     },
     PAYMENTS: {
-      title: 'Laporan Metode Pembayaran',
-      desc: 'Rincian penerimaan transaksi kasir melalui QRIS, Uang Tunai (Cash), dan Transfer Bank.',
+      title: 'Metode Pembayaran',
+      desc: 'Rincian penerimaan transaksi kasir melalui QRIS, Uang Tunai, dan Transfer Bank.',
       icon: CreditCard,
     },
     TAXES: {
-      title: 'Laporan Pajak Penjualan (PB1)',
+      title: 'Pajak',
       desc: 'Rekapitulasi dasar pengenaan pajak (DPP) dan setoran pajak restoran PB1 dari transaksi lunas.',
       icon: Receipt,
     },
     DISCOUNTS: {
-      title: 'Laporan Diskon & Promosi',
+      title: 'Diskon',
       desc: 'Daftar transaksi yang mendapatkan potongan harga, promosi, dan persentase diskon yang diberikan.',
       icon: Percent,
     },
     STAFF: {
-      title: 'Laporan Kinerja Pegawai / Kasir',
+      title: 'Pegawai',
       desc: 'Jumlah struk pesanan yang ditangani dan total omzet yang berhasil diproses oleh setiap kasir.',
       icon: UserCheck,
     },
     CASH_DRAWER: {
-      title: 'Laporan Kas Laci Kasir',
+      title: 'Kas Kasir',
       desc: 'Rekapitulasi mutasi kas harian, modal awal, kas keluar, setor brankas, dan selisih kas fisik.',
       icon: Wallet,
     },
     COGS: {
-      title: 'Laporan Laba Kotor (COGS)',
+      title: 'Laba Kotor (COGS)',
       desc: 'Perhitungan laba kotor otomatis berdasarkan takaran resep (BOM) dan snapshot modal setiap transaksi.',
       icon: Scale,
     },
     PROFIT_LOSS: {
-      title: 'Laporan Estimasi Laba Rugi',
+      title: 'Laba Rugi',
       desc: 'Analisis laba bersih akrual: Omzet dikurangi HPP, kas kecil kasir, depresiasi aset, dan waste.',
       icon: Scale,
     },
   }[activeTab] || {
-    title: 'Laporan & Analisis Bisnis',
+    title: '& Analisis Bisnis',
     desc: 'Dashboard visual performa omzet harian, laba kotor HPP, produk terlaris, dan margin operasional.',
     icon: BarChart3,
   };

@@ -19,32 +19,32 @@ export function registerBarista(bot) {
 
         let emptyMessage = '✨ <b>Antrean Bersih!</b>\nTidak ada pesanan yang sedang menunggu racikan saat ini.';
         let roleTitle = '📋 Antrean Pesanan';
-        let cardBadge = 'KDS QUEUE DASHBOARD';
+        let cardBadge = 'ANTREAN PESANAN';
         let cardBadgeColor = 'badge-amber';
         let cardTitle = 'Status Antrean Pesanan';
-        let cardSubtitle = 'Pemantauan live antrean pesanan Komazi POS';
+        let cardSubtitle = 'Pemantauan antrean pesanan aktif Komazi POS';
 
         if (userRole === 'BARISTA') {
           emptyMessage = '✨ <b>Antrean Bar Bersih!</b>\nTidak ada pesanan minuman yang sedang menunggu racikan barista saat ini.';
           roleTitle = `☕ <b>Antrean Bar Minuman (Barista - ${queue.length} Pesanan):</b>`;
-          cardBadge = 'BDS BARISTA QUEUE';
+          cardBadge = 'ANTREAN BAR MINUMAN';
           cardBadgeColor = 'badge-amber';
           cardTitle = 'Status Antrean Bar Minuman (Barista)';
-          cardSubtitle = 'Live pemantauan antrean pesanan racikan bar & kopi';
+          cardSubtitle = 'Pemantauan live antrean racikan minuman & kopi';
         } else if (userRole === 'KITCHEN') {
           emptyMessage = '✨ <b>Antrean Dapur Bersih!</b>\nTidak ada pesanan makanan yang sedang menunggu persiapan dapur saat ini.';
           roleTitle = `🥐 <b>Antrean Dapur Makanan (Kitchen - ${queue.length} Pesanan):</b>`;
-          cardBadge = 'KDS KITCHEN QUEUE';
+          cardBadge = 'ANTREAN DAPUR';
           cardBadgeColor = 'badge-coral';
           cardTitle = 'Status Antrean Dapur Makanan (Kitchen)';
-          cardSubtitle = 'Live pemantauan antrean pesanan dapur & pastry';
+          cardSubtitle = 'Pemantauan live antrean masakan & pastry';
         } else {
           emptyMessage = '✨ <b>Antrean Kedai Bersih!</b>\nTidak ada pesanan aktif yang menunggu di bar maupun dapur saat ini.';
           roleTitle = `📋 <b>Antrean Pesanan Keseluruhan (Bar & Dapur - ${queue.length} Pesanan):</b>`;
-          cardBadge = 'KDS/BDS MASTER QUEUE';
+          cardBadge = 'SEMUA ANTREAN KEDAI';
           cardBadgeColor = 'badge-amber';
           cardTitle = 'Status Antrean Barista & Dapur';
-          cardSubtitle = 'Live pemantauan seluruh antrean minuman & makanan Komazi POS';
+          cardSubtitle = 'Pemantauan seluruh antrean minuman & makanan Komazi POS';
         }
 
         if (!queue || queue.length === 0) {
@@ -58,7 +58,12 @@ export function registerBarista(bot) {
             .map((i) => `• <b>${i.qty}×</b> ${esc(i.productName || i.name)}${i.variantName ? ` (${esc(i.variantName)})` : ''}`)
             .join('\n');
           const icon = userRole === 'KITCHEN' ? '🥐' : '☕';
-          return `${icon} <b>${esc(o.invoiceNo)}</b> (${o.type} ${o.tableNo ? `Meja ${esc(o.tableNo)}` : ''})\n${items}\nStatus: <code>${o.status}</code>`;
+          const statusText = o.status === 'PREPARING'
+            ? 'Sedang Diracik ⏳'
+            : o.status === 'READY'
+            ? 'Siap Disajikan ✅'
+            : 'Menunggu';
+          return `${icon} <b>${esc(o.invoiceNo)}</b> (${o.type === 'TAKE_AWAY' ? 'Take-away 🛍️' : `Dine-in 🍽️ ${o.tableNo ? `Meja ${esc(o.tableNo)}` : ''}`})\n${items}\nStatus: <b>${statusText}</b>`;
         }).join('\n\n━━━━━━━━━━━━━━━━━━\n\n');
 
         const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━\n\n🤖 <i>@komazi-assistant</i>`;

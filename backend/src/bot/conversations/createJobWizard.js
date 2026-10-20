@@ -9,6 +9,12 @@ import { jobRegistryService } from '../../services/cron/jobRegistryService.js';
 import { computeNextRunAt } from '../../services/cron/jobRegistryService.js';
 import { esc } from '../utils/format.js';
 import logger from '../../utils/logger.js';
+import {
+  formatCronToIndonesian,
+  parseHumanScheduleInput,
+  formatJobTypeIndonesian,
+  formatTargetRolesIndonesian,
+} from '../../services/cron/cronHumanizer.js';
 
 function formatWib(date) {
   if (!date) return '-';
@@ -46,20 +52,20 @@ export async function createJobWizard(conversation, ctx) {
   // LANGKAH 1: PILIH TIPE JADWAL (JOB TYPE)
   // ==========================================
   const kbType = new InlineKeyboard()
-    .text('📊 Laporan Penjualan (REPORT)', 'wiz_type:REPORT')
+    .text('📊 Laporan Penjualan & Omzet', 'wiz_type:REPORT')
     .row()
-    .text('💾 Backup Database (BACKUP)', 'wiz_type:BACKUP')
+    .text('💾 Pencadangan Data POS', 'wiz_type:BACKUP')
     .row()
-    .text('🛡️ Monitoring Kesehatan (MONITORING)', 'wiz_type:MONITORING')
+    .text('🛡️ Pemantauan Kesehatan Sistem', 'wiz_type:MONITORING')
     .row()
-    .text('⏰ Pengingat Operasional (REMINDER)', 'wiz_type:REMINDER')
+    .text('⏰ Pengingat Operasional Staf', 'wiz_type:REMINDER')
     .row()
-    .text('🤖 Analisis AI Eksekutif (AI_TASK)', 'wiz_type:AI_TASK')
+    .text('🤖 Analisis & Prediksi Cerdas AI', 'wiz_type:AI_TASK')
     .row()
     .text('❌ Batal', 'wiz_type:cancel');
 
   await ctx.reply(
-    `✨ <b>WIZARD PEMBUATAN JADWAL DINAMIS</b>\n━━━━━━━━━━━━━━━━━━\n<b>Langkah 1 dari 4:</b>\nPilih jenis tugas yang ingin dijalankan secara otomatis:`,
+    `✨ <b>PANDUAN PEMBUATAN JADWAL OTOMATIS</b>\n━━━━━━━━━━━━━━━━━━\n<b>Langkah 1 dari 4:</b>\nPilih jenis tugas yang ingin dijalankan secara otomatis:`,
     { parse_mode: 'HTML', reply_markup: kbType }
   );
 
@@ -74,7 +80,7 @@ export async function createJobWizard(conversation, ctx) {
   // Nama default berdasarkan tipe
   let defaultName = 'Jadwal Otomatis Baru';
   if (jobType === 'REPORT') defaultName = 'Laporan Penjualan Harian';
-  if (jobType === 'BACKUP') defaultName = 'Backup & Verifikasi Database';
+  if (jobType === 'BACKUP') defaultName = 'Pencadangan Data Penjualan & Inventaris';
   if (jobType === 'MONITORING') defaultName = 'Sentinel Kesehatan Sistem POS';
   if (jobType === 'REMINDER') defaultName = 'Pengingat Operasional Staf';
   if (jobType === 'AI_TASK') defaultName = 'Analisis Performa Komazi AI';
@@ -157,28 +163,17 @@ export async function createJobWizard(conversation, ctx) {
       return customMsg.reply('🚫 Proses dibatalkan.');
     }
 
-    const match = inputTime.match(/^(\d{1,2})[:.](\d{2})$/);
-    if (match) {
-      const hour = parseInt(match[1]);
-      const min = parseInt(match[2]);
-      if (hour >= 0 && hour <= 23 && min >= 0 && min <= 59) {
-        cronExpression = `${min} ${hour} * * *`;
-        timeLabel = `Setiap hari jam ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')} WIB`;
-      } else {
-        cronExpression = '0 22 * * *';
-        timeLabel = 'Setiap hari jam 22:00 WIB (Default)';
-      }
+    const parsed = parseHumanScheduleInput(inputTime);
+    if (parsed) {
+      cronExpression = parsed.scheduleExpression;
+      timeLabel = parsed.humanDescription;
     } else {
       cronExpression = '0 22 * * *';
-      timeLabel = 'Setiap hari jam 22:00 WIB (Default)';
+      timeLabel = 'Setiap hari pukul 22:00 WIB (Default)';
     }
   } else {
     cronExpression = timeChoice;
-    if (cronExpression === '0 22 * * *') timeLabel = 'Setiap hari jam 22:00 WIB';
-    else if (cronExpression === '0 8 * * *') timeLabel = 'Setiap hari jam 08:00 WIB';
-    else if (cronExpression === '0 14 * * *') timeLabel = 'Setiap hari jam 14:00 WIB';
-    else if (cronExpression === '0 * * * *') timeLabel = 'Setiap 1 jam sekali';
-    else if (cronExpression === '*/30 * * * *') timeLabel = 'Setiap 30 menit sekali';
+    timeLabel = formatCronToIndonesian(timeChoice, 'cron');
   }
 
   // ==========================================
@@ -247,11 +242,10 @@ export async function createJobWizard(conversation, ctx) {
 📋 <b>KONFIRMASI JADWAL BARU</b>
 ━━━━━━━━━━━━━━━━━━
 <b>Nama:</b> ${esc(jobName)}
-<b>Tipe:</b> <code>${jobType}</code>
-<b>Frekuensi:</b> <b>${esc(timeLabel)}</b>
-<b>Pola Cron:</b> <code>${cronExpression}</code>
+<b>Jenis Tugas:</b> <b>${esc(formatJobTypeIndonesian(jobType))}</b>
+<b>Waktu Pelaksanaan:</b> <b>${esc(timeLabel)}</b>
 <b>Zona Waktu:</b> Asia/Jakarta (WIB)
-<b>Penerima:</b> <code>${targetRoles.join(', ')}</code>
+<b>Penerima Notifikasi:</b> <b>${esc(formatTargetRolesIndonesian(targetRoles))}</b>
 <b>Jadwal Perdana:</b> <i>${formatWib(previewNextRun)}</i>
 ━━━━━━━━━━━━━━━━━━
 <i>Simpan dan aktifkan jadwal ini sekarang?</i>

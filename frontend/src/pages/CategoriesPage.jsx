@@ -53,10 +53,10 @@ export default function CategoriesPage() {
     fetchProducts().catch((err) => console.warn('Fetch products notice:', err));
   }, [fetchCategories, fetchProducts]);
 
-  // Filter out pseudo category 'Semua' jika ada id === 1 atau id === 'all'
+  // Filter out pseudo category 'Semua' jika ada id === 'all' atau nama 'Semua'
   const rawCategories = useMemo(() => {
     return categories
-      .filter((c) => c.id !== 1 && c.id !== 'all')
+      .filter((c) => c.id !== 'all' && c.name?.toLowerCase() !== 'semua')
       .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
   }, [categories]);
 

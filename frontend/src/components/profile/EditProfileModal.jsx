@@ -546,7 +546,7 @@ export default function EditProfileModal({
               <div className="space-y-3">
                 <div>
                   <label htmlFor="profile-full-name" className="block text-xs font-semibold text-komazi-muted mb-1">
-                    Nama Lengkap:
+                    Nama Lengkap
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-komazi-muted absolute left-3.5 top-3" />
@@ -565,7 +565,7 @@ export default function EditProfileModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="profile-username" className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Username Akun:
+                      Username Akun
                     </label>
                     <div className="relative">
                       <span className="text-xs text-komazi-muted font-bold absolute left-3.5 top-2.5">@</span>
@@ -583,7 +583,7 @@ export default function EditProfileModal({
 
                   <div>
                     <label htmlFor="profile-phone" className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Nomor WhatsApp / HP:
+                      No. WhatsApp
                     </label>
                     <div className="relative">
                       <Phone className="w-4 h-4 text-komazi-muted absolute left-3.5 top-3" />
@@ -602,7 +602,7 @@ export default function EditProfileModal({
                 {/* Hak Akses / Role (Read-only) */}
                 <div>
                   <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                    Hak Akses / Peran Akun:
+                    Hak Akses / Peran Akun
                   </label>
                   <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
@@ -648,7 +648,7 @@ export default function EditProfileModal({
                     ) : activeShift ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-success/15 border border-success/30 text-success">
                         <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                        <span>Shift Aktif #{activeShift.id}</span>
+                        <span>Shift Aktif</span>
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-komazi-surface border border-komazi-border text-komazi-muted">
@@ -700,7 +700,7 @@ export default function EditProfileModal({
                   title="Keluar dari akun staf dan ganti akun"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>Ganti Akun / Logout</span>
+                  <span>Logout</span>
                 </button>
 
                 <LoadingButton
@@ -1132,7 +1132,7 @@ export default function EditProfileModal({
 
                 <div>
                   <label htmlFor="sec-current-password" className="block text-xs font-semibold text-komazi-muted mb-1">
-                    Password Saat Ini:
+                    Password Saat Ini
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-komazi-muted absolute left-3 top-2.5" />
@@ -1151,7 +1151,7 @@ export default function EditProfileModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="sec-new-password" className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Password Baru (Min. 6 Karakter):
+                      Password Baru (Min. 6 Karakter)
                     </label>
                     <input
                       id="sec-new-password"
@@ -1166,7 +1166,7 @@ export default function EditProfileModal({
 
                   <div>
                     <label htmlFor="sec-confirm-password" className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Konfirmasi Password Baru:
+                      Konfirmasi Password Baru
                     </label>
                     <input
                       id="sec-confirm-password"

@@ -113,7 +113,7 @@ export default function ActiveShiftAttendanceGateModal({
                 className="w-full py-2.5 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border hover:bg-neutral-800 text-komazi-muted hover:text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
               >
                 <Eye className="w-3.5 h-3.5 text-komazi-muted" />
-                <span>Lihat Katalog Menu Saja (Mode Baca)</span>
+                <span>MODE BACA</span>
               </button>
             )}
           </div>

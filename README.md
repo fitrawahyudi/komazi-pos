@@ -276,6 +276,13 @@ Database telah dilengkapi dengan akun bawaan untuk kemudahan pengujian seluruh p
 
 ---
 
+## 📚 Dokumentasi Panduan Pengguna
+
+- 🤖 **[Panduan Lengkap Fitur & Perintah Bot Telegram](docs/PANDUAN_FITUR_BOT_TELEGRAM.md)**: Buku panduan lengkap perintah bot Telegram, fungsi setiap tombol, notifikasi otomatis, dan asisten AI Komazi untuk setiap peran staf (Owner, Manager, Kasir, Barista, Kitchen).
+- 📖 **[Panduan Sistem Komazi POS](panduan.md)**: Alur operasional sistem kasir POS, meja kerja, dan manajemen kedai.
+
+---
+
 ## 🎨 Palet Desain Komazi (Design System)
 
 - **Latar Utama (`komazi-black`):** `#0A0A0A`

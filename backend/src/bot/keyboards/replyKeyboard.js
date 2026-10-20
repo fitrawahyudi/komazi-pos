@@ -12,36 +12,42 @@ export function buildStaffReplyKeyboard(role) {
     case 'OWNER':
       kb.text('📊 Ringkasan Omzet').text('✅ Approval').row()
         .text('📦 Stok Bahan').text('🔮 Prediksi AI').row()
-        .text('⏰ Jadwal Cron').text('🤖 Asisten AI').row()
-        .text('ℹ️ Status Bot').text('👤 Profil Staf');
+        .text('⏰ Jadwal Otomatis').text('🤖 Asisten AI').row()
+        .text('ℹ️ Status Bot').text('👤 Profil Staf').row()
+        .text('❌ Sembunyikan Menu');
       break;
 
     case 'MANAGER':
       kb.text('📊 Laporan Hari Ini').text('✅ Approval').row()
         .text('📦 Cek Stok').text('🚫 Menu Habis').row()
-        .text('⏰ Jadwal Cron').text('🤖 Asisten AI').row()
-        .text('ℹ️ Status Bot').text('👤 Profil Staf');
+        .text('⏰ Jadwal Otomatis').text('🤖 Asisten AI').row()
+        .text('ℹ️ Status Bot').text('👤 Profil Staf').row()
+        .text('❌ Sembunyikan Menu');
       break;
 
     case 'CASHIER':
       kb.text('🧾 Pesanan Baru').text('📋 Pesanan Aktif').row()
         .text('⏱ Shift Kasir').row()
-        .text('ℹ️ Status Bot').text('👤 Profil Staf');
+        .text('ℹ️ Status Bot').text('👤 Profil Staf').row()
+        .text('❌ Sembunyikan Menu');
       break;
 
     case 'BARISTA':
       kb.text('☕ Antrean Barista').text('ℹ️ Status Bot').row()
-        .text('👤 Profil Staf');
+        .text('👤 Profil Staf').row()
+        .text('❌ Sembunyikan Menu');
       break;
 
     case 'KITCHEN':
       kb.text('🍳 Antrean Dapur').text('ℹ️ Status Bot').row()
-        .text('👤 Profil Staf');
+        .text('👤 Profil Staf').row()
+        .text('❌ Sembunyikan Menu');
       break;
 
     default:
-      kb.text('ℹ️ Info Akun').text('ℹ️ Status Bot');
+      kb.text('ℹ️ Info Akun').text('ℹ️ Status Bot').row()
+        .text('❌ Sembunyikan Menu');
   }
 
-  return kb.resized().persistent();
+  return kb.resized();
 }

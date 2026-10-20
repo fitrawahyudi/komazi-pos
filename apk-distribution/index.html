@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Download Komazi POS APK — Aplikasi Kasir Kafe & Resto Android</title>
-  <meta name="description" content="Download aplikasi kasir tablet Android Komazi POS (Coffee & Resto). Terintegrasi printer thermal Bluetooth/USB, Kitchen Display (KDS), dan manajemen pesanan.">
+  <title>Download Komazi POS APK — Aplikasi Kasir Khusus Coffee Shop</title>
+  <meta name="description" content="Download aplikasi kasir tablet Android khusus Komazi Coffee & Workspace. Dirancang eksklusif untuk alur kerja barista, printer thermal Bluetooth/USB, KDS bar & kitchen, dan operasional kedai kopi.">
   <meta name="theme-color" content="#0B0F14">
 
   <!-- Open Graph / Meta sharing -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Download Komazi POS APK — Aplikasi Tablet Android">
-  <meta property="og:description" content="Aplikasi kasir kafe & resto modern untuk tablet Android dengan printer thermal Bluetooth/USB dan KDS.">
-  <meta property="og:image" content="./komazi-icon.png">
+  <meta property="og:title" content="Download Komazi POS APK — Aplikasi Kasir Khusus Coffee Shop">
+  <meta property="og:description" content="Aplikasi kasir tablet Android khusus Komazi Coffee & Workspace. Dirancang eksklusif untuk alur kerja barista, printer thermal Bluetooth/USB, KDS, dan operasional kedai kopi.">
+  <meta property="og:image" content="./komazi-logo-transparent.png">
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -139,16 +139,21 @@
       color: inherit;
     }
 
-    .brand-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+    .brand-logo-img {
+      height: 46px;
+      width: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 8px rgba(249, 115, 22, 0.3));
+      transition: transform 0.2s ease;
+    }
+
+    .brand:hover .brand-logo-img {
+      transform: scale(1.04);
+    }
+
+    .brand-text-block {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 8px 20px rgba(249, 115, 22, 0.35);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      flex-direction: column;
     }
 
     .brand-name {
@@ -156,13 +161,38 @@
       font-size: 20px;
       font-weight: 800;
       letter-spacing: -0.5px;
+      line-height: 1.1;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
 
     .brand-name span {
       color: var(--primary);
+    }
+
+    .brand-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(249, 115, 22, 0.12);
+      color: var(--primary);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      display: inline-block;
+      width: fit-content;
+      margin-top: 3px;
+    }
+
+    @media (max-width: 480px) {
+      .brand-badge {
+        display: none;
+      }
+      .brand-logo-img {
+        height: 38px;
+      }
     }
 
     .nav-actions {
@@ -929,18 +959,12 @@
   <!-- Navigation Bar -->
   <header class="container">
     <nav class="navbar" aria-label="Main Navigation">
-      <a href="./" class="brand" id="brand-link">
-        <div class="brand-icon">
-          <!-- Coffee Mug & Lightning Vector -->
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8h1a4 44 0 0 1 0 8h-1"></path>
-            <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
-            <line x1="6" y1="1" x2="6" y2="4"></line>
-            <line x1="10" y1="1" x2="10" y2="4"></line>
-            <line x1="14" y1="1" x2="14" y2="4"></line>
-          </svg>
+      <a href="./" class="brand" id="brand-link" title="Komazi Coffee &amp; Workspace POS">
+        <img src="./komazi-logo-transparent.png" alt="Logo Komazi Coffee &amp; Workspace" class="brand-logo-img">
+        <div class="brand-text-block">
+          <div class="brand-name">KOMAZI <span>POS</span></div>
+          <span class="brand-badge">Khusus Coffee Shop</span>
         </div>
-        <div class="brand-name">KOMAZI <span>POS</span></div>
       </a>
 
       <div class="nav-actions">
@@ -963,14 +987,14 @@
       <div class="hero-text">
         <div class="badge-pill">
           <span class="badge-dot"></span>
-          Build Resmi Android &bull; v1.0.0
+          Aplikasi Internal Khusus Coffee Shop &bull; Komazi POS
         </div>
         <h1 class="hero-title">
-          Aplikasi Tablet Kasir <br>
-          <span class="gradient-text">Komazi POS Android</span>
+          Aplikasi Kasir Tablet <br>
+          <span class="gradient-text">Khusus Coffee Shop Komazi</span>
         </h1>
         <p class="hero-desc">
-          Solusi terpadu kasir kedai kopi, kafe & resto F&B. Dilengkapi dukungan pencetakan struk thermal Bluetooth & USB ESC/POS, Kitchen Display (KDS), dan sinkronisasi pesanan real-time.
+          Bukan aplikasi kasir ritel universal. Komazi POS dirancang dan disesuaikan secara khusus untuk ritme operasional <strong>Komazi Coffee &amp; Workspace</strong> — alur barista, manajemen pesanan kopi &amp; add-on rasa, sewa meja coworking/workspace, pencetakan struk thermal Bluetooth &amp; USB ESC/POS, Kitchen &amp; Bar Display (KDS/BDS), serta integrasi bot Telegram kedai.
         </p>
 
         <div class="cta-group">
@@ -980,7 +1004,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            <span>Unduh APK Android</span>
+            <span>Unduh APK Coffee Shop</span>
           </a>
 
           <a href="#scan-qr" class="btn-guide-hero" id="btn-hero-scan">
@@ -1000,81 +1024,45 @@
               <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
               <line x1="12" y1="18" x2="12.01" y2="18"></line>
             </svg>
-            <span>Android 7.0+ (Nougat ke atas)</span>
+            <span>Tablet Android 7.0+ (Nougat s/d 15)</span>
           </div>
           <div class="meta-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
             </svg>
-            <span>Ukuran: ~18.3 MB</span>
+            <span>Ukuran: ~19.1 MB</span>
           </div>
           <div class="meta-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
             </svg>
-            <span>Bebas Virus & Clean Build</span>
+            <span>Internal Komazi Coffee &amp; Workspace</span>
           </div>
         </div>
       </div>
 
-      <!-- Tablet POS Graphical Mockup -->
+      <!-- Tablet POS Real Screenshot Showcase -->
       <div class="hero-preview">
         <div class="tablet-frame">
           <div class="tablet-notch"></div>
-          <div class="tablet-screen">
-            <div class="pos-screen-header">
-              <div class="pos-header-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                </svg>
-                <span>Kasir Komazi — Meja 04</span>
-              </div>
-              <div class="pos-status-badge">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-                Printer Siap
-              </div>
-            </div>
-
-            <div class="pos-item-list">
-              <div class="pos-item-row">
-                <div><span class="qty">2x</span><span class="name">Kopi Susu Gula Aren</span></div>
-                <div class="price">Rp 44.000</div>
-              </div>
-              <div class="pos-item-row">
-                <div><span class="qty">1x</span><span class="name">Almond Croissant</span></div>
-                <div class="price">Rp 28.000</div>
-              </div>
-              <div class="pos-item-row">
-                <div><span class="qty">1x</span><span class="name">Caramel Macchiato</span></div>
-                <div class="price">Rp 35.000</div>
-              </div>
-            </div>
-
-            <div class="pos-summary-box">
-              <div>
-                <div class="label">Total Tagihan</div>
-                <div style="font-size: 11px; color: #94A3B8;">Sudah termasuk PB1 10%</div>
-              </div>
-              <div class="total">Rp 107.000</div>
-            </div>
-
-            <div class="pos-quick-actions">
-              <div class="pos-btn-mock">Split Bill</div>
-              <div class="pos-btn-mock active">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-                Bayar & Cetak Struk
-              </div>
-            </div>
+          <div class="tablet-screen" style="padding: 0; aspect-ratio: 16/10; position: relative; background: #000; overflow: hidden; border-radius: 18px; border: 1px solid rgba(255,255,255,0.1);">
+            <img id="tablet-preview-img" src="./preview/pos-main.png" alt="Preview Komazi POS" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+          </div>
+          <div class="preview-thumbs-bar" style="display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap;">
+            <button type="button" class="preview-thumb-btn active" onclick="switchPreview(0)" style="background: rgba(249, 115, 22, 0.2); border: 1px solid var(--primary); color: #FFF; padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s;">Kasir &amp; Menu</button>
+            <button type="button" class="preview-thumb-btn" onclick="switchPreview(1)" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">Presensi Shift</button>
+            <button type="button" class="preview-thumb-btn" onclick="switchPreview(2)" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">Komazi AI</button>
+            <button type="button" class="preview-thumb-btn" onclick="switchPreview(3)" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">KDS Dapur</button>
           </div>
           <div class="floating-badge">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2.5">
-              <path d="M6 18h8"></path><path d="M3 22h18"></path><path d="M14 2a2 2 0 0 1 2 2v6h2"></path><path d="M18 10a2 2 0 0 1 2 2v2"></path><path d="M2 14v-2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"></path>
+              <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
+              <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
+              <line x1="6" y1="1" x2="6" y2="4"></line>
+              <line x1="10" y1="1" x2="10" y2="4"></line>
+              <line x1="14" y1="1" x2="14" y2="4"></line>
             </svg>
-            Native ESC/POS Thermal Printer Driver
+            <span id="preview-caption">Layar Kasir &amp; Katalog Menu</span>
           </div>
         </div>
       </div>
@@ -1087,10 +1075,10 @@
           <img id="qr-code-img" alt="QR Code Unduh APK Komazi POS" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=komazi-pos.apk&bgcolor=ffffff&color=0b0f14&margin=2">
         </div>
         <div class="qr-content">
-          <div class="badge-pill" style="margin-bottom: 12px;">Instalasi Cepat via Tablet</div>
+          <div class="badge-pill" style="margin-bottom: 12px;">Instalasi Cepat Tablet Kasir &amp; Barista</div>
           <h3>Pindai QR Code Menggunakan Kamera Tablet</h3>
           <p>
-            Buka aplikasi Kamera atau Google Lens di tablet/smartphone Android kasir Anda, arahkan ke kode QR di atas untuk mengunduh berkas APK secara langsung tanpa perlu kabel USB.
+            Buka aplikasi Kamera atau Google Lens di tablet kasir atau bar barista Komazi Anda, arahkan ke kode QR di samping untuk mengunduh berkas <code>komazi-pos.apk</code> secara langsung tanpa perlu kabel USB.
           </p>
 
           <div class="link-copy-container">
@@ -1110,8 +1098,9 @@
     <!-- Features Grid -->
     <section class="features-section" id="fitur">
       <div class="section-title-wrap">
-        <h2 class="section-title">Fitur Andalan Aplikasi Android</h2>
-        <p class="section-subtitle">Didesain khusus untuk kecepatan transaksi di meja kasir dan ketahanan saat antrean padat.</p>
+        <div class="badge-pill" style="margin-bottom: 10px;">Fitur Khusus Kedai Kopi &amp; Workspace</div>
+        <h2 class="section-title">Fitur Spesifik Coffee Shop Komazi</h2>
+        <p class="section-subtitle">Bukan sistem kasir toko umum. Seluruh fitur dirancang khusus untuk kecepatan alur barista, kasir, dan meja workspace Komazi.</p>
       </div>
 
       <div class="features-grid">
@@ -1123,8 +1112,8 @@
               <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
           </div>
-          <h4>Driver Printer Bluetooth & USB</h4>
-          <p>Mendukung koneksi langsung printer struk 58mm & 80mm ESC/POS (Iware, VSC, Panda, Epson, Xprinter) tanpa aplikasi ketiga.</p>
+          <h4>Driver Printer Thermal Bar &amp; Kasir</h4>
+          <p>Koneksi langsung printer struk 58mm &amp; 80mm ESC/POS (Iware, VSC, Panda, Epson, Xprinter). Cetak struk kasir dan tiket pesanan bar tanpa aplikasi perantara.</p>
         </div>
 
         <div class="feature-card">
@@ -1134,22 +1123,22 @@
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
           </div>
-          <h4>Manajemen Meja & Dine-In</h4>
-          <p>Penomoran meja fleksibel, pemisahan pesanan makan di tempat (Dine-In) atau bungkus (Take-Away), dan kontrol status meja.</p>
+          <h4>Manajemen Meja Kopi &amp; Workspace</h4>
+          <p>Dukungan penomoran meja Dine-In, pesanan bungkus Take-Away, serta sewa area coworking/workspace dengan hitungan durasi dan lembur (*overtime*) otomatis.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon-badge badge-gold">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
+              <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
+              <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
+              <line x1="6" y1="1" x2="6" y2="4"></line>
+              <line x1="10" y1="1" x2="10" y2="4"></line>
+              <line x1="14" y1="1" x2="14" y2="4"></line>
             </svg>
           </div>
-          <h4>Kitchen Display System (KDS)</h4>
-          <p>Sinkronisasi instan ke tablet dapur dan bar barista. Tiket pesanan otomatis terbagi sesuai stasiun masak.</p>
+          <h4>Barista Display System (BDS &amp; KDS)</h4>
+          <p>Sinkronisasi instan pesanan minuman kopi ke tablet bar barista dan dapur. Tiket pesanan otomatis terpisah sesuai stasiun racik secara realtime.</p>
         </div>
 
         <div class="feature-card">
@@ -1159,8 +1148,8 @@
               <line x1="1" y1="10" x2="23" y2="10"></line>
             </svg>
           </div>
-          <h4>Open Bills & Split Payment</h4>
-          <p>Tahan nota antrean saat pelanggan menambah menu (*open bill*), gabung meja, atau pecah pembayaran per pesanan.</p>
+          <h4>Open Bills &amp; Pesanan Tambahan Meja</h4>
+          <p>Tamu kedai bisa memesan dulu lalu menambah kopi berikutnya (*open bill*), pindah meja, gabung meja, atau pecah pembayaran per orang (*split bill*).</p>
         </div>
 
         <div class="feature-card">
@@ -1169,21 +1158,18 @@
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
             </svg>
           </div>
-          <h4>Kas Drawer & Rekonsiliasi Shift</h4>
-          <p>Kontrol kas masuk, kas keluar, dan setor brankas. Dilengkapi penghitung lembar fisik uang saat tutup kasir (*Z-Report*).</p>
+          <h4>Kas Drawer &amp; Audit Shift Kasir</h4>
+          <p>Wajib isi kas modal awal (*cash float*) untuk uang kembalian. Di akhir shift, hitung lembar uang fisik kasir dan cetak struk audit Z-Report penutupan.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon-badge badge-blue">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
           </div>
-          <h4>CRM & Poin Loyalitas Pelanggan</h4>
-          <p>Pencatatan nomor WhatsApp pelanggan, akumulasi poin selamat datang, diskon member, dan riwayat belanja favorit.</p>
+          <h4>Integrasi Penuh Bot Telegram Kedai</h4>
+          <p>Terhubung langsung ke bot Telegram Komazi: tiket pesanan ke barista, alert stok bahan kritis ke manager, dan ringkasan omzet harian ke Owner.</p>
         </div>
       </div>
     </section>
@@ -1191,37 +1177,37 @@
     <!-- Step by Step Installation Guide -->
     <section class="guide-section" id="panduan">
       <div class="guide-card">
-        <div class="badge-pill" style="margin-bottom: 12px;">Panduan 4 Langkah</div>
+        <div class="badge-pill" style="margin-bottom: 12px;">Panduan Tablet Barista &amp; Kasir</div>
         <h2 style="font-family: var(--font-display); font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px;">
-          Cara Memasang APK di Tablet Android
+          Cara Memasang APK di Tablet Komazi POS
         </h2>
         <p style="color: var(--text-muted); font-size: 15px;">
-          Karena aplikasi ini didistribusikan secara mandiri (*sideload*), ikuti panduan singkat berikut untuk memasangnya dengan aman:
+          Karena aplikasi ini didistribusikan secara internal khusus untuk operasional kedai kopi <strong>Komazi Coffee &amp; Workspace</strong> (*sideload*), ikuti 4 langkah mudah berikut:
         </p>
 
         <div class="steps-list">
           <div class="step-box">
             <div class="step-num">1</div>
             <h5>Unduh Berkas APK</h5>
-            <p>Klik tombol <strong>Unduh APK</strong> atau pindai kode QR untuk mengunduh berkas <code>komazi-pos.apk</code>.</p>
+            <p>Klik tombol <strong>Unduh APK</strong> atau pindai kode QR menggunakan tablet untuk mengunduh berkas <code>komazi-pos.apk</code>.</p>
           </div>
 
           <div class="step-box">
             <div class="step-num">2</div>
             <h5>Izinkan Sumber Tak Dikenal</h5>
-            <p>Bila muncul konfirmasi keamanan Chrome/Browser, pilih <strong>Tetap Download</strong> lalu buka berkas APK yang telah terunduh.</p>
+            <p>Bila muncul konfirmasi keamanan browser tablet, pilih <strong>Tetap Download</strong> lalu buka berkas APK yang telah terunduh.</p>
           </div>
 
           <div class="step-box">
             <div class="step-num">3</div>
-            <h5>Instal Aplikasi</h5>
-            <p>Pilih <strong>Instal</strong>. Jika diminta izin oleh sistem Android, aktifkan <em>"Izinkan dari sumber ini"</em> (Unknown Sources).</p>
+            <h5>Instal Aplikasi Kasir</h5>
+            <p>Pilih <strong>Instal</strong>. Jika diminta izin oleh sistem Android tablet, aktifkan <em>"Izinkan dari sumber ini"</em> (Unknown Sources).</p>
           </div>
 
           <div class="step-box">
             <div class="step-num">4</div>
-            <h5>Beri Izin Bluetooth & Mulai</h5>
-            <p>Buka aplikasi Komazi POS, berikan izin Bluetooth/Nearby Devices untuk menghubungkan printer struk, lalu login kasir.</p>
+            <h5>Beri Izin Bluetooth &amp; Login</h5>
+            <p>Buka Komazi POS, berikan izin Bluetooth/Nearby Devices untuk printer struk thermal, lalu login akun staf kedai Anda.</p>
           </div>
         </div>
       </div>
@@ -1240,18 +1226,18 @@
             <div class="val">com.komazipos</div>
           </div>
           <div class="spec-item">
-            <div class="label">Versi / Build</div>
-            <div class="val">v1.0.0 (Build 1)</div>
+            <div class="label">Peruntukan Sistem</div>
+            <div class="val" style="color: var(--primary);">Khusus Coffee Shop Komazi</div>
           </div>
           <div class="spec-item">
-            <div class="label">Arsitektur</div>
-            <div class="val">Universal (ARM64/v7)</div>
+            <div class="label">Hardware Target</div>
+            <div class="val">Tablet Kasir &amp; Barista Android</div>
           </div>
         </div>
 
         <div class="checksum-box">
           <div class="checksum-text">
-            <strong>SHA-256:</strong> <span id="sha-hash">C060D39A88C9326F8C422099FD451C16D58E4EECCBEE7AD18AB86E97F967A174</span>
+            <strong>SHA-256 Checksum:</strong> <span id="sha-hash">C060D39A88C9326F8C422099FD451C16D58E4EECCBEE7AD18AB86E97F967A174</span>
           </div>
           <button type="button" class="btn-copy" id="btn-copy-sha256">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1276,8 +1262,9 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      <p style="margin-bottom: 8px;">&copy; 2026 <strong>Komazi Coffee & Resto POS</strong>. All rights reserved.</p>
+      <p style="margin-bottom: 8px;">&copy; 2026 <strong>Komazi Coffee &amp; Workspace POS</strong>. All rights reserved.</p>
       <p style="font-size: 12px;">
+        Aplikasi Kasir Internal Khusus Operasional Kedai Kopi &bull;
         <a href="https://komazi-pos.vercel.app" target="_blank" rel="noopener">Buka Versi Web POS</a> &bull;
         <a href="#panduan">Dokumentasi</a> &bull;
         <a href="#hero-section">Kembali ke Atas &uarr;</a>
@@ -1364,6 +1351,37 @@
         });
       }
     })();
+
+    // 6. Tablet Preview Switcher
+    const previewScreensList = [
+      { src: './preview/pos-main.png', caption: 'Layar Kasir & Katalog Menu' },
+      { src: './preview/pos-shift.png', caption: 'Gerbang Presensi Sesi Kasir' },
+      { src: './preview/pos-ai.png', caption: 'Komazi AI — Asisten Bisnis' },
+      { src: './preview/pos-kds.png', caption: 'Kitchen & Bar Display (KDS)' }
+    ];
+
+    function switchPreview(index) {
+      const img = document.getElementById('tablet-preview-img');
+      const cap = document.getElementById('preview-caption');
+      const btns = document.querySelectorAll('.preview-thumb-btn');
+      if (img && previewScreensList[index]) {
+        img.src = previewScreensList[index].src;
+        if (cap) cap.textContent = previewScreensList[index].caption;
+        btns.forEach((btn, idx) => {
+          if (idx === index) {
+            btn.style.background = 'rgba(249, 115, 22, 0.2)';
+            btn.style.borderColor = 'var(--primary)';
+            btn.style.color = '#FFF';
+            btn.style.fontWeight = '700';
+          } else {
+            btn.style.background = 'rgba(255, 255, 255, 0.05)';
+            btn.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            btn.style.color = 'var(--text-muted)';
+            btn.style.fontWeight = '600';
+          }
+        });
+      }
+    }
   </script>
 </body>
 </html>

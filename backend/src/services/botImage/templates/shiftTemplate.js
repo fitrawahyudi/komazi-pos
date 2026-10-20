@@ -5,7 +5,7 @@ import { wrapCardHtml, formatRupiah, escapeHtml, formatDateWib, formatTimeWib } 
  */
 export function renderShiftOpenCard(data = {}) {
   const cashierName = data.cashierName || data.user?.name || 'Kasir';
-  const outletName = data.outletName || 'Komazi Coffee & Workspace (Medan)';
+  const outletName = data.outletName || 'Komazi Coffee & Workspace ';
   const initialCash = Number(data.initialCash || data.openingCash || data.amount || 0);
   const openedAt = data.openedAt ? formatTimeWib(data.openedAt) : formatTimeWib();
   const shiftId = data.shiftId || (data.shift ? data.shift.id : 'SHF-' + Date.now().toString().slice(-6));

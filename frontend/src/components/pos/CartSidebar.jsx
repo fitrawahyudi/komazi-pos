@@ -120,7 +120,7 @@ export default function CartSidebar({
   }, [customers.length, fetchCustomers]);
 
   // Customer picker state
-  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('Tamu Umum');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const customerInputRef = useRef(null);
 
@@ -831,7 +831,7 @@ export default function CartSidebar({
         isOpen={isHoldBillPromptOpen}
         onClose={() => setIsHoldBillPromptOpen(false)}
         onConfirm={handleConfirmHoldBill}
-        title="Simpan Pesanan (Hold Bill)"
+        title="Simpan Pesanan"
         message="Beri catatan nama pelanggan atau nomor meja untuk tagihan tertahan ini:"
         placeholder="Contoh: Mardiah (Meja 02)"
         defaultValue={customerName ? `${customerName} (Meja ${tableNo || '-'})` : `Meja ${tableNo || 'Takeaway'}`}

@@ -87,7 +87,7 @@ function ReportTableContainer({
             onClick={onExportExcel}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5" />
             <span>Export Excel</span>
           </button>
         </div>
@@ -268,7 +268,7 @@ export function ProductsReportView({ orders = [], dateRangeLabel = '', canViewCo
         : []),
     ];
     const payload = {
-      title: 'Laporan Penjualan Produk',
+      title: 'Penjualan Produk',
       dateRangeLabel,
       headers: rawHeaders,
       rows: rawRows,
@@ -791,9 +791,9 @@ export function PaymentsReportView({ orders = [], dateRangeLabel = '', storeName
 
   const payData = useMemo(() => {
     const map = {
-      QRIS: { name: 'QRIS (Statik & Dinamis)', count: 0, revenue: 0 },
-      CASH: { name: 'Uang Tunai (Cash)', count: 0, revenue: 0 },
-      TRANSFER: { name: 'Transfer Bank', count: 0, revenue: 0 },
+      QRIS: { name: 'QRIS', count: 0, revenue: 0 },
+      CASH: { name: 'Tunai', count: 0, revenue: 0 },
+      TRANSFER: { name: 'Transfer', count: 0, revenue: 0 },
     };
     let grandRev = 0;
     let grandCount = orders.length;
@@ -963,7 +963,7 @@ export function TaxesReportView({ orders = [], dateRangeLabel = '', storeName })
     { label: 'Subtotal Sebelum Pajak', align: 'right' },
     { label: 'Diskon', align: 'right' },
     { label: 'DPP (Dasar Pajak)', align: 'right' },
-    { label: 'Pajak Resto (PB1)', align: 'right' },
+    { label: 'Pajak Resto', align: 'right' },
     { label: 'Total Bayar', align: 'right' },
   ];
 

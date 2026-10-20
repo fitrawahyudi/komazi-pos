@@ -468,7 +468,7 @@ export default function OrdersPage() {
                 className="inline-flex items-center gap-2 pl-3.5 pr-2.5 py-2.5 text-white font-bold text-xs active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 title="Buka panel dialog ekspor riwayat pesanan (Excel & CSV)"
               >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                <Download className="w-4 h-4 text-emerald-100" />
                 <span>Ekspor</span>
                 <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-900/50 text-emerald-100 font-mono font-bold">
                   {filteredOrders.length}

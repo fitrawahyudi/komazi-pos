@@ -160,7 +160,7 @@ export function registerManager(bot) {
         const all = await stockService.listAll();
 
         if (!all || all.length === 0) {
-          return ctx.reply('Belum ada data stok bahan baku terdaftar di database.');
+          return ctx.reply('Belum ada data stok bahan baku yang terdaftar di sistem POS.');
         }
 
         const totalCount = all.length;

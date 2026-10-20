@@ -75,11 +75,24 @@ export async function createProduct(req, res) {
   try {
     const { name, categoryId, price, sku, imageUrl, description, modifiers, isActive, isSoldOut, variants, stationId, isDynamicPrice, minPrice } = req.body;
 
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Nama produk wajib diisi', 400);
+    }
+
+    const parsedCategoryId = parseInt(categoryId);
+    if (!parsedCategoryId || isNaN(parsedCategoryId)) {
+      return errorResponse(res, 'Kategori produk wajib dipilih dan harus valid', 400);
+    }
+
+    const category = await prisma.category.findUnique({ where: { id: parsedCategoryId } });
+    if (!category) {
+      return errorResponse(res, `Kategori yang dipilih (ID: ${parsedCategoryId}) tidak ditemukan dalam database`, 400);
+    }
+
     const autoSku = sku || `KMZ-PRD-${Math.floor(100 + Math.random() * 900)}`;
 
     let resolvedStationId = stationId !== undefined ? (stationId ? parseInt(stationId) : null) : null;
     if (!resolvedStationId) {
-      const category = await prisma.category.findUnique({ where: { id: parseInt(categoryId) } });
       const isDrink = isDrinkItemHelper({ name, category });
       const targetType = isDrink ? 'BAR' : 'KITCHEN';
       const defaultStation = await prisma.station.findFirst({ where: { type: targetType } });
@@ -90,8 +103,8 @@ export async function createProduct(req, res) {
 
     const product = await prisma.product.create({
       data: {
-        name,
-        categoryId: parseInt(categoryId),
+        name: name.trim(),
+        categoryId: parsedCategoryId,
         stationId: resolvedStationId,
         price,
         sku: autoSku,
@@ -118,6 +131,9 @@ export async function createProduct(req, res) {
 
     return successResponse(res, product, 'Produk berhasil dibuat', 201);
   } catch (err) {
+    if (err.code === 'P2003') {
+      return errorResponse(res, 'Gagal menyimpan: Kategori atau data relasi tidak ditemukan di database.', 400);
+    }
     return errorResponse(res, err.message, 500);
   }
 }
@@ -182,6 +198,9 @@ export async function updateProduct(req, res) {
 
     return successResponse(res, updated, 'Produk berhasil diperbarui');
   } catch (err) {
+    if (err.code === 'P2003') {
+      return errorResponse(res, 'Gagal memperbarui: Kategori atau data relasi tidak valid di database.', 400);
+    }
     return errorResponse(res, err.message, 500);
   }
 }
@@ -299,13 +318,25 @@ export async function bulkCreateProducts(req, res) {
       return errorResponse(res, 'Daftar produk tidak valid atau kosong', 400);
     }
 
-    const categories = await prisma.category.findMany();
+    // 1. Muat kategori, station, dan bahan baku yang sudah ada
+    const existingCategories = await prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
+    const stations = await prisma.station.findMany();
+
     const catMap = new Map();
-    categories.forEach((c) => {
+    const catObjMap = new Map();
+    let maxSortOrder = 0;
+
+    existingCategories.forEach((c) => {
       catMap.set(c.id, c.id);
       catMap.set(c.name.toLowerCase().trim(), c.id);
+      catObjMap.set(c.id, c);
+      catObjMap.set(c.name.toLowerCase().trim(), c);
+      if (Number(c.sortOrder) > maxSortOrder) {
+        maxSortOrder = Number(c.sortOrder);
+      }
     });
-    const defaultCatId = categories[0]?.id || 1;
+
+    let catOrderCounter = maxSortOrder + 1;
 
     // Load existing ingredients for recipe matching and HPP calculation
     const existingIngredients = await prisma.ingredient.findMany();
@@ -320,11 +351,60 @@ export async function bulkCreateProducts(req, res) {
       for (const item of products) {
         if (!item.name || !item.name.trim()) continue;
 
-        let categoryId = defaultCatId;
+        let categoryId = null;
+        let matchedCategory = null;
+
+        // 1. Cek jika categoryId langsung disertakan dan valid
         if (item.categoryId && catMap.has(Number(item.categoryId))) {
           categoryId = Number(item.categoryId);
-        } else if (item.categoryName && catMap.has(item.categoryName.toLowerCase().trim())) {
-          categoryId = catMap.get(item.categoryName.toLowerCase().trim());
+          matchedCategory = catObjMap.get(categoryId);
+        }
+
+        // 2. Cek jika nama kategori disertakan
+        const rawCatName = (item.categoryName || item.category || '').toString().trim();
+        if (!categoryId && rawCatName) {
+          const cleanKey = rawCatName.toLowerCase();
+          if (catMap.has(cleanKey)) {
+            categoryId = catMap.get(cleanKey);
+            matchedCategory = catObjMap.get(cleanKey);
+          } else {
+            // Kategori belum ada di database -> Buat otomatis agar kategori di Excel sesuai!
+            const newCat = await tx.category.create({
+              data: {
+                name: rawCatName,
+                sortOrder: catOrderCounter++,
+              },
+            });
+            categoryId = newCat.id;
+            matchedCategory = newCat;
+            catMap.set(newCat.id, newCat.id);
+            catMap.set(cleanKey, newCat.id);
+            catObjMap.set(newCat.id, newCat);
+            catObjMap.set(cleanKey, newCat);
+          }
+        }
+
+        // 3. Fallback: jika kategori di baris Excel kosong
+        if (!categoryId) {
+          if (existingCategories.length > 0) {
+            categoryId = existingCategories[0].id;
+            matchedCategory = existingCategories[0];
+          } else {
+            // Jika database benar-benar kosong kategori dan Excel tidak menyertakan kategori
+            const defCat = await tx.category.create({
+              data: {
+                name: 'Umum',
+                sortOrder: catOrderCounter++,
+              },
+            });
+            categoryId = defCat.id;
+            matchedCategory = defCat;
+            existingCategories.push(defCat);
+            catMap.set(defCat.id, defCat.id);
+            catMap.set('umum', defCat.id);
+            catObjMap.set(defCat.id, defCat);
+            catObjMap.set('umum', defCat);
+          }
         }
 
         const price = Math.max(0, parseFloat(item.price) || 0);
@@ -337,31 +417,78 @@ export async function bulkCreateProducts(req, res) {
         );
         const minPrice = item.minPrice !== undefined ? Math.max(0, parseFloat(item.minPrice) || 0) : 0;
 
-        const product = await tx.product.create({
-          data: {
-            name: item.name.trim(),
-            categoryId,
-            price,
-            sku,
-            description: item.description?.trim() || null,
-            imageUrl: item.imageUrl?.trim() || null,
-            isDynamicPrice,
-            minPrice,
-            isSoldOut: Boolean(item.isSoldOut),
-            isActive: item.isActive !== false,
-            variants: Array.isArray(item.variants) && item.variants.length > 0 ? {
-              create: item.variants.map((v) => ({
-                name: v.name.trim(),
-                price: parseFloat(v.price) || price,
-                sku: v.sku?.trim() || `${sku}-${v.name.slice(0, 3).toUpperCase()}`,
-              })),
-            } : undefined,
-          },
-          include: {
-            category: true,
-            variants: true,
-          },
-        });
+        // Routing station (KDS vs BDS)
+        let resolvedStationId = null;
+        if (item.kitchenStation) {
+          const sType = String(item.kitchenStation).toUpperCase().includes('BAR') ? 'BAR' : 'KITCHEN';
+          const matchedStation = stations.find((s) => s.type === sType);
+          if (matchedStation) resolvedStationId = matchedStation.id;
+        }
+        if (!resolvedStationId) {
+          const isDrink = isDrinkItemHelper({ name: item.name, category: matchedCategory });
+          const targetType = isDrink ? 'BAR' : 'KITCHEN';
+          const defaultStation = stations.find((s) => s.type === targetType);
+          if (defaultStation) {
+            resolvedStationId = defaultStation.id;
+          }
+        }
+
+        let product;
+        const cleanSku = item.sku?.trim();
+        const existingProduct = cleanSku
+          ? await tx.product.findUnique({ where: { sku: cleanSku } })
+          : null;
+
+        if (existingProduct) {
+          product = await tx.product.update({
+            where: { id: existingProduct.id },
+            data: {
+              name: item.name.trim(),
+              categoryId,
+              ...(resolvedStationId !== null && { stationId: resolvedStationId }),
+              price,
+              description: item.description?.trim() || existingProduct.description,
+              imageUrl: item.imageUrl?.trim() || existingProduct.imageUrl,
+              isDynamicPrice,
+              minPrice,
+              isSoldOut: Boolean(item.isSoldOut),
+              isActive: item.isActive !== false,
+            },
+            include: {
+              category: true,
+              variants: true,
+            },
+          });
+          // Hapus resep lama agar tidak terjadi duplikasi saat re-impor
+          await tx.productRecipeItem.deleteMany({ where: { productId: product.id } });
+        } else {
+          product = await tx.product.create({
+            data: {
+              name: item.name.trim(),
+              categoryId,
+              stationId: resolvedStationId,
+              price,
+              sku,
+              description: item.description?.trim() || null,
+              imageUrl: item.imageUrl?.trim() || null,
+              isDynamicPrice,
+              minPrice,
+              isSoldOut: Boolean(item.isSoldOut),
+              isActive: item.isActive !== false,
+              variants: Array.isArray(item.variants) && item.variants.length > 0 ? {
+                create: item.variants.map((v) => ({
+                  name: v.name.trim(),
+                  price: parseFloat(v.price) || price,
+                  sku: v.sku?.trim() || `${sku}-${v.name.slice(0, 3).toUpperCase()}`,
+                })),
+              } : undefined,
+            },
+            include: {
+              category: true,
+              variants: true,
+            },
+          });
+        }
 
         // Handle HPP & Recipe items creation!
         let recipeItemsToCreate = [];
@@ -493,6 +620,9 @@ export async function bulkCreateProducts(req, res) {
 
     return successResponse(res, createdList, `${createdList.length} produk berhasil diimpor ke sistem beserta perhitungan HPP`, 201);
   } catch (err) {
+    if (err.code === 'P2002') {
+      return errorResponse(res, 'Gagal mengimpor: Terdapat SKU atau data duplikat yang melanggar batasan unik.', 400);
+    }
     return errorResponse(res, err.message, 500);
   }
 }

@@ -321,21 +321,46 @@ export async function bulkCreateIngredients(req, res) {
       for (const item of ingredients) {
         if (!item.name || !item.name.trim()) continue;
 
+        const cleanName = item.name.trim();
         const stock = Math.max(0, parseFloat(item.stock) || 0);
         const minStock = Math.max(0, parseFloat(item.minStock) || 0);
         const costPerUnit = Math.max(0, parseFloat(item.costPerUnit) || 0);
+        const unit = item.unit ? item.unit.trim().toLowerCase() : 'pcs';
+        const supplierName = item.supplierName ? String(item.supplierName).trim() : null;
+        const supplierPhone = item.supplierPhone ? String(item.supplierPhone).trim() : null;
 
-        const ing = await tx.ingredient.create({
-          data: {
-            name: item.name.trim(),
-            unit: item.unit ? item.unit.trim().toLowerCase() : 'pcs',
-            stock,
-            minStock,
-            costPerUnit,
-          },
+        const existing = await tx.ingredient.findUnique({
+          where: { name: cleanName },
         });
 
-        // Record initial stock movement if initial stock > 0
+        let ing;
+        if (existing) {
+          ing = await tx.ingredient.update({
+            where: { id: existing.id },
+            data: {
+              unit,
+              minStock,
+              ...(costPerUnit > 0 && { costPerUnit }),
+              ...(supplierName && { supplierName }),
+              ...(supplierPhone && { supplierPhone }),
+              ...(stock > 0 && { stock: { increment: stock } }),
+            },
+          });
+        } else {
+          ing = await tx.ingredient.create({
+            data: {
+              name: cleanName,
+              unit,
+              stock,
+              minStock,
+              costPerUnit,
+              supplierName,
+              supplierPhone,
+            },
+          });
+        }
+
+        // Record stock movement if stock > 0
         if (stock > 0) {
           await tx.stockMovement.create({
             data: {
@@ -344,7 +369,7 @@ export async function bulkCreateIngredients(req, res) {
               qty: stock,
               unitCost: costPerUnit > 0 ? costPerUnit : null,
               totalCost: costPerUnit > 0 ? stock * costPerUnit : null,
-              note: 'Stok Awal Import Excel',
+              note: existing ? 'Penambahan Stok Import Excel' : 'Stok Awal Import Excel',
               recordedBy: req.user?.name || 'Import Excel',
             },
           });
@@ -354,8 +379,11 @@ export async function bulkCreateIngredients(req, res) {
       }
     });
 
-    return successResponse(res, createdList, `${createdList.length} bahan baku berhasil diimpor`, 201);
+    return successResponse(res, createdList, `${createdList.length} bahan baku berhasil diproses`, 201);
   } catch (err) {
+    if (err.code === 'P2002') {
+      return errorResponse(res, 'Terdapat duplikasi nama bahan baku yang tidak dapat diproses', 400);
+    }
     return errorResponse(res, err.message, 500);
   }
 }

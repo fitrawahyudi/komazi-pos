@@ -93,10 +93,11 @@ export const usePosStore = create(
             }));
             return formatted;
           }
+          return res || { success: false, message: 'Gagal membuat produk' };
         } catch (err) {
           console.error('[PosStore] Error creating product:', err);
+          return { success: false, message: err.message };
         }
-        return null;
       },
 
       updateProduct: async (id, updatedData) => {
@@ -119,10 +120,11 @@ export const usePosStore = create(
             }));
             return formatted;
           }
+          return res || { success: false, message: 'Gagal memperbarui produk' };
         } catch (err) {
           console.error('[PosStore] Error updating product:', err);
+          return { success: false, message: err.message };
         }
-        return null;
       },
 
       deleteProduct: async (id) => {

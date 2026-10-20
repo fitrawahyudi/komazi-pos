@@ -640,26 +640,27 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      NMID (National Merchant ID):
+                      NMID:
                     </label>
                     <input
                       type="text"
                       value={formState.qrisNmid || ''}
                       onChange={(e) => handleChange('qrisNmid', e.target.value)}
-                      placeholder="ID1020088920199"
+                      placeholder=""
                       className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Nama Merchant QRIS:
+                      Nama Merchant:
                     </label>
                     <input
                       type="text"
                       value={formState.qrisMerchantName || ''}
                       onChange={(e) => handleChange('qrisMerchantName', e.target.value)}
-                      placeholder="KOMAZI COFFEE & WORKSPACE"
+                      placeholder=""
+                      readOnly
                       className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
                     />
                   </div>
@@ -673,6 +674,7 @@ export default function SettingsPage() {
                       value={formState.qrisMerchantCity || ''}
                       onChange={(e) => handleChange('qrisMerchantCity', e.target.value)}
                       placeholder="MEDAN"
+                      readOnly
                       className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none uppercase"
                     />
                   </div>
@@ -686,6 +688,7 @@ export default function SettingsPage() {
                       value={formState.qrisPostalCode || ''}
                       onChange={(e) => handleChange('qrisPostalCode', e.target.value)}
                       placeholder="20112"
+                      readOnly
                       className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
                     />
                   </div>
