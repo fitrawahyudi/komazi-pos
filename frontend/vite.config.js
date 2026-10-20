@@ -32,17 +32,8 @@ export default defineConfig({
         },
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'vendor-react';
-            }
-            if (id.includes('recharts')) {
-              return 'vendor-charts';
-            }
             if (id.includes('xlsx')) {
               return 'vendor-excel';
-            }
-            if (id.includes('lucide-react')) {
-              return 'vendor-icons';
             }
             if (id.includes('@point-of-sale') || id.includes('esc-pos-encoder') || id.includes('qrcode')) {
               return 'vendor-printer';
