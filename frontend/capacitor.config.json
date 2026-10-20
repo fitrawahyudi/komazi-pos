@@ -22,8 +22,8 @@
       "enabled": true
     },
     "LocalNotifications": {
-      "smallIcon": "ic_launcher",
-      "iconColor": "#FF5722"
+      "smallIcon": "ic_komazi_notification",
+      "iconColor": "#EA580C"
     }
   }
 }

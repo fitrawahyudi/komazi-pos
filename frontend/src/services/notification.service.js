@@ -38,6 +38,52 @@ function saveSettings(settings) {
   } catch {}
 }
 
+/**
+ * Memformat nomor invoice panjang menjadi ringkas dan mudah dibaca di heads-up notifikasi.
+ * Contoh: "KMZ-20261020-0009" -> "#0009"
+ *         "INV-042"           -> "#042"
+ *         "0012"              -> "#0012"
+ */
+function formatShortInvoice(invoice) {
+  if (!invoice) return '';
+  const str = String(invoice).trim();
+  if (str.includes('-')) {
+    const parts = str.split('-');
+    const lastPart = parts[parts.length - 1];
+    return `#${lastPart}`;
+  }
+  return str.startsWith('#') ? str : `#${str}`;
+}
+
+/**
+ * Format ringkasan menu yang rapi dan mudah dibaca sekilas oleh staf dapur / barista.
+ * Contoh: "6 Menu: 2x Nasi Goreng, 1x Es Teh (+4 lainnya)"
+ */
+function formatItemsSummary(items = []) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { totalQty: 0, count: 0, text: '' };
+  }
+  const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity || it.qty) || 1), 0);
+  const preview = items
+    .slice(0, 3)
+    .map((it) => {
+      const q = it.quantity || it.qty || 1;
+      const name = it.productName || it.name || it.product?.name || 'Menu';
+      return `${q}x ${name}`;
+    })
+    .join(', ');
+
+  const remaining = items.length - 3;
+  const moreText = remaining > 0 ? ` (+${remaining} lainnya)` : '';
+  const count = items.length;
+
+  return {
+    totalQty,
+    count,
+    text: `${count} Menu: ${preview}${moreText}`,
+  };
+}
+
 let isInitialized = false;
 let currentPushToken = localStorage.getItem(FCM_TOKEN_KEY) || null;
 
@@ -143,8 +189,8 @@ export const NotificationService = {
                 title: notification.title || 'Pemberitahuan Komazi POS',
                 body: notification.body || '',
                 channelId: notification.data?.category === 'ORDERS' ? 'komazi_orders' : 'komazi_alerts',
-                smallIcon: 'ic_launcher',
-                iconColor: '#FF5722',
+                smallIcon: 'ic_komazi_notification',
+                iconColor: '#EA580C',
                 extra: notification.data || {},
                 schedule: { at: new Date(Date.now() + 50) },
               },
@@ -338,8 +384,8 @@ export const NotificationService = {
               title,
               body,
               channelId,
-              smallIcon: 'ic_launcher',
-              iconColor: '#FF5722',
+              smallIcon: 'ic_komazi_notification',
+              iconColor: '#EA580C',
               extra,
             },
           ],
@@ -379,17 +425,32 @@ export const NotificationService = {
     const settings = this.getSettings();
     if (!settings.enabled || !settings.orderAlerts) return;
 
-    const invoice = order?.invoiceNo || 'Pesanan';
+    const invoice = order?.invoiceNo || '';
+    const shortInv = formatShortInvoice(invoice);
     const total = order?.total ? `Rp ${(Number(order.total) || 0).toLocaleString('id-ID')}` : '';
+
+    let orderType = 'Dine In';
+    if (order?.type === 'TAKE_AWAY') {
+      orderType = 'Take Away';
+    } else if (order?.tableNumber) {
+      orderType = `Meja ${order.tableNumber}`;
+    }
+
+    const title = `Pesanan Baru ${shortInv} (${orderType})`;
+
     const items = order?.items || [];
-    const count = items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
-    const customer = order?.customerName ? `${order.customerName} • ` : '';
-    const typeLabel = order?.type === 'TAKE_AWAY' ? 'Take Away' : order?.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
+    const itemsSummary = formatItemsSummary(items);
+    const customer = order?.customerName ? ` • ${order.customerName}` : '';
+    const totalText = total ? ` • ${total}` : '';
+
+    const body = itemsSummary.text
+      ? `${itemsSummary.text}${customer}${totalText}`
+      : `${orderType}${customer}${totalText}`;
 
     return this.scheduleNotification({
-      id: Math.abs(String(invoice).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
-      title: `🔔 Pesanan Baru #${invoice}`,
-      body: `${customer}${typeLabel} • ${count} Item • ${total}`,
+      id: Math.abs(String(invoice || Date.now()).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title,
+      body,
       channelId: 'komazi_orders',
       extra: {
         url: '/pos',
@@ -402,20 +463,47 @@ export const NotificationService = {
   /**
    * Mengirim notifikasi pesanan masuk khusus Android & KDS / BDS dapur
    */
-  async notifyNewKdsOrder(order, stationLabel = 'Dapur / Bar') {
+  async notifyNewKdsOrder(order, stationLabel = 'Dapur') {
     const settings = this.getSettings();
     if (!settings.enabled || !settings.orderAlerts) return;
 
+    const invoice = order?.invoiceNo || '';
+    const shortInv = formatShortInvoice(invoice);
+
+    // Normalisasi station menjadi ramah baca (Dapur atau Bar)
+    let station = 'Dapur';
+    if (stationLabel) {
+      const lower = stationLabel.toLowerCase();
+      if (lower.includes('bar') || lower.includes('bds') || lower.includes('minuman')) {
+        station = 'Bar';
+      }
+    }
+
+    // Tipe pesanan (Meja 5 / Take Away / Dine In)
+    let orderType = 'Dine In';
+    if (order?.type === 'TAKE_AWAY') {
+      orderType = 'Take Away';
+    } else if (order?.tableNumber) {
+      orderType = `Meja ${order.tableNumber}`;
+    }
+
+    // Judul yang sangat bersih, mudah dibaca sekilas:
+    // Contoh: "Pesanan Dapur #0009 (Meja 5)" atau "Pesanan Bar #0009 (Take Away)"
+    const title = `Pesanan ${station} ${shortInv} (${orderType})`;
+
+    // Rincian menu masuk
     const items = order?.items || [];
-    const itemCount = items.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0);
-    const invoice = order?.invoiceNo || 'Pesanan';
-    const customer = order?.customerName ? `${order.customerName} • ` : '';
-    const typeLabel = order?.type === 'TAKE_AWAY' ? 'Bungkus (Take Away)' : order?.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
+    const itemsSummary = formatItemsSummary(items);
+    const customer = order?.customerName ? ` • ${order.customerName}` : '';
+
+    const body = itemsSummary.text
+      ? `${itemsSummary.text}${customer}`
+      : `${orderType}${customer}`;
 
     return this.scheduleNotification({
-      id: Math.abs(String(invoice).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
-      title: `🔔 [${stationLabel}] Pesanan #${invoice}`,
-      body: `${customer}${typeLabel} • ${itemCount} Menu Masuk`,
+      id: Math.abs(String(invoice || Date.now()).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title,
+      body,
       channelId: 'komazi_orders',
       extra: {
         url: '/kds-screen',
@@ -432,13 +520,18 @@ export const NotificationService = {
     const settings = this.getSettings();
     if (!settings.enabled || !settings.orderAlerts) return;
 
-    const invoice = order?.invoiceNo || 'Pesanan';
-    const tableInfo = order?.tableNumber ? `Meja ${order.tableNumber}` : (order?.customerName || 'Pelanggan');
+    const invoice = order?.invoiceNo || '';
+    const shortInv = formatShortInvoice(invoice);
+    const tableInfo = order?.type === 'TAKE_AWAY'
+      ? 'Take Away'
+      : order?.tableNumber
+      ? `Meja ${order.tableNumber}`
+      : (order?.customerName || 'Dine In');
 
     return this.scheduleNotification({
       id: Math.abs(String(`READY-${invoice}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
-      title: `🍽️ Pesanan Siap Saji #${invoice}`,
-      body: `${tableInfo} • Siap diantarkan ke meja`,
+      title: `Pesanan Siap Saji ${shortInv} (${tableInfo})`,
+      body: `Menu pesanan telah selesai disiapkan dan siap disajikan.`,
       channelId: 'komazi_orders',
       extra: {
         url: '/pos',
@@ -455,13 +548,13 @@ export const NotificationService = {
     const settings = this.getSettings();
     if (!settings.enabled || !settings.approvalAlerts) return;
 
-    const type = approval?.type === 'VOID' ? 'Void Pesanan' : approval?.type === 'REFUND' ? 'Refund Pesanan' : 'Otorisasi Transaksi';
-    const reason = approval?.reason ? ` (${approval.reason})` : '';
+    const type = approval?.type === 'VOID' ? 'Void' : approval?.type === 'REFUND' ? 'Refund' : 'Otorisasi';
+    const reason = approval?.reason ? `: ${approval.reason}` : '';
 
     return this.scheduleNotification({
       id: Math.abs(String(`APPR-${approval?.id || Date.now()}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
-      title: `⚠️ Permintaan Otorisasi: ${type}`,
-      body: `Diperlukan persetujuan Supervisor${reason}`,
+      title: `Permintaan Otorisasi ${type}`,
+      body: `Memerlukan persetujuan Supervisor${reason}`,
       channelId: 'komazi_alerts',
       extra: {
         url: '/orders',
@@ -482,8 +575,8 @@ export const NotificationService = {
 
     return this.scheduleNotification({
       id: Math.abs(String(`STK-${name}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
-      title: `📦 Stok Menipis: ${name}`,
-      body: `Sisa stok saat ini: ${remaining}. Segera lakukan restock.`,
+      title: `Stok Menipis: ${name}`,
+      body: `Sisa stok: ${remaining}. Harap segera lakukan restock.`,
       channelId: 'komazi_alerts',
       extra: {
         url: '/inventory',
@@ -497,8 +590,8 @@ export const NotificationService = {
   async testNotification() {
     return this.scheduleNotification({
       id: 99999,
-      title: '✅ Notifikasi Android Komazi POS Aktif!',
-      body: 'Sistem notifikasi Android via Capacitor berhasil dikonfigurasi dengan suara, getaran, dan channel resmi.',
+      title: 'Pesanan Dapur #0001 (Meja 1)',
+      body: '3 Menu: 2x Nasi Goreng, 1x Es Teh • Budi',
       channelId: 'komazi_orders',
       extra: { url: '/settings' },
     });

@@ -140,9 +140,9 @@ public class KdsForegroundService extends Service {
         );
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Komazi POS - Cetak Dapur Aktif")
-            .setContentText("Koneksi printer Bluetooth aktif & siap cetak tiket saat aplikasi di latar belakang.")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Komazi POS • Layanan Cetak Latar Belakang")
+            .setContentText("Koneksi printer Bluetooth & pesanan aktif di latar belakang.")
+            .setSmallIcon(R.drawable.ic_komazi_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
