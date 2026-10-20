@@ -41,7 +41,7 @@ async function sendDailyReport() {
 <b>Top 5 Menu Terlaris:</b>
 ${topLines}
 ━━━━━━━━━━━━━━━━━━
-<i>Laporan otomatis harian Komazi POS @ 22:00 WIB</i>
+<i>Laporan otomatis harian @ 22:00 WIB • @komazi-assistant</i>
     `.trim();
 
     const imagePromise = generateBotImage('daily_close_book', {
@@ -83,6 +83,8 @@ async function checkLowStock() {
 ${lines}
 ━━━━━━━━━━━━━━━━━━
 <i>Gunakan /stok_masuk untuk mencatat restock.</i>
+
+🤖 <i>@komazi-assistant</i>
       `.trim();
 
       const imagePromise = generateBotImage('inventory_critical', {
@@ -115,6 +117,8 @@ Pelanggan: <b>${esc(session.customerName)}</b>
 Sisa Waktu: <b>${session.remainingMinutes} Menit</b> lagi
 ━━━━━━━━━━━━━━━━━━
 <i>Harap informasikan ke tamu untuk persiapan check-out atau perpanjangan.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         const imagePromise = generateBotImage('workspace_expiry', {

@@ -379,7 +379,7 @@ export const BRAND_CSS = `
  * Standard Outer Card HTML Shell
  */
 export function wrapCardHtml({
-  badgeText = 'KOMAZI BOT',
+  badgeText = 'KOTA MEDAN',
   badgeColor = 'badge-coral',
   title = '',
   subtitle = '',
@@ -444,7 +444,7 @@ export function wrapCardHtml({
       <div class="card-footer">
         <div class="footer-brand">
           <span style="color:#FF5A4D;font-weight:700;">★</span>
-          <span>Komazi Assistant</span>
+          <span>@komazi-assistant</span>
         </div>
         <div class="footer-meta">
           <span>${formatDateWib()}</span> • <span>${escapeHtml(metaTime)}</span>

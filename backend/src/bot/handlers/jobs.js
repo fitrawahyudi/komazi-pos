@@ -442,10 +442,8 @@ export function registerJobHandlers(bot) {
   // ==========================================
   bot.command('job_help', requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const text = `
-⚙️ <b>DOKUMENTASI SISTEM CRON &amp; AUTOMATION KOMAZI</b>
+⚙️ <b>PANDUAN AUTOMATION KOMAZI</b>
 ━━━━━━━━━━━━━━━━━━
-Sistem penjadwalan terintegrasi dengan runtime Node.js, Prisma ORM, dan Komazi AI.
-
 <b>📋 Format Perintah:</b>
 • <code>/jobs [page]</code> — Daftar jadwal aktif & status
 • <code>/job_show &lt;id&gt;</code> — Detail konfigurasi jadwal
@@ -457,22 +455,12 @@ Sistem penjadwalan terintegrasi dengan runtime Node.js, Prisma ORM, dan Komazi A
 • <code>/job_runs &lt;id&gt; [page]</code> — Riwayat eksekusi job
 • <code>/job_help</code> — Panduan ini
 
-<b>⏰ Sintaks Waktu (Cron Expression):</b>
-Format: <code>Menit Jam HariBulan Bulan HariMinggu</code>
-Zona Waktu: <b>Asia/Jakarta (WIB)</b>
-• <code>0 8 * * *</code> = Tiap hari jam 08:00 WIB
-• <code>0 22 * * *</code> = Tiap hari jam 22:00 WIB
-• <code>*/30 8-22 * * *</code> = Tiap 30 menit (jam 08-22)
-• <code>0 9 * * 1</code> = Tiap Senin jam 09:00 WIB
-
 <b>🎯 Tipe Job yang Didukung:</b>
 1. <b>REPORT</b> — Generate & kirim ringkasan omzet / sales card visual
 2. <b>BACKUP</b> — Snapshot audit integritas data & SHA256 verification
 3. <b>MONITORING</b> — Cek latensi database, memori & kesehatan sistem POS
 4. <b>REMINDER</b> — Pengingat operasional ke staf / peran spesifik
 5. <b>AI_TASK</b> — Tugas analitik terarah Komazi AI Engine
-━━━━━━━━━━━━━━━━━━
-<i>Didukung oleh Komazi POS Enterprise Automation Engine</i>
     `.trim();
 
     return ctx.reply(text, { parse_mode: 'HTML' });
@@ -729,7 +717,7 @@ export async function renderJobsList(ctx, page = 1, isEdit = false) {
   keyboard.row();
   keyboard.text('➕ Buat Jadwal Baru (Wizard)', 'job:create_wizard');
 
-  text += `<i>Total: ${pagination.total} jadwal terdaftar. Klik tombol di bawah untuk detail atau tambah jadwal.</i>`;
+  text += `<i>Total: ${pagination.total} jadwal terdaftar. Klik tombol di bawah untuk detail atau tambah jadwal.</i>\n\n🤖 <i>@komazi-assistant</i>`;
 
   if (isEdit) {
     return ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
@@ -765,6 +753,8 @@ async function renderJobDetail(ctx, id, isEdit = false) {
 • Batas Timeout: ${job.timeoutSeconds} detik
 • Batas Retry: ${job.retryLimit}x
 • Target Role: <code>${targetRoles}</code>
+━━━━━━━━━━━━━━━━━━
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     if (recentRuns.length > 0) {
@@ -831,6 +821,7 @@ async function renderJobRuns(ctx, jobId, page = 1, isEdit = false) {
       }
       text += `\n`;
     });
+    text += `🤖 <i>@komazi-assistant</i>\n`;
 
     const keyboard = new InlineKeyboard();
     if (pagination.page > 1) {
@@ -944,7 +935,7 @@ Anda juga dapat langsung mengetik di chat:
 • <i>"Ingatkan aku setiap jam 7 malam untuk cek stok susu"</i>
 • <i>"Cek status layanan setiap 15 menit"</i>
 ━━━━━━━━━━━━━━━━━━
-<i>Didukung oleh Komazi POS Enterprise Automation Engine</i>
+🤖 <i>@komazi-assistant</i>
   `.trim();
 
   const kb = new InlineKeyboard()

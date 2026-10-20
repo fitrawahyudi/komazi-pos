@@ -25,12 +25,14 @@ import {
 import { useShiftStore } from '../store/shiftStore';
 import { useAuthStore } from '../store/authStore';
 import { useHrisStore } from '../store/hrisStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { formatRupiah, formatDateTime } from '../utils/format';
 import { toast } from '../store/toastStore';
 import Pagination from '../components/ui/Pagination';
 import ShiftModal from '../components/shift/ShiftModal';
 import CloseSessionReportModal from '../components/shift/CloseSessionReportModal';
 import AttendanceVerificationModal from '../components/hris/AttendanceVerificationModal';
+import PaymentMethodBreakdownCard from '../components/shift/PaymentMethodBreakdownCard';
 
 export default function CashSessionPage() {
   const {
@@ -93,10 +95,12 @@ export default function CashSessionPage() {
     if (user?.id) fetchTodayAttendance?.(user.id);
   }, [fetchMyTodaySchedule, fetchTodayAttendance, user?.id]);
 
+  const { settings } = useSettingsStore();
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
   const isOwner = user?.role === 'OWNER';
-  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
-  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && !hasClockedIn;
+  const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && !hasClockedIn;
   const isBlocked = isScheduleBlocked || isAttendanceBlocked;
 
   const handleAttendanceSuccess = async () => {
@@ -214,7 +218,7 @@ export default function CashSessionPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-komazi-border/80 gap-3">
             <div>
               <span className="text-[10px] uppercase font-bold tracking-wider text-komazi-coral">
-                SESI AKTIF #{activeShift.id} • {activeShift.registerName || 'Kasir Utama'}
+                SESI AKTIF • {activeShift.registerName || 'Kasir Utama'}
               </span>
               <h2 className="font-display font-black text-xl text-komazi-text mt-0.5">
                 Dibuka oleh {activeShift.cashierName || 'Kasir'}
@@ -234,21 +238,13 @@ export default function CashSessionPage() {
           </div>
 
           {/* Key Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 rounded-xl bg-komazi-surface border border-komazi-border">
               <span className="text-[10px] text-komazi-muted uppercase font-bold block">Modal Awal</span>
               <span className="font-mono font-bold text-lg text-komazi-text mt-1 block">
                 {formatRupiah(openingCash)}
               </span>
               <span className="text-[10px] text-komazi-muted mt-1 block">Uang pecahan awal laci</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-komazi-surface border border-komazi-border">
-              <span className="text-[10px] text-komazi-muted uppercase font-bold block">Penjualan Tunai</span>
-              <span className="font-mono font-bold text-lg text-emerald-400 mt-1 block">
-                +{formatRupiah(totalCashSales)}
-              </span>
-              <span className="text-[10px] text-komazi-muted mt-1 block">{ordersCount} transaksi selesai</span>
             </div>
 
             <div className="p-4 rounded-xl bg-komazi-surface border border-komazi-border">
@@ -269,6 +265,12 @@ export default function CashSessionPage() {
               <span className="text-[10px] text-komazi-muted mt-1 block">Target hitung kas fisik</span>
             </div>
           </div>
+
+          {/* Rincian Per Metode Bayar */}
+          <PaymentMethodBreakdownCard
+            shift={activeShift}
+            totalCashSales={totalCashSales}
+          />
         </div>
       ) : (
         /* Open Session Form */
@@ -298,9 +300,6 @@ export default function CashSessionPage() {
                 <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
                 <div>
                   <strong className="block text-amber-200 font-bold">Presensi Wajib Dilakukan</strong>
-                  <span className="text-amber-300/90 text-xs mt-0.5 block">
-                    Anda belum melakukan presensi hari ini. Silakan lakukan kehadiran terlebih dahulu sebelum membuka sesi kasir dan bertransaksi.
-                  </span>
                 </div>
               </div>
               <button

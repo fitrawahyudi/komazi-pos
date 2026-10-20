@@ -57,7 +57,7 @@ export function renderWelcomeHeroCard(data = {}) {
       <div class="metric-card">
         <div class="metric-label">
           <span>🏢</span>
-          <span>Outlet Penugasan</span>
+          <span>Outlet</span>
         </div>
         <div class="metric-value" style="font-size:18px;">
           Medan
@@ -222,8 +222,8 @@ export function renderStaffBadgeCard(data = {}) {
   return wrapCardHtml({
     badgeText: 'DIGITAL STAFF BADGE',
     badgeColor: 'badge-emerald',
-    title: 'Kartu Identitas Staf Outlet',
-    subtitle: `Profil dan hak otorisasi staf resmi dalam ekosistem Komazi Coffee & Workspace`,
+    title: 'Kartu Identitas',
+    subtitle: `Profil dan hak otorisasi staf resmi Komazi`,
     bodyContent,
   });
 }
@@ -479,7 +479,7 @@ export function renderBotStatusCard(data = {}) {
         <div>
           <span style="font-size:11px;font-weight:800;color:#10B981;letter-spacing:1px;text-transform:uppercase;">DIAGNOSTIK KESEHATAN SISTEM REALTIME</span>
           <h3 style="font-family:'Outfit',sans-serif;font-size:24px;font-weight:800;color:#FFF;margin-top:2px;">
-            Komazi Assistant &amp; POS Engine
+            @komazi-assistant
           </h3>
           <p style="font-size:13px;color:#9CA3AF;margin-top:4px;">
             GrammY v1.35 • Prisma ORM v6.19 • MySQL Database • Node.js ${escapeHtml(bot.nodeVersion || 'v22')}
@@ -570,10 +570,6 @@ export function renderBotStatusCard(data = {}) {
             <span style="color:#9CA3AF;">Peringatan Stok Rendah</span>
             <span style="font-weight:700;color:${ops.lowStock > 0 ? '#EF4444' : '#10B981'};">${ops.lowStock || 0} Bahan Kritis</span>
           </div>
-          <div style="display:flex;justify-content:space-between;">
-            <span style="color:#9CA3AF;">Coworking Workspace Aktif</span>
-            <span style="font-weight:700;color:#38BDF8;">${ops.activeWorkspaces || 0} Tamu Aktif</span>
-          </div>
         </div>
       </div>
 
@@ -599,21 +595,13 @@ export function renderBotStatusCard(data = {}) {
             <span style="color:#9CA3AF;">Auto Tutup Buku (22:00 WIB)</span>
             <span style="font-weight:700;color:${notif.dailySummary ? '#10B981' : '#6B7280'};">${notif.dailySummary ? 'AKTIF ✅' : 'NONAKTIF'}</span>
           </div>
-          <div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:6px;">
-            <span style="color:#9CA3AF;">Komazi AI Morning Briefing</span>
-            <span style="font-weight:700;color:#10B981;">08:00 WIB ✅</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;">
-            <span style="color:#9CA3AF;">Sentinel Waktu Workspace</span>
-            <span style="font-weight:700;color:#10B981;">Tiap 1 Menit ✅</span>
-          </div>
         </div>
       </div>
     </div>
   `;
 
   return wrapCardHtml({
-    badgeText: 'STATUS BOT AKTIF',
+    // badgeText: 'STATUS BOT AKTIF',
     badgeColor: 'badge-emerald',
     title: 'Status & Performa Asisten Bot',
     subtitle: 'Pemantauan realtime kesehatan server, database MySQL, scheduler, dan akun staf',

@@ -80,7 +80,7 @@ export function formatPaginatedList({
     ? items.map((item, idx) => formatItem(item, idx)).join('\n\n')
     : '<i>Tidak ada data yang tersedia pada halaman ini.</i>';
 
-  const footer = `━━━━━━━━━━━━━━━━━━━━━━\n👇 <i>${footerHint}</i>`;
+  const footer = `━━━━━━━━━━━━━━━━━━━━━━\n👇 <i>${footerHint}</i>\n\n🤖 <i>@komazi-assistant</i>`;
 
   return `${header}\n${body}\n${footer}`;
 }

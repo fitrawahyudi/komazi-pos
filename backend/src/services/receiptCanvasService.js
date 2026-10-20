@@ -1,10 +1,10 @@
 import puppeteer from 'puppeteer';
-import crypto from 'crypto';
 import fs from 'fs';
 
 /**
  * Komazi Coffee & Workspace - Luxury Digital E-Receipt Generator
- * Renders high-fidelity luxury digital receipt matching the official Komazi design.
+ * Menghasilkan banner bukti pembayaran/transaksi sukses bot Telegram dengan layout
+ * resmi komazi-receipt-banner, diselaraskan dengan palet warna logo Komazi (Coral Red & Deep Teal).
  */
 
 let sharedBrowser = null;
@@ -12,10 +12,18 @@ let sharedBrowser = null;
 // Load and cache Komazi logo as base64 data URI
 let komaziLogoDataUri = '';
 try {
-  const logoPath = new URL('../assets/komazi-logo.jpg', import.meta.url);
-  if (fs.existsSync(logoPath)) {
-    const logoBase64 = fs.readFileSync(logoPath).toString('base64');
-    komaziLogoDataUri = `data:image/jpeg;base64,${logoBase64}`;
+  const possibleLogoPaths = [
+    new URL('../assets/komazi-logo.jpg', import.meta.url),
+    new URL('../../../frontend/public/komazi-logo.png', import.meta.url),
+    new URL('../../../frontend/public/komazi-logo-transparent.png', import.meta.url),
+  ];
+  for (const p of possibleLogoPaths) {
+    if (fs.existsSync(p)) {
+      const ext = p.pathname.endsWith('.png') ? 'png' : 'jpeg';
+      const logoBase64 = fs.readFileSync(p).toString('base64');
+      komaziLogoDataUri = `data:image/${ext};base64,${logoBase64}`;
+      break;
+    }
   }
 } catch (e) {
   console.warn('[ReceiptService] Could not load local logo:', e.message);
@@ -51,7 +59,7 @@ const cleanup = async () => {
   if (sharedBrowser) {
     try {
       await sharedBrowser.close();
-    } catch { }
+    } catch {}
     sharedBrowser = null;
   }
 };
@@ -80,503 +88,705 @@ function escapeHtml(str) {
 
 export function generateReceiptHtml(orderData = {}) {
   const invoiceNo = orderData.invoiceNo || 'KMZ-' + Date.now().toString().slice(-8);
-  const rawCustomer = orderData.customerName || orderData.customer?.name || orderData.customer || 'Dine In';
-  const customerName = typeof rawCustomer === 'object' ? (rawCustomer.name || 'Dine In') : rawCustomer;
-  const cashierName = orderData.cashier?.name || orderData.cashierName || 'Rina Sasmita (Shift 1)';
-  const paymentMethod = orderData.paymentMethod || (orderData.payments?.[0]?.method) || 'QRIS Dinamis (Pakasir / Midtrans)';
-  const total = Number(orderData.total || 0);
-  const subtotal = Number(orderData.subtotal || total);
-  const tax = Number(orderData.tax || 0);
-  const discount = Number(orderData.discount || 0);
-  const stationName = orderData.stationName || `Kasir: ${cashierName}`;
-
-  const dateObj = orderData.paidAt ? new Date(orderData.paidAt) : (orderData.createdAt ? new Date(orderData.createdAt) : new Date());
-  const dateFormatted = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
-  const timeFormatted = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
-
-  const hashShort = crypto.createHash('sha256').update(String(invoiceNo + total + dateObj.getTime())).digest('hex').slice(0, 14);
-
+  const rawCustomer = orderData.customerName || orderData.customer?.name || orderData.customer || 'Pelanggan Walk-In';
+  const customerName = typeof rawCustomer === 'object' ? (rawCustomer.name || 'Pelanggan Walk-In') : rawCustomer;
+  const cashierName = orderData.cashier?.name || orderData.cashierName || 'Kasir Utama';
+  const paymentMethod = (orderData.paymentMethod || orderData.payments?.[0]?.method || 'QRIS DINAMIS').toUpperCase();
   const items = Array.isArray(orderData.items) && orderData.items.length > 0
     ? orderData.items
     : [
       {
-        name: 'Komazi Aren Latte (16oz)',
-        variantName: 'Pilihan: Iced • Oat Milk Substitue • Less Sugar 50%',
+        name: 'Aren Latte Signature',
+        variantName: 'Less Sugar 50% • Oat Milk',
         qty: 2,
-        unitPrice: 34000,
-        lineTotal: 68000,
+        unitPrice: 28000,
+        lineTotal: 56000,
       },
       {
-        name: 'Paket 2 Jam Coworking Pass',
-        variantName: 'Fasilitas: Komunal Desk 04 • High-Speed LAN/WiFi • Free Flow Infused Water',
-        qty: 1,
-        unitPrice: 50000,
-        lineTotal: 50000,
-      },
-      {
-        name: 'Butter Almond Croissant',
-        note: 'Warm / Dihangatkan',
+        name: 'Butter Croissant Almond',
+        variantName: 'Warm / Dihangatkan',
         qty: 1,
         unitPrice: 32000,
         lineTotal: 32000,
       },
     ];
 
-  let productSummary = orderData.productSummary || '';
-  if (!productSummary) {
-    const itemNames = items.map((i) => (i.productName || i.name || 'Menu').toUpperCase());
-    productSummary = itemNames.slice(0, 2).join(' + ') + (items.length > 2 ? ` (+${items.length - 2} LAINNYA)` : '');
-    if (orderData.tableName || orderData.table) {
-      productSummary += ` (${orderData.tableName || orderData.table})`;
-    }
-  }
+  const calculatedItemsTotal = items.reduce((acc, it) => {
+    const qty = Number(it.qty || it.quantity || 1);
+    const price = Number(it.unitPrice || it.price || (it.lineTotal ? it.lineTotal / qty : 0));
+    return acc + (it.lineTotal ? Number(it.lineTotal) : price * qty);
+  }, 0);
 
-  const isMember = customerName.toLowerCase().includes('member') || Boolean(orderData.isMember) || (customerName !== 'Pelanggan Dine In' && customerName !== 'Kasir');
-  const customerId = orderData.customerId || (orderData.customerPhone ? String(orderData.customerPhone).slice(0, 3) + '****' + String(orderData.customerPhone).slice(-3) : '810****267');
-  const memberBadgeHtml = isMember
-    ? `<span class="text-[10px] bg-amber-400/15 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded font-semibold tracking-normal">★ Member Gold (${escapeHtml(customerName)})</span>`
-    : `<span class="text-[10px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded font-medium">${escapeHtml(customerName)}</span>`;
+  const subtotal = Number(orderData.subtotal || calculatedItemsTotal);
+  const tax = Number(orderData.tax || 0);
+  const discount = Number(orderData.discount || 0);
+  const total = Number(orderData.total || (subtotal - discount + tax));
 
-  const itemsRowsHtml = items.map((item, idx) => {
+  const dateObj = orderData.paidAt
+    ? new Date(orderData.paidAt)
+    : orderData.createdAt
+    ? new Date(orderData.createdAt)
+    : new Date();
+
+  const dateFormatted = dateObj.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+  const timeFormatted =
+    dateObj.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).replace(/\./g, ':') + ' WIB';
+
+  // Ringkasan produk untuk baris "PRODUK / MENU"
+  const productNames = items.map((it) => it.productName || it.name || 'Menu');
+  const productSummary = productNames.length > 2
+    ? productNames.slice(0, 2).join(', ') + ` (+${productNames.length - 2} lainnya)`
+    : productNames.join(', ');
+
+  // Baris-baris rincian item (maks 5 baris pertama agar proporsi 16:9 tetap presisi)
+  const displayItems = items.slice(0, 5);
+  const remainingCount = items.length - displayItems.length;
+
+  const itemsRowsHtml = displayItems.map((item, idx) => {
     const itemName = item.productName || item.name || 'Menu Komazi';
-    const variant = item.variantName || item.variant?.name || '';
-    const note = item.note || '';
+    const variant = item.variantName || item.variant?.name || item.note || '';
     const qty = Number(item.qty || item.quantity || 1);
     const price = Number(item.unitPrice || item.price || (item.lineTotal ? item.lineTotal / qty : 0));
     const lineTotal = Number(item.lineTotal || item.subtotal || (price * qty));
 
-    let detailsList = [];
-    if (variant) {
-      const vText = variant.startsWith('Pilihan:') || variant.startsWith('Fasilitas:') ? variant : `Pilihan: ${variant}`;
-      detailsList.push(escapeHtml(vText));
-    }
-    if (note) detailsList.push(`Catatan: ${escapeHtml(note)}`);
-    const detailsHtml = detailsList.length > 0
-      ? `<div class="text-[11px] text-neutral-400">${detailsList.join(' • ')}</div>`
-      : '';
-
     return `
-<tr class="hover:bg-brand-surface transition-colors">
-  <td class="py-3.5 px-3 text-center text-neutral-400">${idx + 1}</td>
-  <td class="py-3.5 px-4">
-    <div class="font-bold text-neutral-100">${escapeHtml(itemName)}</div>
-    ${detailsHtml}
-  </td>
-  <td class="py-3.5 px-4 text-right font-mono text-neutral-200">${formatRupiah(price)}</td>
-  <td class="py-3.5 px-4 text-center font-bold text-neutral-300">x${qty}</td>
-  <td class="py-3.5 px-4 text-right font-mono font-bold text-neutral-100">${formatRupiah(lineTotal)}</td>
-</tr>
+      <tr>
+        <td class="col-no">${idx + 1}</td>
+        <td class="col-product">
+          <div>${escapeHtml(itemName)}</div>
+          ${variant ? `<div class="variant">${escapeHtml(variant)}</div>` : ''}
+        </td>
+        <td class="col-price">${formatRupiah(price)}</td>
+        <td class="col-qty">x${qty}</td>
+        <td class="col-subtotal">${formatRupiah(lineTotal)}</td>
+      </tr>
     `.trim();
   }).join('\n');
 
-  const discountRowHtml = discount > 0
-    ? `<div class="flex justify-between text-emerald-400">
-         <span>Diskon Member Gold (10%)</span>
-         <span class="font-mono">-${formatRupiah(discount)}</span>
-       </div>`
+  const extraItemsHtml = remainingCount > 0
+    ? `<tr><td colspan="5" style="text-align:center; color:#9CA3AF; font-size:11px; padding:6px; font-style:italic;">...dan ${remainingCount} item lainnya dalam pesanan ini</td></tr>`
     : '';
 
-  const taxRowHtml = tax > 0
-    ? `<div class="flex justify-between text-neutral-400">
-         <span>PB1 (Pajak Restoran 10%)</span>
-         <span class="font-mono">${formatRupiah(tax)}</span>
-       </div>`
-    : `<div class="flex justify-between text-neutral-400">
-         <span>PB1 (Pajak Restoran 10%)</span>
-         <span class="font-mono">Rp 0 (Termasuk)</span>
-       </div>`;
-
-  const formattedTotalNum = Number(total || 0).toLocaleString('id-ID');
-  const shortPaymentMethod = String(paymentMethod).split('(')[0].trim();
-
-  const logoHtml = komaziLogoDataUri
-    ? `<img src="${komaziLogoDataUri}" alt="Komazi Logo" class="w-full h-full object-contain rounded-[14px]" />`
-    : `<div class="w-full h-full bg-[#0E0E0E] rounded-[14px] flex flex-col items-center justify-center relative overflow-hidden">
-        <span class="font-heading font-black text-2xl tracking-tighter text-white">KMZ</span>
-        <span class="text-[8px] font-bold tracking-widest uppercase text-brand-coral">COFFEE</span>
-       </div>`;
-
   return `<!DOCTYPE html>
-<html class="dark" lang="id"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Bukti Pembelian Digital | Komazi Coffee &amp; Workspace</title>
-<!-- Google Fonts: Outfit & Inter -->
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&amp;family=Inter:wght@400;500;600;700&amp;family=Outfit:wght@500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
-<!-- Tailwind CSS CDN with plugins -->
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<!-- Tailwind Configuration -->
-<script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              bg: '#0A0A0A',
-              card: '#141414',
-              surface: '#1A1A1A',
-              surface2: '#222222',
-              border: '#2A2A2A',
-              borderLight: '#383838',
-              coral: '#FF5A4D',
-              coralHover: '#E0453A',
-              coralSoft: 'rgba(255, 90, 77, 0.12)',
-              teal: '#2FA39C',
-              tealDark: '#1F6F6B',
-              tealSoft: 'rgba(47, 163, 156, 0.12)',
-              gold: '#E5A93C'
-            }
-          },
-          fontFamily: {
-            heading: ['Outfit', 'sans-serif'],
-            sans: ['Inter', 'sans-serif'],
-            signature: ['Great Vibes', 'cursive']
-          },
-          boxShadow: {
-            'glow-coral': '0 0 25px -5px rgba(255, 90, 77, 0.45)',
-            'glow-teal': '0 0 25px -5px rgba(47, 163, 156, 0.45)',
-            'card-luxury': '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 30px 1px rgba(255, 90, 77, 0.15)'
-          }
-        }
-      }
-    };
-</script>
-<style data-purpose="custom-decorations">
-    .carbon-texture {
-      background-color: #121212;
-      background-image: 
-        radial-gradient(#262626 15%, transparent 16%),
-        radial-gradient(#262626 15%, transparent 16%);
-      background-size: 16px 16px;
-      background-position: 0 0, 8px 8px;
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=1280, initial-scale=1.0"/>
+  <title>Struk Pembelian Komazi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 1280px;
+      height: 720px;
+      background: #000000;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #F3F4F6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    .receipt-card {
+      width: 1248px;
+      height: 688px;
+      background: #0A0B0E;
+      border: 2px solid #FF5A4D;
+      border-radius: 24px;
+      padding: 20px 28px;
+      position: relative;
+      box-shadow: 0 0 35px rgba(255, 90, 77, 0.22), inset 0 0 0 1px rgba(47, 163, 156, 0.35);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .receipt-card::before {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      border: 1px solid rgba(255, 90, 77, 0.25);
+      border-radius: 20px;
+      pointer-events: none;
     }
     
-    .frame-border-glow {
+    /* Header Row */
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand-logo-circle {
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      border: 2.5px solid #FF5A4D;
+      box-shadow: 0 0 18px rgba(255, 90, 77, 0.45);
+      background: #000000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-logo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .title-center {
+      text-align: center;
+      flex: 1;
+    }
+    .title-main {
+      font-family: 'Outfit', sans-serif;
+      font-size: 38px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #FF5A4D;
+      text-transform: uppercase;
+      line-height: 1.1;
+      text-shadow: 0 2px 12px rgba(255, 90, 77, 0.35);
+    }
+    .title-sub1 {
+      font-size: 13.5px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #FFFFFF;
+      margin-top: 5px;
+      text-transform: uppercase;
+    }
+    .title-sub2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      color: #2FA39C;
+      margin-top: 3px;
+      text-transform: uppercase;
+    }
+    .header-vip-box {
+      border: 1.5px solid rgba(255, 90, 77, 0.4);
+      border-radius: 14px;
+      background: rgba(18, 20, 26, 0.85);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .vip-left {
+      text-align: center;
+    }
+    .vip-left svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: #FF5A4D;
+      stroke-width: 2;
+    }
+    .vip-left .vip-label {
+      font-size: 10px;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+    .vip-divider {
+      width: 1px;
+      height: 48px;
+      background: rgba(255, 90, 77, 0.25);
+    }
+    .vip-bullets {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .vip-bullet-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+    }
+    .vip-bullet-item .check {
+      color: #2FA39C;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .vip-bullet-item .bold-title {
+      font-weight: 700;
+      color: #F3F4F6;
+      width: 95px;
+    }
+    .vip-bullet-item .desc {
+      color: #9CA3AF;
+      font-size: 10.5px;
+    }
+
+    /* Middle Row */
+    .middle-row {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+    }
+    .info-card {
       border: 1.5px solid rgba(255, 90, 77, 0.35);
-      outline: 1px solid rgba(47, 163, 156, 0.25);
-      outline-offset: -5px;
+      border-radius: 16px;
+      background: rgba(16, 18, 24, 0.85);
+      padding: 12px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      gap: 6px;
+    }
+    .info-row {
+      display: grid;
+      grid-template-columns: 160px 14px 1fr;
+      align-items: center;
+      font-size: 12.5px;
+    }
+    .info-label {
+      color: #D1D5DB;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+      font-size: 11.5px;
+    }
+    .info-colon {
+      color: #9CA3AF;
+      font-weight: 700;
+    }
+    .info-value {
+      font-weight: 700;
+      color: #FFFFFF;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FF5A4D;
+      color: #FFFFFF;
+      padding: 3px 14px;
+      border-radius: 9999px;
+      font-size: 11.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 8px rgba(255, 90, 77, 0.4);
     }
 
-    .shimmer-text-coral {
-      background: linear-gradient(135deg, #FFFFFF 20%, #FFA8A1 50%, #FF5A4D 85%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .signature-card {
+      border: 1.5px solid rgba(255, 90, 77, 0.35);
+      border-radius: 16px;
+      background: rgba(16, 18, 24, 0.85);
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .sig-top-badge {
+      background: rgba(255, 90, 77, 0.15);
+      border: 1px solid rgba(255, 90, 77, 0.35);
+      border-radius: 8px;
+      padding: 4px 12px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      color: #FF5A4D;
+      text-transform: uppercase;
+    }
+    .sig-body {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 4px 0;
+    }
+    .sig-text {
+      text-align: center;
+    }
+    .sig-cursive {
+      font-family: 'Great Vibes', cursive;
+      font-size: 40px;
+      color: #FFFFFF;
+      line-height: 1;
+      text-shadow: 0 0 12px rgba(255, 90, 77, 0.4);
+    }
+    .sig-sub {
+      font-family: 'Outfit', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: #E5E7EB;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    .sig-emblem {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 2px solid #FF5A4D;
+      background: rgba(255, 90, 77, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 12px rgba(255, 90, 77, 0.25);
+    }
+    .sig-emblem svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: #FF5A4D;
+      stroke-width: 2;
     }
 
-    .shimmer-text-teal {
-      background: linear-gradient(135deg, #E6FFFA 20%, #5EEAD4 50%, #2FA39C 90%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    /* Table */
+    .table-card {
+      border: 1.5px solid rgba(255, 90, 77, 0.35);
+      border-radius: 16px;
+      background: rgba(16, 18, 24, 0.85);
+      overflow: hidden;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    thead {
+      background: rgba(28, 30, 38, 0.95);
+      border-bottom: 1.5px solid rgba(255, 90, 77, 0.3);
+    }
+    th {
+      padding: 9px 16px;
+      font-size: 11.5px;
+      font-weight: 800;
+      color: #FF5A4D;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+    td {
+      padding: 8px 16px;
+      font-size: 12.5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .col-no {
+      text-align: center;
+      width: 60px;
+      color: #9CA3AF;
+      font-weight: 700;
+    }
+    .col-product {
+      font-weight: 700;
+      color: #FFFFFF;
+    }
+    .col-product .variant {
+      font-size: 10.5px;
+      font-weight: 500;
+      color: #2FA39C;
+      margin-top: 2px;
+    }
+    .col-price {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      color: #D1D5DB;
+      width: 150px;
+    }
+    .col-qty {
+      text-align: center;
+      font-weight: 800;
+      color: #FF5A4D;
+      width: 120px;
+    }
+    .col-subtotal {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      color: #FFFFFF;
+      width: 160px;
     }
 
-    @media print {
-      body { background: #FFFFFF !important; color: #000000 !important; }
-      .no-print { display: none !important; }
-      .print-neutral { background: white !important; color: black !important; border: 1px solid #ddd !important; }
+    /* Bottom Row */
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr 1fr;
+      gap: 16px;
     }
-</style>
+    .bottom-box {
+      border: 1.5px solid rgba(255, 90, 77, 0.35);
+      border-radius: 16px;
+      background: rgba(16, 18, 24, 0.85);
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .cost-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      font-weight: 900;
+      color: #FFFFFF;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .cost-subline {
+      font-size: 11px;
+      color: #9CA3AF;
+      display: flex;
+      justify-content: space-between;
+      margin-top: 2px;
+    }
+    .total-box {
+      border: 1.5px solid rgba(255, 90, 77, 0.6);
+      background: linear-gradient(135deg, rgba(255, 90, 77, 0.15) 0%, rgba(20, 22, 30, 0.95) 100%);
+      box-shadow: 0 0 20px rgba(255, 90, 77, 0.15);
+      padding: 10px 22px;
+    }
+    .total-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #D1D5DB;
+      border-bottom: 1px solid rgba(255, 90, 77, 0.2);
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+    .total-amount-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .total-label {
+      font-size: 13px;
+      font-weight: 900;
+      color: #FF5A4D;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .total-value {
+      font-family: 'Outfit', sans-serif;
+      font-size: 32px;
+      font-weight: 900;
+      color: #FFFFFF;
+      letter-spacing: -0.5px;
+    }
+    .thanks-box {
+      text-align: center;
+      align-items: center;
+    }
+    .thanks-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      font-weight: 900;
+      color: #FFFFFF;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .thanks-sub {
+      font-size: 10px;
+      font-weight: 600;
+      color: #9CA3AF;
+      letter-spacing: 0.5px;
+      margin-top: 3px;
+      text-transform: uppercase;
+    }
+    .stars-row {
+      color: #FF5A4D;
+      font-size: 14px;
+      margin-top: 5px;
+      letter-spacing: 3px;
+    }
+  </style>
 </head>
-<body class="bg-[#080808] text-neutral-100 font-sans antialiased min-h-screen py-6 px-3 sm:px-6 lg:px-8 flex flex-col items-center justify-center relative overflow-x-hidden selection:bg-brand-coral selection:text-white">
-<!-- Ambient background glow elements -->
-<div aria-hidden="true" class="fixed top-12 left-1/4 w-96 h-96 bg-brand-coral/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
-<div aria-hidden="true" class="fixed bottom-12 right-1/4 w-96 h-96 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
-<!-- BEGIN: ReceiptCertificateWrapper -->
-<main class="w-full max-w-[1240px] relative transition-all" data-purpose="receipt-main-container">
-<!-- BEGIN: OuterLuxuryCardFrame -->
-<div class="relative bg-brand-card rounded-2xl p-3 sm:p-5 lg:p-6 shadow-card-luxury frame-border-glow overflow-hidden">
-<!-- Inner Certificate Container -->
-<div class="rounded-xl border border-brand-border bg-gradient-to-b from-[#181818] via-[#121212] to-[#161616] p-4 sm:p-6 lg:p-7 relative z-10">
-<!-- BEGIN: HeaderSection -->
-<header class="grid grid-cols-1 lg:grid-cols-12 gap-4 pb-5 border-b border-brand-border relative" data-purpose="certificate-header">
-<!-- Top Left: Brand Emblem & Monogram (with uploaded Komazi Logo) -->
-<div class="lg:col-span-3 flex items-center gap-3.5">
-<div class="relative flex-shrink-0">
-<!-- Rounded Brand Emblem Frame with Logo -->
-<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-brand-coral via-[#99251D] to-brand-teal p-[2px] shadow-glow-coral overflow-hidden">
-  <div class="w-full h-full bg-[#080808] rounded-[14px] flex items-center justify-center overflow-hidden">
-    ${logoHtml}
+<body>
+  <div class="receipt-card">
+    <!-- Header -->
+    <div class="header-row">
+      <div class="brand-logo-circle">
+        ${
+          komaziLogoDataUri
+            ? `<img src="${komaziLogoDataUri}" alt="Komazi Logo" class="brand-logo-img"/>`
+            : `<div style="font-family:'Outfit',sans-serif;font-weight:900;font-size:20px;color:#FF5A4D;">KMZ</div>`
+        }
+      </div>
+      <div class="title-center">
+        <h1 class="title-main">STRUK PEMBELIAN</h1>
+        <p class="title-sub1">TERIMA KASIH TELAH MEMILIH KOMAZI COFFEE</p>
+        <p class="title-sub2">— PREMIUM COFFEE &amp; COLLABORATIVE WORKSPACE —</p>
+      </div>
+      <div class="header-vip-box">
+        <div class="vip-left">
+          <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+          <div class="vip-label">KOMAZI VIP</div>
+        </div>
+        <div class="vip-divider"></div>
+        <div class="vip-bullets">
+          <div class="vip-bullet-item">
+            <span class="check">✓</span>
+            <span class="bold-title">100% ARABICA</span>
+            <span class="desc">Single Origin Blend</span>
+          </div>
+          <div class="vip-bullet-item">
+            <span class="check">✓</span>
+            <span class="bold-title">FAST BARISTA</span>
+            <span class="desc">Express Preparation</span>
+          </div>
+          <div class="vip-bullet-item">
+            <span class="check">✓</span>
+            <span class="bold-title">SECURE POS</span>
+            <span class="desc">EMVCo Validated</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle Info -->
+    <div class="middle-row">
+      <!-- Left Info Box -->
+      <div class="info-card">
+        <div class="info-row">
+          <div class="info-label">
+            <span>👤</span>
+            <span>ID PEMBELI</span>
+          </div>
+          <div class="info-colon">:</div>
+          <div class="info-value">${escapeHtml(customerName)}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">
+            <span>⊞</span>
+            <span>PRODUK / MENU</span>
+          </div>
+          <div class="info-colon">:</div>
+          <div class="info-value">${escapeHtml(productSummary)}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">
+            <span>💳</span>
+            <span>METODE BAYAR</span>
+          </div>
+          <div class="info-colon">:</div>
+          <div class="info-value" style="color: #2FA39C;">${escapeHtml(paymentMethod)}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">
+            <span>📅</span>
+            <span>TANGGAL &amp; WAKTU</span>
+          </div>
+          <div class="info-colon">:</div>
+          <div class="info-value">${dateFormatted} ${timeFormatted}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">
+            <span>🛡</span>
+            <span>STATUS</span>
+          </div>
+          <div class="info-colon">:</div>
+          <div class="info-value">
+            <span class="status-badge">👑 PAID (LUNAS)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Signature Box -->
+      <div class="signature-card">
+        <div class="sig-top-badge">✦ TANDA TANGAN &amp; VERIFIKASI ✦</div>
+        <div class="sig-body">
+          <div class="sig-text">
+            <div class="sig-cursive">Komazi Coffee</div>
+            <div class="sig-sub">Official System</div>
+            <div style="font-size: 10px; color: #2FA39C; margin-top: 3px;">Kasir: ${escapeHtml(cashierName)}</div>
+          </div>
+          <div class="sig-emblem">
+            <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-no">NO</th>
+            <th>DETAIL MENU / PRODUK</th>
+            <th style="text-align: right; padding-right: 20px;">HARGA SATUAN</th>
+            <th style="text-align: center;">JUMLAH / QTY</th>
+            <th style="text-align: right; padding-right: 20px;">SUBTOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsRowsHtml}
+          ${extraItemsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bottom Row -->
+    <div class="bottom-row">
+      <div class="bottom-box">
+        <div class="cost-title">RINCIAN BIAYA :</div>
+        <div class="cost-subline">
+          <span>Subtotal (${items.length} Item)</span>
+          <span style="font-family: 'JetBrains Mono', monospace; color: #fff;">${formatRupiah(subtotal)}</span>
+        </div>
+        ${
+          discount > 0
+            ? `<div class="cost-subline" style="color: #2FA39C;">
+                <span>Diskon Promo</span>
+                <span style="font-family: 'JetBrains Mono', monospace;">-${formatRupiah(discount)}</span>
+              </div>`
+            : ''
+        }
+      </div>
+
+      <div class="bottom-box total-box">
+        <div class="total-meta">
+          <span>PB1 RESTO / ADMIN :</span>
+          <span style="font-family: 'JetBrains Mono', monospace;">${tax > 0 ? formatRupiah(tax) : 'Rp 0 (Termasuk)'}</span>
+        </div>
+        <div class="total-amount-row">
+          <span class="total-label">TOTAL BAYAR :</span>
+          <span class="total-value">${formatRupiah(total)}</span>
+        </div>
+      </div>
+
+      <div class="bottom-box thanks-box">
+        <div class="thanks-title">THANK YOU</div>
+        <div class="thanks-sub">ATAS KEPERCAYAAN ANDA</div>
+        <div class="stars-row">★ ★ ★ ★ ★</div>
+        <div style="font-family:'Outfit',sans-serif;font-size:11px;font-weight:800;color:#FF5A4D;letter-spacing:1px;margin-top:4px;">@komazi-assistant</div>
+      </div>
+    </div>
   </div>
-</div>
-</div>
-<div class="space-y-0.5">
-<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-brand-coralSoft text-brand-coral border border-brand-coral/30 text-[10px] font-semibold tracking-wider uppercase">
-  Official Receipt
-</div>
-<h1 class="text-xl sm:text-2xl font-black font-heading tracking-tight text-white leading-tight">KOMAZI</h1>
-<p class="text-xs text-neutral-400 font-medium">Coffee &amp; Coworking Space</p>
-</div>
-</div>
-<!-- Top Center: Title & Salutation -->
-<div class="lg:col-span-5 flex flex-col items-center justify-center text-center px-2">
-<div class="inline-flex items-center gap-1.5 text-xs tracking-widest uppercase text-brand-teal font-semibold mb-1">
-<span class="w-6 h-[1px] bg-brand-teal/50"></span>
-              Bukti Pembayaran Sah
-              <span class="w-6 h-[1px] bg-brand-teal/50"></span>
-</div>
-<h2 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold font-heading tracking-wide shimmer-text-coral uppercase">
-              STRUK PEMBELIAN
-            </h2>
-<p class="text-xs sm:text-sm text-neutral-300 font-medium mt-1">
-              TERIMA KASIH TELAH MEMILIH KOMAZI COFFEE &amp; WORKSPACE <span class="text-brand-coral">☕</span>
-</p>
-<div class="mt-2 text-[11px] font-semibold text-brand-teal bg-brand-tealSoft px-3 py-1 rounded-full border border-brand-teal/30 tracking-wider">
-              SOLUSI DIGITAL COFFEE &amp; WORKSPACE TERPERCAYA
-            </div>
-</div>
-<!-- Top Right: Trust Badges -->
-<div class="lg:col-span-4 flex flex-col items-end justify-center gap-3">
-<!-- Mini Trust Badges Row -->
-<div class="grid grid-cols-3 gap-2 w-full text-center">
-<div class="bg-brand-surface/70 border border-brand-border rounded-lg p-1.5 flex flex-col items-center">
-<span class="text-brand-teal text-xs">🛡️</span>
-<span class="text-[9px] font-bold text-neutral-200 mt-0.5 uppercase">100% Aman</span>
-<span class="text-[8px] text-neutral-400">Trusted Store</span>
-</div>
-<div class="bg-brand-surface/70 border border-brand-border rounded-lg p-1.5 flex flex-col items-center">
-<span class="text-brand-coral text-xs">⚡</span>
-<span class="text-[9px] font-bold text-neutral-200 mt-0.5 uppercase">Fast Server</span>
-<span class="text-[8px] text-neutral-400">Siap Layani</span>
-</div>
-<div class="bg-brand-surface/70 border border-brand-border rounded-lg p-1.5 flex flex-col items-center">
-<span class="text-amber-400 text-xs">🔒</span>
-<span class="text-[9px] font-bold text-neutral-200 mt-0.5 uppercase">Encrypted</span>
-<span class="text-[8px] text-neutral-400">Midtrans Verified</span>
-</div>
-</div>
-</div>
-</header>
-<!-- END: HeaderSection -->
-<!-- Quick Guarantee Ticker -->
-<div class="py-2.5 px-4 bg-brand-surface2/50 rounded-lg my-4 flex items-center justify-between text-[11px] font-medium text-neutral-300 border border-brand-border flex-wrap gap-2">
-<div class="flex items-center gap-1.5">
-<span class="text-brand-coral">✔</span> PROSES CEPAT
-          </div>
-<span class="text-neutral-600 hidden sm:inline">•</span>
-<div class="flex items-center gap-1.5">
-<span class="text-brand-teal">☕</span> PELAYANAN RAMAH &amp; BERSIH
-          </div>
-<span class="text-neutral-600 hidden sm:inline">•</span>
-<div class="flex items-center gap-1.5">
-<span class="text-emerald-400">📶</span> HIGH-SPEED WIFI 100 MBPS
-          </div>
-<span class="text-neutral-600 hidden sm:inline">•</span>
-<div class="flex items-center gap-1.5">
-<span class="text-amber-400">★</span> GARANSI KEPUASAN 100%
-          </div>
-</div>
-<!-- BEGIN: MiddleInfoSection -->
-<section aria-label="Informasi Pelanggan dan Otorisasi Digital" class="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-5" data-purpose="customer-and-signature-info">
-<!-- Left Box: Transaction Details -->
-<div class="lg:col-span-7 bg-brand-surface rounded-xl p-4 sm:p-5 border border-brand-border relative overflow-hidden flex flex-col justify-between">
-<div class="absolute -right-8 -bottom-8 w-32 h-32 bg-brand-coral/5 rounded-full blur-xl pointer-events-none"></div>
-<div class="space-y-3.5">
-<!-- Row 0: No Referensi Invoice -->
-<div class="flex items-center text-xs sm:text-sm">
-<div class="w-36 sm:w-44 flex items-center gap-2 text-neutral-300 font-medium">
-<span class="p-1 rounded bg-neutral-800 text-brand-coral">🧾</span>
-<span>NO. REFERENSI</span>
-</div>
-<div class="text-neutral-400 mr-2">:</div>
-<div class="font-bold text-neutral-100 tracking-wider font-mono">
-<span>${escapeHtml(invoiceNo)}</span>
-</div>
-</div>
-<!-- Row 1: ID Pembeli -->
-<div class="flex items-center text-xs sm:text-sm">
-<div class="w-36 sm:w-44 flex items-center gap-2 text-neutral-300 font-medium">
-<span class="p-1 rounded bg-neutral-800 text-brand-coral">👤</span>
-<span>ID PELANGGAN</span>
-</div>
-<div class="text-neutral-400 mr-2">:</div>
-<div class="font-bold text-white tracking-wider flex items-center gap-2">
-<span>${escapeHtml(customerId)}</span>
-${memberBadgeHtml}
-</div>
-</div>
-<!-- Row 2: Metode Bayar -->
-<div class="flex items-center text-xs sm:text-sm">
-<div class="w-36 sm:w-44 flex items-center gap-2 text-neutral-300 font-medium">
-<span class="p-1 rounded bg-neutral-800 text-emerald-400">💳</span>
-<span>METODE BAYAR</span>
-</div>
-<div class="text-neutral-400 mr-2">:</div>
-<div class="font-bold text-emerald-400 flex items-center gap-1.5">
-<span>${escapeHtml(paymentMethod)}</span>
-</div>
-</div>
-<!-- Row 3: Tanggal & Waktu -->
-<div class="flex items-center text-xs sm:text-sm">
-<div class="w-36 sm:w-44 flex items-center gap-2 text-neutral-300 font-medium">
-<span class="p-1 rounded bg-neutral-800 text-neutral-300">🗓️</span>
-<span>TANGGAL &amp; WAKTU</span>
-</div>
-<div class="text-neutral-400 mr-2">:</div>
-<div class="font-medium text-neutral-200">
-                  ${dateFormatted} • ${timeFormatted}
-                </div>
-</div>
-<!-- Row 4: Status Transaksi -->
-<div class="flex items-center text-xs sm:text-sm pt-1">
-<div class="w-36 sm:w-44 flex items-center gap-2 text-neutral-300 font-medium">
-<span class="p-1 rounded bg-neutral-800 text-brand-coral">🛡️</span>
-<span>STATUS</span>
-</div>
-<div class="text-neutral-400 mr-2">:</div>
-<div>
-<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-emerald-500/20 to-brand-teal/20 border border-emerald-500/50 text-emerald-300 font-bold text-xs shadow-sm">
-<svg class="w-3.5 h-3.5 text-emerald-400 fill-current" viewbox="0 0 20 20">
-<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414 0l-4-4a1 1 0 011.414 0z" fill-rule="evenodd"></path>
-</svg>
-                    PAID 
-                  </span>
-</div>
-</div>
-</div>
-</div>
-<!-- Right Box: Digital Verification & Signature -->
-<div class="lg:col-span-5 bg-brand-surface rounded-xl p-4 sm:p-5 border border-brand-border relative flex flex-col justify-between" data-purpose="digital-signature-panel">
-<div class="flex items-center justify-between border-b border-brand-border pb-2.5">
-<span class="text-xs font-bold tracking-wider text-brand-teal uppercase flex items-center gap-1.5">
-<span>✦</span> TANDA TANGAN &amp; OTORISASI DIGITAL <span>✦</span>
-</span>
-<span class="text-[10px] text-neutral-400 bg-neutral-800/90 px-2 py-0.5 rounded">QR Valid</span>
-</div>
-<!-- Signature & QR Validation Area -->
-<div class="py-4 flex items-center justify-between gap-4">
-<!-- Digital Signature visual -->
-<div class="flex-1 flex flex-col items-center justify-center">
-<div class="font-signature text-3xl sm:text-4xl text-neutral-200 shimmer-text-coral tracking-wide py-1 select-none">
-                  Komazi Coffee
-                </div>
-<div class="w-40 h-[1px] bg-gradient-to-r from-transparent via-brand-coral to-transparent"></div>
-<p class="text-[10px] tracking-wider uppercase text-neutral-400 font-semibold mt-1">
-                  ${escapeHtml(stationName)}
-                </p>
-<p class="text-[9px] text-neutral-500">Hash: ${hashShort}</p>
-</div>
-<!-- Validation QR Badge Code Simulation -->
-<div class="flex flex-col items-center">
-<div class="w-20 h-20 bg-white p-1.5 rounded-lg shadow-md flex items-center justify-center">
-<!-- Simulated 2D Data Matrix / QR -->
-<svg class="w-full h-full text-black" fill="currentColor" viewbox="0 0 100 100">
-<rect height="30" width="30" x="0" y="0"></rect>
-<rect fill="white" height="20" width="20" x="5" y="5"></rect>
-<rect height="10" width="10" x="10" y="10"></rect>
-<rect height="30" width="30" x="70" y="0"></rect>
-<rect fill="white" height="20" width="20" x="75" y="5"></rect>
-<rect height="10" width="10" x="80" y="10"></rect>
-<rect height="30" width="30" x="0" y="70"></rect>
-<rect fill="white" height="20" width="20" x="5" y="75"></rect>
-<rect height="10" width="10" x="10" y="80"></rect>
-<rect height="20" width="10" x="40" y="10"></rect>
-<rect height="8" width="8" x="60" y="20"></rect>
-<rect height="20" width="30" x="35" y="40"></rect>
-<rect height="10" width="20" x="40" y="70"></rect>
-<rect height="15" width="20" x="70" y="50"></rect>
-<rect height="15" width="15" x="80" y="75"></rect>
-<rect height="15" width="10" x="15" y="45"></rect>
-</svg>
-</div>
-<span class="text-[9px] text-neutral-400 mt-1 font-mono">SCAN TO VERIFY</span>
-</div>
-</div>
-<div class="text-[10px] text-center text-neutral-400 pt-1 border-t border-brand-border/60">
-              Disahkan secara elektronik oleh <strong class="text-neutral-200">M. Aditya Prasetyo</strong>
-</div>
-</div>
-</section>
-<!-- END: MiddleInfoSection -->
-<!-- BEGIN: LineItemsTable -->
-<section aria-label="Rincian Item Pembelian" class="mb-5 overflow-hidden rounded-xl border border-brand-border" data-purpose="items-table-section">
-<div class="overflow-x-auto">
-<table class="w-full text-left text-xs sm:text-sm">
-<thead class="bg-neutral-900/90 text-neutral-300 uppercase tracking-wider font-semibold border-b border-brand-border text-[11px]">
-<tr>
-<th class="py-3 px-3 text-center w-12 text-brand-teal" scope="col">NO</th>
-<th class="py-3 px-4" scope="col">DETAIL PRODUK</th>
-<th class="py-3 px-4 text-right" scope="col">HARGA SATUAN</th>
-<th class="py-3 px-4 text-center" scope="col">QTY</th>
-<th class="py-3 px-4 text-right text-brand-coral" scope="col">SUBTOTAL</th>
-</tr>
-</thead>
-<tbody class="divide-y divide-brand-border/50 bg-brand-surface/40 font-medium">
-${itemsRowsHtml}
-</tbody>
-</table>
-</div>
-</section>
-<!-- END: LineItemsTable -->
-<!-- BEGIN: CostSummaryAndFooter -->
-<footer class="grid grid-cols-1 lg:grid-cols-12 gap-4" data-purpose="summary-total-and-thank-you">
-<!-- Bottom Left: Breakdown Biaya -->
-<div class="lg:col-span-4 bg-brand-surface rounded-xl p-4 border border-brand-border flex flex-col justify-between">
-<div>
-<div class="text-xs font-bold uppercase tracking-wider text-neutral-200 mb-2.5 flex items-center gap-1.5">
-<span class="text-brand-coral">❖</span> RINCIAN BIAYA &amp; PAJAK :
-              </div>
-<div class="space-y-1.5 text-xs">
-<div class="flex justify-between text-neutral-300">
-<span>Subtotal Pesanan</span>
-<span class="font-mono">${formatRupiah(subtotal)}</span>
-</div>
-${discountRowHtml}
-${taxRowHtml}
-<div class="flex justify-between text-neutral-400">
-<span>Fee Transaksi / Layanan</span>
-<span class="font-mono text-brand-teal">Rp 0 (GRATIS)</span>
-</div>
-</div>
-</div>
-<div class="pt-2 mt-2 border-t border-brand-border/60 text-[10px] text-neutral-400 flex items-center justify-between">
-<span>Metode: ${escapeHtml(shortPaymentMethod)}</span>
-<span class="text-emerald-400 font-semibold">Terkonfirmasi Otomatis</span>
-</div>
-</div>
-<!-- Bottom Center: Huge Grand Total -->
-<div class="lg:col-span-5 bg-gradient-to-br from-brand-surface via-[#202020] to-[#171717] rounded-xl p-4 sm:p-5 border-2 border-brand-coral/40 flex flex-col items-center justify-center text-center shadow-lg relative overflow-hidden">
-<div class="absolute -top-10 -right-10 w-28 h-28 bg-brand-coral/10 rounded-full blur-xl pointer-events-none"></div>
-<span class="text-xs sm:text-sm uppercase tracking-widest font-semibold text-neutral-300 mb-1">
-              TOTAL BAYAR
-            </span>
-<div class="text-3xl sm:text-4xl lg:text-5xl font-black font-heading text-white tracking-tight flex items-baseline gap-1.5 py-1">
-<span class="text-brand-coral text-2xl sm:text-3xl font-bold">Rp</span>
-<span class="font-mono font-extrabold tracking-normal">${formattedTotalNum}</span>
-</div>
-<div class="text-[11px] font-medium text-brand-teal mt-1 flex items-center gap-1.5">
-<span>✓</span> Pembayaran Selesai • Tidak ada sisa tagihan
-            </div>
-</div>
-<!-- Bottom Right: Thank You & Rating -->
-<div class="lg:col-span-3 bg-brand-surface rounded-xl p-4 border border-brand-border flex flex-col items-center justify-center text-center">
-<!-- Crown/Stars Icon -->
-<div class="flex items-center gap-1 text-amber-400 text-sm mb-1">
-              ★ ★ ★ ★ ★
-            </div>
-<h3 class="font-heading font-black text-base tracking-wide text-white">
-              TERIMA KASIH
-            </h3>
-<p class="text-xs text-neutral-300 font-medium">
-              Atas Kepercayaan &amp; Kunjungan Anda
-            </p>
-<div class="w-12 h-[1px] bg-brand-border my-2"></div>
-<address class="not-italic text-[10px] text-neutral-400 leading-snug">
-              Komazi Coffee & Workspace<br/>
-              Jl. Kapten M. Jamil Lubis Komplek TVRI, Tembung, Kec. Medan Tembung, Kota Medan, Sumatera Utara<br/>
-              IG: <span class="text-brand-coral">@komazicoffee</span>
-</address>
-</div>
-</footer>
-<!-- END: CostSummaryAndFooter -->
-</div>
-<!-- END: InnerCertificateContainer -->
-</div>
-<!-- END: OuterLuxuryCardFrame -->
-</main>
-<!-- END: ReceiptCertificateWrapper -->
-</body></html>`;
+</body>
+</html>`;
 }
 
 /**
@@ -589,9 +799,9 @@ export async function generateReceiptImageBuffer(orderData = {}) {
   const page = await browser.newPage();
   try {
     await page.setViewport({
-      width: 1300,
-      height: 1200,
-      deviceScaleFactor: 1.5,
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 2,
     });
 
     const html = generateReceiptHtml(orderData);
@@ -602,15 +812,15 @@ export async function generateReceiptImageBuffer(orderData = {}) {
 
     await page.evaluate(() => document.fonts.ready);
 
-    // Screenshot the receipt main container with luxury frame
-    const mainHandle = await page.$('main[data-purpose="receipt-main-container"]') || await page.$('body');
-    const screenshotBuffer = await mainHandle.screenshot({
+    // Screenshot the receipt card element
+    const cardHandle = (await page.$('.receipt-card')) || (await page.$('body'));
+    const screenshotBuffer = await cardHandle.screenshot({
       type: 'png',
-      omitBackground: true,
+      omitBackground: false,
     });
 
     return Buffer.from(screenshotBuffer);
   } finally {
-    await page.close().catch(() => { });
+    await page.close().catch(() => {});
   }
 }

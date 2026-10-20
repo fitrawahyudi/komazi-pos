@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { emitForceLogout } from '../config/socket.js';
-import { checkStaffScheduleToday, checkStaffShiftEligibility, SCHEDULE_BLOCKED_MESSAGE } from '../services/scheduleGuard.service.js';
+import { checkStaffScheduleToday, checkStaffAttendanceToday, checkStaffShiftEligibility, SCHEDULE_BLOCKED_MESSAGE } from '../services/scheduleGuard.service.js';
 import { getSettingsMap } from '../services/settingsCache.service.js';
 import { verifyAttendanceAntiFraud, saveAttendancePhoto } from '../services/attendanceAntiFraud.service.js';
 
@@ -426,29 +426,87 @@ export async function updateStaff(req, res) {
 export async function deleteStaff(req, res) {
   try {
     const { id } = req.params;
+    const staffId = Number(id);
 
-    if (Number(id) === req.user.id) {
+    if (staffId === req.user.id) {
       return errorResponse(res, 'Anda tidak dapat menghapus akun Anda sendiri', 400);
     }
 
-    const existing = await prisma.user.findUnique({ where: { id: Number(id) } });
+    const existing = await prisma.user.findUnique({
+      where: { id: staffId },
+      include: {
+        _count: {
+          select: {
+            orders: true,
+            shifts: true,
+            shiftsClosed: true,
+            cashMovements: true,
+            attendances: true,
+            payslips: true,
+            expensesCreated: true,
+            expensesUpdated: true,
+            assetsCreated: true,
+            depreciationsProcessed: true,
+            createdPayrollPeriods: true,
+            approvalsRequested: true,
+            approvalsDecided: true,
+          },
+        },
+      },
+    });
+
     if (!existing) {
       return errorResponse(res, 'Staf tidak ditemukan', 404);
     }
 
-    // Soft-deactivate to preserve historical transactions, attendance records, and orders
-    await prisma.user.update({
-      where: { id: Number(id) },
-      data: { isActive: false },
+    const hasHistory =
+      (existing._count?.orders || 0) > 0 ||
+      (existing._count?.shifts || 0) > 0 ||
+      (existing._count?.shiftsClosed || 0) > 0 ||
+      (existing._count?.cashMovements || 0) > 0 ||
+      (existing._count?.attendances || 0) > 0 ||
+      (existing._count?.payslips || 0) > 0 ||
+      (existing._count?.expensesCreated || 0) > 0 ||
+      (existing._count?.expensesUpdated || 0) > 0 ||
+      (existing._count?.assetsCreated || 0) > 0 ||
+      (existing._count?.depreciationsProcessed || 0) > 0 ||
+      (existing._count?.createdPayrollPeriods || 0) > 0 ||
+      (existing._count?.approvalsRequested || 0) > 0 ||
+      (existing._count?.approvalsDecided || 0) > 0;
+
+    if (hasHistory) {
+      // Soft-deactivate to preserve historical transactions, cash shifts, and audit trails
+      await prisma.user.update({
+        where: { id: staffId },
+        data: { isActive: false },
+      });
+
+      await logHrisAudit(req.user.id, 'STAFF_DEACTIVATE', 'STAFF', staffId, { name: existing.name }, req);
+      emitForceLogout(staffId, 'Akun Anda telah dinonaktifkan oleh pemilik kedai.');
+
+      return successResponse(
+        res,
+        { id: staffId, isSoftDeleted: true, isHardDeleted: false },
+        'Akun staf dinonaktifkan secara aman karena memiliki riwayat transaksi/presensi/pembukuan.'
+      );
+    }
+
+    // Hard-delete: Staf belum memiliki riwayat transaksi/presensi apa pun
+    // Bersihkan audit log yang mereferensikan user ini tanpa cascade
+    await prisma.auditLog.deleteMany({ where: { userId: staffId } });
+
+    await prisma.user.delete({
+      where: { id: staffId },
     });
 
-    await logHrisAudit(req.user.id, 'STAFF_DEACTIVATE', 'STAFF', Number(id), { name: existing.name }, req);
+    await logHrisAudit(req.user.id, 'STAFF_DELETE', 'STAFF', staffId, { name: existing.name }, req);
+    emitForceLogout(staffId, 'Akun Anda telah dihapus oleh pemilik kedai.');
 
-    // Paksa logout sesi aktif user yang dihapus/dinonaktifkan secara real-time
-    emitForceLogout(Number(id), 'Akun Anda telah dinonaktifkan. Silakan hubungi manager untuk informasi lebih lanjut.');
-
-    return successResponse(res, null, 'Akun staf berhasil dinonaktifkan (arsip aman)');
-
+    return successResponse(
+      res,
+      { id: staffId, isHardDeleted: true, isSoftDeleted: false },
+      'Akun staf berhasil dihapus permanen dari sistem.'
+    );
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }
@@ -659,6 +717,33 @@ export async function clockOut(req, res) {
       return errorResponse(res, 'Anda sudah melakukan Clock-Out hari ini', 400);
     }
 
+    // 4. Periksa apakah karyawan memiliki sesi kasir aktif yang menjadi tanggung jawabnya
+    // Sesuai Aturan Bisnis: Presensi independen per-karyawan, jangan memblokir karena sesi karyawan lain
+    const activeShift = await prisma.shift.findFirst({
+      where: {
+        cashierId: userId,
+        closedAt: null,
+      },
+      include: {
+        register: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    if (activeShift) {
+      return errorResponse(
+        res,
+        'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.',
+        400,
+        {
+          code: 'ACTIVE_CASHIER_SESSION_EXISTS',
+          shiftId: activeShift.id,
+          registerId: activeShift.registerId,
+          registerName: activeShift.register?.name || 'Kasir Utama',
+          openedAt: activeShift.openedAt,
+        }
+      );
+    }
+
     const workMinutes = Math.max(0, Math.round((now - new Date(attendance.clockIn)) / (1000 * 60)));
 
     // Anti-Fraud Verification untuk Clock-Out (Selfie Pulang & Geofencing GPS)
@@ -702,16 +787,27 @@ export async function clockOut(req, res) {
       userNote: typeof notes === 'string' && !notes.startsWith('{') ? notes.trim() : null,
     };
 
-    const updated = await prisma.staffAttendance.update({
-      where: { id: attendance.id },
-      data: {
-        clockOut: now,
-        workMinutes,
-        notes: JSON.stringify(meta),
-      },
-      include: {
-        user: { select: { id: true, name: true, role: true } },
-      },
+    // Cegah duplikasi & race condition presensi pulang ganda menggunakan atomic check dalam transaksi database
+    const updated = await prisma.$transaction(async (tx) => {
+      const currentAtt = await tx.staffAttendance.findUnique({
+        where: { id: attendance.id },
+      });
+
+      if (!currentAtt || currentAtt.clockOut !== null) {
+        throw new Error('Anda sudah melakukan Clock-Out hari ini');
+      }
+
+      return tx.staffAttendance.update({
+        where: { id: attendance.id },
+        data: {
+          clockOut: now,
+          workMinutes,
+          notes: JSON.stringify(meta),
+        },
+        include: {
+          user: { select: { id: true, name: true, role: true } },
+        },
+      });
     });
 
     await logHrisAudit(
@@ -1035,22 +1131,53 @@ export async function getMyTodaySchedule(req, res) {
     const userRole = req.user.role;
     const result = await checkStaffScheduleToday(userId, userRole);
     const eligibility = await checkStaffShiftEligibility(userId, userRole);
+    const attendanceCheck = await checkStaffAttendanceToday(userId, userRole);
+
+    // Ambil sesi kasir aktif yang menjadi tanggung jawab karyawan ini
+    const activeShift = await prisma.shift.findFirst({
+      where: { cashierId: userId, closedAt: null },
+      include: {
+        register: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    const hasActiveShift = Boolean(activeShift);
+    const shiftActionMessage = hasActiveShift
+      ? 'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.'
+      : 'Anda dapat melakukan presensi pulang. Sesi kasir milik karyawan lain tidak terpengaruh.';
 
     return successResponse(
       res,
       {
         ...result,
-        hasClockedIn: userRole === 'OWNER' ? true : Boolean(eligibility.attendance?.clockIn),
+        hasClockedIn: userRole === 'OWNER' ? true : (!attendanceCheck.isEnforced ? true : Boolean(eligibility.attendance?.clockIn)),
+        isAttendanceEnforced: attendanceCheck.isEnforced,
         canTransact: eligibility.eligible,
         isClockedOut: Boolean(eligibility.attendance?.clockOut),
         attendance: eligibility.attendance || null,
         eligibility,
+        hasActiveShift,
+        shiftActionMessage,
+        activeShift: activeShift
+          ? {
+              id: activeShift.id,
+              registerId: activeShift.registerId,
+              registerName: activeShift.register?.name || 'Kasir Utama',
+              registerCode: activeShift.register?.code || 'REG-01',
+              openedAt: activeShift.openedAt,
+              openingCash: parseFloat(activeShift.openingCash || 0),
+            }
+          : null,
       },
       result.isScheduled ? 'Jadwal kerja aktif ditemukan' : 'Jadwal kerja belum diatur'
     );
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }
+}
+
+export async function getMyAttendanceStatus(req, res) {
+  return getMyTodaySchedule(req, res);
 }
 
 // ─────────────────────────────────────────────────────────────

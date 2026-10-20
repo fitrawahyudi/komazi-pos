@@ -130,7 +130,7 @@ export default function MergeBillModal({ onClose }) {
               </div>
               <div>
                 <h3 className="font-display font-bold text-base sm:text-lg text-komazi-text flex items-center gap-2">
-                  <span>Gabungkan Tagihan (Merge Bill)</span>
+                  <span>Gabungkan Tagihan</span>
                 </h3>
                 <p className="text-xs text-komazi-muted mt-0.5">
                   Tujuan:{' '}

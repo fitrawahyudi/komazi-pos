@@ -379,7 +379,7 @@ export default function StockOpnamePage() {
               <ClipboardCheck className="w-4 h-4" />
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-komazi-text tracking-tight">
-              Stok Opname (Stock Take)
+              Stok Opname
             </h1>
           </div>
           <p className="text-xs text-komazi-muted mt-1">
@@ -1131,17 +1131,6 @@ export default function StockOpnamePage() {
                   </table>
                 </div>
               </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-komazi-border shrink-0 flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedSession(null)}
-                className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-semibold transition-colors"
-              >
-                Tutup
-              </button>
             </div>
           </div>
         </div>

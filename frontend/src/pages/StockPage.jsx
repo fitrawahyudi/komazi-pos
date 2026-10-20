@@ -29,6 +29,9 @@ import {
   MessageCircle,
   Edit2,
   ExternalLink,
+  PackagePlus,
+  PackageX,
+  ClipboardCheck,
 } from 'lucide-react';
 import AlertModal from '../components/ui/AlertModal';
 import Pagination from '../components/ui/Pagination';
@@ -43,6 +46,9 @@ export default function StockPage() {
   const {
     ingredients,
     movements,
+    isMovementsLoading,
+    fetchMovements,
+    fetchIngredients,
     addIngredient,
     updateIngredient,
     deleteIngredient,
@@ -56,9 +62,11 @@ export default function StockPage() {
 
   useEffect(() => {
     useStockStore.getState().fetchIngredients?.();
+    useStockStore.getState().fetchMovements?.();
     const handleFocus = () => {
       if (document.visibilityState === 'visible') {
         useStockStore.getState().fetchIngredients?.();
+        useStockStore.getState().fetchMovements?.();
       }
     };
     window.addEventListener('focus', handleFocus);
@@ -155,11 +163,101 @@ export default function StockPage() {
   const [itemsPerPage, setItemsPerPage] = usePersistentState('stock_itemsPerPage', 10);
   const [movementPage, setMovementPage] = useState(1);
   const [movementsPerPage, setMovementsPerPage] = usePersistentState('stock_movementsPerPage', 10);
+  const [movementSearchQuery, setMovementSearchQuery] = useState('');
+  const [movementTypeFilter, setMovementTypeFilter] = usePersistentState('stock_movementTypeFilter', 'ALL'); // 'ALL' | 'PURCHASE' | 'WASTE' | 'SALE' | 'ADJUSTMENT'
+  const [movementIngredientFilter, setMovementIngredientFilter] = useState('ALL');
+
+  useEffect(() => {
+    setMovementPage(1);
+  }, [movementTypeFilter, movementIngredientFilter, movementSearchQuery]);
+
+  const movementCounts = useMemo(() => {
+    const counts = { ALL: (movements || []).length, PURCHASE: 0, WASTE: 0, SALE: 0, ADJUSTMENT: 0 };
+    for (const m of movements || []) {
+      if (counts[m.type] !== undefined) {
+        counts[m.type]++;
+      }
+    }
+    return counts;
+  }, [movements]);
+
+  const filteredMovements = useMemo(() => {
+    return (movements || []).filter((m) => {
+      if (movementTypeFilter !== 'ALL' && m.type !== movementTypeFilter) {
+        return false;
+      }
+      if (movementIngredientFilter !== 'ALL' && String(m.ingredientId) !== String(movementIngredientFilter)) {
+        return false;
+      }
+      if (movementSearchQuery.trim()) {
+        const q = movementSearchQuery.toLowerCase().trim();
+        const matchName = (m.ingredientName || '').toLowerCase().includes(q);
+        const matchNote = (m.note || '').toLowerCase().includes(q);
+        const matchStaff = (m.recordedBy || '').toLowerCase().includes(q);
+        if (!matchName && !matchNote && !matchStaff) return false;
+      }
+      return true;
+    });
+  }, [movements, movementTypeFilter, movementIngredientFilter, movementSearchQuery]);
 
   const paginatedMovements = useMemo(() => {
     const start = (movementPage - 1) * movementsPerPage;
-    return movements.slice(start, start + movementsPerPage);
-  }, [movements, movementPage, movementsPerPage]);
+    return filteredMovements.slice(start, start + movementsPerPage);
+  }, [filteredMovements, movementPage, movementsPerPage]);
+
+  const handleRefreshMovements = async () => {
+    try {
+      await useStockStore.getState().fetchMovements?.();
+      toast.success('Riwayat log stok berhasil diperbarui');
+    } catch {
+      toast.error('Gagal memperbarui riwayat log stok');
+    }
+  };
+
+  const handleExportMovements = () => {
+    if (!filteredMovements || filteredMovements.length === 0) {
+      toast.error('Tidak ada data riwayat pergerakan stok untuk diekspor');
+      return;
+    }
+    const exportData = filteredMovements.map((m, idx) => ({
+      'No': idx + 1,
+      'Waktu': formatDateTime(m.createdAt),
+      'Tipe Mutasi':
+        m.type === 'PURCHASE'
+          ? 'Masuk / Pembelian'
+          : m.type === 'WASTE'
+          ? 'Terbuang / Waste'
+          : m.type === 'SALE'
+          ? 'Penjualan POS'
+          : m.type === 'ADJUSTMENT'
+          ? 'Penyesuaian Opname'
+          : m.type,
+      'Nama Bahan': m.ingredientName || '-',
+      'Perubahan Qty': `${
+        m.type === 'PURCHASE'
+          ? '+'
+          : m.type === 'WASTE' || m.type === 'SALE'
+          ? '-'
+          : m.qty >= 0
+          ? '+'
+          : ''
+      }${Math.abs(m.qty)} ${m.unit || ''}`,
+      'Satuan': m.unit || '',
+      'Keterangan / Alasan': m.note || '-',
+      'Dicatat Oleh': m.recordedBy || 'Sistem',
+      ...(canViewCost
+        ? {
+            'Nilai Total': m.totalCost ? formatRupiah(m.totalCost) : '-',
+          }
+        : {}),
+    }));
+    exportToExcel(
+      exportData,
+      `riwayat_mutasi_stok_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      'Log Mutasi Stok'
+    );
+    toast.success('Riwayat log stok berhasil diekspor ke Excel');
+  };
 
   const lowStock = getLowStockItems();
 
@@ -394,16 +492,6 @@ export default function StockPage() {
 
           <button
             type="button"
-            onClick={() => handleOpenMovementModal('WASTE')}
-            className="px-3.5 py-2 rounded-xl bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 text-xs font-bold transition-colors flex items-center gap-1.5 active:scale-95"
-            title="Catat bahan terbuang, tumpah, atau kalibrasi dial-in"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Catat Waste</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setIsAddIngredientOpen(true)}
             className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 active:scale-95"
           >
@@ -560,7 +648,7 @@ export default function StockPage() {
       {/* 4. Ingredients Table */}
       <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden">
         <div className="p-4 border-b border-komazi-border flex items-center justify-between">
-          <h2 className="font-bold text-sm text-komazi-text">Daftar Bahan & Level Stok</h2>
+          <h2 className="font-bold text-sm text-komazi-text">Daftar Bahan</h2>
           <span className="text-xs text-komazi-muted font-medium">
             Total {totalFiltered} dari {ingredients.length} bahan baku
           </span>
@@ -717,33 +805,37 @@ export default function StockPage() {
                           <button
                             type="button"
                             onClick={() => handleOpenMovementModal('PURCHASE', ing.id)}
-                            className="px-2 py-1 rounded-lg bg-komazi-surface-2 hover:bg-success/20 hover:text-success text-komazi-muted text-[11px] font-semibold border border-komazi-border transition-colors"
-                            title="Tambah stok pembelian"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-emerald-500/20 text-emerald-400 border border-komazi-border hover:border-emerald-500/40 transition-all active:scale-95"
+                            title="Tambah stok pembelian (Restok)"
+                            aria-label="Tambah stok masuk"
                           >
-                            + Masuk
+                            <PackagePlus className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleOpenMovementModal('ADJUSTMENT', ing.id)}
-                            className="px-2 py-1 rounded-lg bg-komazi-surface-2 hover:bg-komazi-teal/20 hover:text-komazi-teal-light text-komazi-muted text-[11px] font-semibold border border-komazi-border transition-colors"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-amber-500/20 text-amber-400 border border-komazi-border hover:border-amber-500/40 transition-all active:scale-95"
                             title="Penyesuaian stok fisik (Opname)"
+                            aria-label="Penyesuaian stok fisik (Opname)"
                           >
-                            Opname
+                            <ClipboardCheck className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleOpenMovementModal('WASTE', ing.id)}
-                            className="px-2 py-1 rounded-lg bg-danger/15 hover:bg-danger/25 text-danger font-semibold text-[11px] border border-danger/30 transition-colors"
-                            title="Catat bahan terbuang / rusak"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-rose-500/20 text-rose-400 border border-komazi-border hover:border-rose-500/40 transition-all active:scale-95"
+                            title="Catat bahan terbuang / rusak (Waste)"
+                            aria-label="Catat bahan terbuang (Waste)"
                           >
-                            Waste
+                            <PackageX className="w-3.5 h-3.5" />
                           </button>
                           {canViewCost && (
                             <button
                               type="button"
                               onClick={() => handleOpenEditModal(ing)}
-                              className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors border border-komazi-border"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 text-komazi-muted hover:text-white hover:bg-komazi-surface border border-komazi-border hover:border-komazi-border-light transition-all active:scale-95"
                               title="Edit bahan baku & supplier"
+                              aria-label="Edit bahan baku"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -752,8 +844,9 @@ export default function StockPage() {
                             <button
                               type="button"
                               onClick={() => setIngredientToDelete(ing)}
-                              className="p-1.5 rounded-lg text-komazi-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 text-komazi-muted hover:text-rose-400 hover:bg-rose-500/20 border border-komazi-border hover:border-rose-500/40 transition-all active:scale-95"
                               title="Hapus bahan baku"
+                              aria-label="Hapus bahan baku"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -844,58 +937,251 @@ export default function StockPage() {
       )}
 
       {/* 5. Movement History Log */}
-      <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden space-y-3 p-4">
-        <h3 className="font-bold text-sm text-komazi-text flex items-center gap-2">
-          <History className="w-4 h-4 text-komazi-coral" />
-          <span>Riwayat Log Pergerakan Stok</span>
-        </h3>
+      <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden space-y-4 p-4 sm:p-5 shadow-sm">
+        {/* Header & Quick Action Buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-komazi-border pb-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30 flex items-center justify-center shrink-0">
+              <History className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-komazi-text">
+                  Riwayat Pergerakan Stok
+                </h3>
+              </div>
+              <p className="text-[11px] text-komazi-muted">
+                Rekam mutasi stok bahan baku (pembelian masuk, terbuang/waste, penjualan POS, dan stok opname)
+              </p>
+            </div>
+          </div>
 
-        <div className="space-y-2">
-          {paginatedMovements.length === 0 ? (
-            <p className="text-xs text-komazi-muted text-center py-6">Belum ada riwayat pergerakan stok.</p>
-          ) : (
-            paginatedMovements.map((m) => (
-              <div
-                key={m.id}
-                className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={handleRefreshMovements}
+              disabled={isMovementsLoading}
+              className="px-3 py-1.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text border border-komazi-border text-xs font-semibold transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+              title="Perbarui riwayat mutasi stok"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-komazi-teal-light ${isMovementsLoading ? 'animate-spin' : ''}`} />
+              <span>Muat Ulang</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportMovements}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-all flex items-center gap-1.5 active:scale-95"
+              title="Ekspor seluruh riwayat mutasi stok ke Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Ekspor Riwayat (.xlsx)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Controls: Type Tabs, Search, Ingredient Select */}
+        <div className="space-y-3">
+          {/* Movement Type Filter Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              { id: 'ALL', label: 'Semua', count: movementCounts.ALL },
+              { id: 'PURCHASE', label: 'Masuk / Restok', count: movementCounts.PURCHASE, color: 'text-emerald-400' },
+              { id: 'WASTE', label: 'Terbuang', count: movementCounts.WASTE, color: 'text-rose-400' },
+              { id: 'SALE', label: 'Terjual', count: movementCounts.SALE, color: 'text-sky-400' },
+              { id: 'ADJUSTMENT', label: 'Opname / Koreksi', count: movementCounts.ADJUSTMENT, color: 'text-amber-400' },
+            ].map((tab) => {
+              const active = movementTypeFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMovementTypeFilter(tab.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 border active:scale-95 ${
+                    active
+                      ? 'bg-komazi-coral text-white border-komazi-coral shadow-sm shadow-komazi-coral/20'
+                      : 'bg-komazi-surface-2 text-komazi-muted border-komazi-border hover:text-komazi-text hover:bg-komazi-border/50'
+                  }`}
+                >
+                  <span>{tab.label}</span>
                   <span
-                    className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${
-                      m.type === 'PURCHASE'
-                        ? 'bg-success/15 text-success border-success/30'
-                        : m.type === 'WASTE'
-                        ? 'bg-danger/15 text-danger border-danger/30'
-                        : 'bg-komazi-teal/15 text-komazi-teal-light border-komazi-teal/30'
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      active
+                        ? 'bg-black/20 text-white'
+                        : 'bg-komazi-surface-3 text-komazi-muted'
                     }`}
                   >
-                    {m.type}
+                    {tab.count}
                   </span>
-                  <div>
-                    <p className="font-semibold text-komazi-text">{m.ingredientName}</p>
-                    <p className="text-[10px] text-komazi-muted">{m.note || 'Pencatatan manual'}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search & Specific Ingredient Filter */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+            <div className="sm:col-span-7 relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-komazi-muted" />
+              <input
+                type="text"
+                value={movementSearchQuery}
+                onChange={(e) => setMovementSearchQuery(e.target.value)}
+                placeholder="Cari nama bahan, catatan resep/order, atau staf..."
+                className="w-full pl-9 pr-8 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted focus:border-komazi-coral focus:outline-none transition-colors"
+              />
+              {movementSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMovementSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-komazi-muted hover:text-komazi-text"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="sm:col-span-5">
+              <select
+                value={movementIngredientFilter}
+                onChange={(e) => setMovementIngredientFilter(e.target.value)}
+                className="w-full py-2 px-3 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none transition-colors"
+              >
+                <option value="ALL">Semua Bahan Baku ({ingredients.length})</option>
+                {ingredients.map((ing) => (
+                  <option key={ing.id} value={ing.id}>
+                    {ing.name} ({ing.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Movement Cards List */}
+        <div className="space-y-2">
+          {isMovementsLoading && paginatedMovements.length === 0 ? (
+            <div className="py-10 text-center space-y-2">
+              <RefreshCw className="w-6 h-6 animate-spin text-komazi-coral mx-auto opacity-80" />
+              <p className="text-xs text-komazi-muted">Memuat riwayat pergerakan stok...</p>
+            </div>
+          ) : paginatedMovements.length === 0 ? (
+            <div className="rounded-xl bg-komazi-surface-2 border border-dashed border-komazi-border p-8 text-center space-y-2">
+              <History className="w-8 h-8 text-komazi-muted/40 mx-auto" />
+              <p className="text-xs font-semibold text-komazi-text">Belum ada riwayat pergerakan stok</p>
+              <p className="text-[11px] text-komazi-muted max-w-sm mx-auto">
+                {movementSearchQuery || movementTypeFilter !== 'ALL' || movementIngredientFilter !== 'ALL'
+                  ? 'Tidak ada catatan mutasi yang cocok dengan filter atau kata kunci pencarian.'
+                  : 'Catatan mutasi stok akan muncul secara otomatis saat restok, pesanan POS, waste bahan, atau stok opname dilakukan.'}
+              </p>
+              {(movementSearchQuery || movementTypeFilter !== 'ALL' || movementIngredientFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMovementSearchQuery('');
+                    setMovementTypeFilter('ALL');
+                    setMovementIngredientFilter('ALL');
+                  }}
+                  className="mt-2 text-xs font-semibold text-komazi-coral hover:underline"
+                >
+                  Reset Semua Filter
+                </button>
+              )}
+            </div>
+          ) : (
+            paginatedMovements.map((m) => {
+              const isPurchase = m.type === 'PURCHASE';
+              const isWaste = m.type === 'WASTE';
+              const isSale = m.type === 'SALE';
+
+              const badgeConfig = isPurchase
+                ? {
+                    label: 'Masuk / Restok',
+                    style: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+                    qtyColor: 'text-emerald-400',
+                    prefix: '+',
+                  }
+                : isWaste
+                ? {
+                    label: 'Terbuang / Waste',
+                    style: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+                    qtyColor: 'text-rose-400',
+                    prefix: '-',
+                  }
+                : isSale
+                ? {
+                    label: 'Transaksi Penjualan',
+                    style: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+                    qtyColor: 'text-sky-400',
+                    prefix: '-',
+                  }
+                : {
+                    label: 'Opname / Koreksi',
+                    style: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+                    qtyColor: m.qty >= 0 ? 'text-emerald-400' : 'text-rose-400',
+                    prefix: m.qty >= 0 ? '+' : '',
+                  };
+
+              const displayQty = `${badgeConfig.prefix}${Math.abs(m.qty)} ${m.unit || ''}`;
+
+              return (
+                <div
+                  key={m.id}
+                  className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border hover:border-komazi-coral/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs group"
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <span
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[10px] tracking-wide border shrink-0 uppercase ${badgeConfig.style}`}
+                    >
+                      {badgeConfig.label}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-komazi-text text-sm group-hover:text-komazi-coral transition-colors truncate">
+                          {m.ingredientName}
+                        </p>
+                        {m.unit && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-komazi-surface-3 text-komazi-muted font-mono">
+                            {m.unit}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-komazi-muted mt-0.5 flex-wrap">
+                        <span className="text-neutral-300 font-medium">
+                          {m.note || 'Pencatatan manual sistem'}
+                        </span>
+                        <span>•</span>
+                        <span className="text-komazi-muted">
+                          oleh: <strong className="text-neutral-300 font-semibold">{m.recordedBy || 'Sistem'}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-left sm:text-right shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-komazi-border/50 flex sm:flex-col justify-between sm:justify-start items-center sm:items-end">
+                    <div>
+                      <p className={`font-mono font-bold text-sm ${badgeConfig.qtyColor}`}>
+                        {displayQty}
+                      </p>
+                      {canViewCost && m.totalCost && Number(m.totalCost) > 0 && (
+                        <p className="text-[10px] text-komazi-muted font-mono">
+                          Total: {formatRupiah(m.totalCost)}
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-komazi-muted font-mono">
+                      {formatDateTime(m.createdAt)}
+                    </p>
                   </div>
                 </div>
-
-                <div className="text-right">
-                  <p
-                    className={`font-mono font-bold ${
-                      m.qty >= 0 ? 'text-success' : 'text-danger'
-                    }`}
-                  >
-                    {m.qty >= 0 ? `+${m.qty}` : m.qty} {m.unit}
-                  </p>
-                  <p className="text-[10px] text-komazi-muted">{formatDateTime(m.createdAt)}</p>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
         {/* Pagination Controls for Movements */}
         <Pagination
           currentPage={movementPage}
-          totalItems={movements.length}
+          totalItems={filteredMovements.length}
           itemsPerPage={movementsPerPage}
           onPageChange={setMovementPage}
           onItemsPerPageChange={setMovementsPerPage}

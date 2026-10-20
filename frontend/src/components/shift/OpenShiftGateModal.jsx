@@ -3,6 +3,7 @@ import { Lock, Unlock, Banknote, ShieldAlert, Sparkles, AlertCircle, ArrowRight,
 import { useShiftStore } from '../../store/shiftStore';
 import { useAuthStore } from '../../store/authStore';
 import { useHrisStore } from '../../store/hrisStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { formatRupiah } from '../../utils/format';
 import { toast } from '../../store/toastStore';
 import LoadingButton from '../ui/loading/LoadingButton';
@@ -32,10 +33,12 @@ export default function OpenShiftGateModal({ isOpen, onClose }) {
     }
   }, [isOpen, user?.id, fetchRegisters, fetchMyTodaySchedule, fetchTodayAttendance]);
 
+  const { settings } = useSettingsStore();
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
   const isOwner = user?.role === 'OWNER';
-  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
-  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && !hasClockedIn;
+  const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && !hasClockedIn;
   const isBlocked = isScheduleBlocked || isAttendanceBlocked;
 
   const handleAttendanceSuccess = async () => {
@@ -120,9 +123,6 @@ export default function OpenShiftGateModal({ isOpen, onClose }) {
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
                 <div>
                   <strong className="block text-amber-200 font-bold">Presensi Wajib Dilakukan</strong>
-                  <span className="leading-relaxed text-[11px] block mt-0.5 text-amber-300/90">
-                    Anda belum melakukan presensi hari ini. Silakan presensi terlebih dahulu untuk membuka sesi kasir dan bertransaksi.
-                  </span>
                 </div>
               </div>
               <button

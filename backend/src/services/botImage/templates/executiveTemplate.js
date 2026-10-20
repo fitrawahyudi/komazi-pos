@@ -340,7 +340,7 @@ export function renderDailyCloseBookCard(data = {}) {
   return wrapCardHtml({
     badgeText: 'DAILY CLOSE BOOK SETTLEMENT',
     badgeColor: 'badge-gold',
-    title: 'Laporan Tutup Buku Harian (EOD Report)',
+    title: 'Laporan Tutup Buku Harian',
     subtitle: `Rekapitulasi resmi penutupan kas dan operasional outlet per ${dateFormatted}`,
     bodyContent,
   });

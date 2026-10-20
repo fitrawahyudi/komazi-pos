@@ -188,6 +188,7 @@ export async function request(endpoint, options = {}) {
         success: false,
         message: friendlyMessage,
         data: data?.data || null,
+        errors: data?.errors || null,
         status: res.status,
       };
     }
@@ -425,8 +426,12 @@ export const api = {
   },
   stock: {
     getIngredients: (params = {}) => {
-      const qs = new URLSearchParams(params).toString();
-      return request(`/ingredients${qs ? `?${qs}` : ''}`);
+      const qs = toCleanQuery(params);
+      return request(`/ingredients${qs}`);
+    },
+    getMovements: (params = {}) => {
+      const qs = toCleanQuery(params);
+      return request(`/ingredients/movements${qs}`);
     },
     create: (data) => request('/ingredients', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/ingredients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -618,6 +623,38 @@ export const api = {
         body: JSON.stringify({ confirmationPhrase }),
       }),
     runRetention: () => request('/backup/retention/run', { method: 'POST' }),
+  },
+  expenses: {
+    getAll: (params = {}) => request(`/expenses${toCleanQuery(params)}`),
+    getById: (id) => request(`/expenses/${id}`),
+    create: (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    cancel: (id, reason) =>
+      request(`/expenses/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    getSummary: (params = {}) => request(`/expenses/summary${toCleanQuery(params)}`),
+    getCategories: () => request('/expenses/categories'),
+    createCategory: (data) =>
+      request('/expenses/categories', { method: 'POST', body: JSON.stringify(data) }),
+    updateCategory: (id, data) =>
+      request(`/expenses/categories/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    deleteCategory: (id) => request(`/expenses/categories/${id}`, { method: 'DELETE' }),
+  },
+  assets: {
+    getAll: (params = {}) => request(`/assets${toCleanQuery(params)}`),
+    getById: (id) => request(`/assets/${id}`),
+    create: (data) => request('/assets', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/assets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    dispose: (id, data) =>
+      request(`/assets/${id}/dispose`, { method: 'POST', body: JSON.stringify(data) }),
+    getSchedule: (id) => request(`/assets/${id}/depreciation-schedule`),
+    getSummary: () => request('/assets/summary'),
+  },
+  depreciations: {
+    getAll: (params = {}) => request(`/depreciations${toCleanQuery(params)}`),
+    preview: (data) =>
+      request('/depreciations/preview', { method: 'POST', body: JSON.stringify(data) }),
+    process: (data) =>
+      request('/depreciations/process', { method: 'POST', body: JSON.stringify(data) }),
   },
 };
 

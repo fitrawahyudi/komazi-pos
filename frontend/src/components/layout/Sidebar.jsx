@@ -26,6 +26,7 @@ import {
   CookingPot,
   ShoppingBag,
   TrendingUp,
+  TrendingDown,
   ShoppingCart,
   Wallet,
   LockOpen,
@@ -47,6 +48,11 @@ import {
   Scale,
   LineChart,
   Sparkles,
+  Package,
+  CreditCard,
+  Percent,
+  UserCheck,
+  Utensils,
 } from 'lucide-react';
 import EditProfileModal from '../profile/EditProfileModal';
 import { usePrinterStore } from '../../store/printerStore';
@@ -60,6 +66,7 @@ export default function Sidebar() {
     setMobileSidebarOpen,
     toggleMobileSidebar,
     isSidebarCollapsed,
+    setSidebarCollapsed,
     toggleSidebarCollapsed,
     openBluetoothModal,
   } = useUiStore();
@@ -100,6 +107,14 @@ export default function Sidebar() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleMobileSidebar, toggleSidebarCollapsed]);
+
+  // Auto-close / collapse sidebar ketika berpindah ke tab/halaman Transaksi POS (/pos)
+  useEffect(() => {
+    if (location.pathname === '/pos') {
+      setSidebarCollapsed(true);
+      setMobileSidebarOpen(false);
+    }
+  }, [location.pathname, setSidebarCollapsed, setMobileSidebarOpen]);
 
   // Grouped Navigation Tree
   const navSections = useMemo(
@@ -144,6 +159,25 @@ export default function Sidebar() {
             label: 'Refund',
             icon: Undo2,
             allowed: !isKitchenStaff,
+          },
+        ],
+      },
+      {
+        id: 'kitchen_display',
+        category: 'Dapur & Bar',
+        icon: CookingPot,
+        items: [
+          {
+            to: '/kds',
+            label: isBarista ? 'Pesanan Barista (BDS)' : isKitchen ? 'Pesanan Dapur' : 'Layar Antrean',
+            icon: isBarista ? Coffee : ChefHat,
+            allowed: !isCashier,
+          },
+          {
+            to: '/kds-screen',
+            label: 'Monitor Layar TV',
+            icon: Tv,
+            allowed: !isCashier && !isOwner,
           },
         ],
       },
@@ -201,12 +235,31 @@ export default function Sidebar() {
             icon: ClipboardCheck,
             allowed: isManagerOrOwner,
           },
-          // {
-          //   to: '/inventory/assets',
-          //   label: 'Aset',
-          //   icon: Landmark,
-          //   allowed: isManagerOrOwner,
-          // },
+        ],
+      },
+      {
+        id: 'finance',
+        category: 'Buat Biaya',
+        icon: Landmark,
+        items: [
+          {
+            to: '/finance/expenses',
+            label: 'Biaya Operasional',
+            icon: Wallet,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/inventory/assets',
+            label: 'Aset Tetap',
+            icon: Landmark,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/finance/depreciation',
+            label: 'Penyusutan Aset',
+            icon: TrendingDown,
+            allowed: isManagerOrOwner,
+          },
         ],
       },
       {
@@ -265,40 +318,69 @@ export default function Sidebar() {
         items: [
           {
             to: '/reports/sales',
-            label: 'Penjualan & Omzet',
+            label: 'Ringkasan Penjualan',
             icon: TrendingUp,
             allowed: isManagerOrOwner,
           },
           {
-            to: '/reports/cogs',
-            label: 'Laba Kotor (HPP)',
-            icon: Scale,
+            to: '/reports/products',
+            label: 'Penjualan Produk',
+            icon: Package,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/categories',
+            label: 'Laporan Kategori',
+            icon: Tag,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/customers',
+            label: 'Laporan Pelanggan',
+            icon: Users,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/order-types',
+            label: 'Tipe Pesanan',
+            icon: Utensils,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/payments',
+            label: 'Metode Pembayaran',
+            icon: CreditCard,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/taxes',
+            label: 'Laporan Pajak',
+            icon: Receipt,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/discounts',
+            label: 'Laporan Diskon',
+            icon: Percent,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/staff',
+            label: 'Laporan Pegawai',
+            icon: UserCheck,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/reports/cash-drawer',
+            label: 'Laporan Kas Kasir',
+            icon: Wallet,
             allowed: isManagerOrOwner,
           },
           {
             to: '/reports/profit-loss',
-            label: 'Laba Bersih (P&L)',
-            icon: LineChart,
+            label: 'Laba Rugi',
+            icon: Scale,
             allowed: isManagerOrOwner,
-          },
-        ],
-      },
-      {
-        id: 'kitchen_display',
-        category: 'Dapur & Bar',
-        icon: CookingPot,
-        items: [
-          {
-            to: '/kds',
-            label: isBarista ? 'Pesanan Barista (BDS)' : isKitchen ? 'Pesanan Dapur' : 'Layar Antrean',
-            icon: isBarista ? Coffee : ChefHat,
-            allowed: !isCashier,
-          },
-          {
-            to: '/kds-screen',
-            label: 'Monitor Layar TV',
-            icon: Tv,
-            allowed: !isCashier && !isOwner,
           },
         ],
       },
@@ -442,7 +524,10 @@ export default function Sidebar() {
                             key={item.to}
                             to={item.to}
                             onClick={() => {
-                              if (window.innerWidth < 1024) {
+                              if (item.to === '/pos') {
+                                setSidebarCollapsed(true);
+                                setMobileSidebarOpen(false);
+                              } else if (window.innerWidth < 1024) {
                                 setMobileSidebarOpen(false);
                               }
                             }}

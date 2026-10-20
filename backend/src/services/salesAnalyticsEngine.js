@@ -206,6 +206,21 @@ export async function getTodayTopSellingData(limit = 5) {
   };
 }
 
+/**
+ * Format Indonesian full date string (Asia/Jakarta timezone)
+ */
+export function formatIndonesianDate(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  return d.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 const BEVERAGE_KEYWORDS = ['kopi', 'coffee', 'espresso', 'latte', 'milk', 'susu', 'oat', 'aren', 'gula', 'syrup', 'sirup', 'matcha', 'cup', 'lid', 'sedotan', 'tea', 'teh', 'es', 'ice'];
 const FOOD_KEYWORDS = ['croissant', 'butter', 'roti', 'bread', 'pastry', 'tepung', 'telur', 'daging', 'ayam', 'beef', 'chicken', 'saus', 'sauce', 'nasi', 'rice', 'bumbu', 'keju', 'cheese'];
 
@@ -217,6 +232,236 @@ function isBeverageItem(name) {
 function isFoodItem(name) {
   const n = (name || '').toLowerCase();
   return FOOD_KEYWORDS.some((k) => n.includes(k));
+}
+
+/**
+ * Fetch and aggregate complete operational & sales analytics for yesterday
+ * Includes fallback to the last active operational day if yesterday had no sales (e.g. day off / closed).
+ */
+export async function getYesterdayAnalyticsData(limit = 5) {
+  const { startOfToday, startOfYesterday, endOfYesterday } = getTodayDateRange();
+  const PAID_STATUSES = ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'];
+  const dateFormatted = formatIndonesianDate(startOfYesterday);
+
+  // 1. Ambil order lunas kemarin
+  const yesterdayOrders = await prisma.order.findMany({
+    where: {
+      status: { in: PAID_STATUSES },
+      createdAt: { gte: startOfYesterday, lte: endOfYesterday },
+    },
+    include: {
+      items: true,
+      payments: true,
+      cashier: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => []);
+
+  // 2. Ambil shift kasir yang dibuka/beroperasi kemarin
+  const yesterdayShifts = await prisma.shift.findMany({
+    where: {
+      openedAt: { gte: startOfYesterday, lte: endOfYesterday },
+    },
+    include: {
+      cashier: { select: { id: true, name: true, role: true } },
+    },
+    orderBy: { openedAt: 'asc' },
+  }).catch(() => []);
+
+  // Helper agregasi pesanan
+  const aggregateOrdersData = (orders, totalRevNum) => {
+    const pMap = new Map();
+    const hCount = {};
+    const pMethodsMap = new Map();
+
+    for (const order of orders) {
+      const hour = new Date(order.createdAt).getHours();
+      const hourKey = `${String(hour).padStart(2, '0')}:00`;
+      hCount[hourKey] = (hCount[hourKey] || 0) + 1;
+
+      for (const item of (order.items || [])) {
+        const pId = item.productId || item.productName || item.name;
+        const pName = item.productName || item.name || 'Produk';
+        if (!pMap.has(pId)) {
+          pMap.set(pId, {
+            productId: item.productId,
+            productName: pName,
+            qtySold: 0,
+            revenue: 0,
+          });
+        }
+        const existing = pMap.get(pId);
+        existing.qtySold += Number(item.qty || 1);
+        existing.revenue += parseFloat(item.lineTotal || 0);
+      }
+
+      for (const pay of (order.payments || [])) {
+        const m = (pay.method || 'CASH').toUpperCase();
+        if (!pMethodsMap.has(m)) {
+          pMethodsMap.set(m, { method: m, totalAmount: 0, transactionCount: 0 });
+        }
+        const ex = pMethodsMap.get(m);
+        ex.totalAmount += parseFloat(pay.amount || 0);
+        ex.transactionCount += 1;
+      }
+    }
+
+    const sortedProducts = Array.from(pMap.values()).sort((a, b) => b.qtySold - a.qtySold);
+    const topProducts = sortedProducts.slice(0, limit).map((p, idx) => ({
+      rank: idx + 1,
+      productId: p.productId,
+      productName: p.productName,
+      qtySold: p.qtySold,
+      revenue: Math.round(p.revenue),
+      revenueFormatted: formatRupiah(p.revenue),
+      revenueSharePercent: totalRevNum > 0 ? Math.round((p.revenue / totalRevNum) * 1000) / 10 : 0,
+    }));
+
+    const topBeverages = sortedProducts
+      .filter((p) => isBeverageItem(p.productName))
+      .slice(0, limit)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        productName: p.productName,
+        qtySold: p.qtySold,
+        revenue: Math.round(p.revenue),
+        revenueFormatted: formatRupiah(p.revenue),
+      }));
+
+    const topFood = sortedProducts
+      .filter((p) => isFoodItem(p.productName))
+      .slice(0, limit)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        productName: p.productName,
+        qtySold: p.qtySold,
+        revenue: Math.round(p.revenue),
+        revenueFormatted: formatRupiah(p.revenue),
+      }));
+
+    let peakHour = '-';
+    let maxCount = 0;
+    for (const [hour, count] of Object.entries(hCount)) {
+      if (count > maxCount) {
+        maxCount = count;
+        peakHour = `${hour} (dengan ${count} transaksi)`;
+      }
+    }
+
+    const paymentMethods = Array.from(pMethodsMap.values()).map((pm) => ({
+      method: pm.method,
+      totalAmount: Math.round(pm.totalAmount),
+      totalAmountFormatted: formatRupiah(pm.totalAmount),
+      transactionCount: pm.transactionCount,
+    }));
+
+    return { topProducts, topBeverages, topFood, peakHour, paymentMethods };
+  };
+
+  // Jika kemarin ada transaksi lunas
+  if (yesterdayOrders.length > 0) {
+    const totalRevenue = yesterdayOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+    const totalOrders = yesterdayOrders.length;
+    const averageBasket = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+    const aggregated = aggregateOrdersData(yesterdayOrders, totalRevenue);
+
+    return {
+      hasSales: true,
+      dateFormatted,
+      totalOrders,
+      totalRevenue: Math.round(totalRevenue),
+      totalRevenueFormatted: formatRupiah(totalRevenue),
+      averageBasket,
+      averageBasketFormatted: formatRupiah(averageBasket),
+      topProducts: aggregated.topProducts,
+      topBeverages: aggregated.topBeverages,
+      topFood: aggregated.topFood,
+      peakHour: aggregated.peakHour,
+      paymentMethods: aggregated.paymentMethods,
+      shifts: yesterdayShifts.map((s) => ({
+        id: s.id,
+        cashierName: s.cashier?.name || 'Kasir',
+        openedAt: s.openedAt,
+        closedAt: s.closedAt,
+        openingCashFormatted: formatRupiah(s.openingCash || 0),
+        closingCashFormatted: formatRupiah(s.closingCash || 0),
+      })),
+      previousActiveDay: null,
+    };
+  }
+
+  // Jika kemarin 0 transaksi (misal hari libur/kedai tutup), cari hari operasional aktif terakhir sebelum hari ini
+  let previousActiveDay = null;
+  try {
+    const lastPastOrder = await prisma.order.findFirst({
+      where: {
+        status: { in: PAID_STATUSES },
+        createdAt: { lt: startOfToday },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+
+    if (lastPastOrder && lastPastOrder.createdAt) {
+      const prevDate = new Date(lastPastOrder.createdAt);
+      const startOfPrevDay = new Date(prevDate);
+      startOfPrevDay.setHours(0, 0, 0, 0);
+      const endOfPrevDay = new Date(prevDate);
+      endOfPrevDay.setHours(23, 59, 59, 999);
+
+      const prevOrders = await prisma.order.findMany({
+        where: {
+          status: { in: PAID_STATUSES },
+          createdAt: { gte: startOfPrevDay, lte: endOfPrevDay },
+        },
+        include: {
+          items: true,
+          payments: true,
+          cashier: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (prevOrders.length > 0) {
+        const prevRev = prevOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+        const prevAgg = aggregateOrdersData(prevOrders, prevRev);
+        const daysAgo = Math.max(1, Math.round((startOfToday.getTime() - startOfPrevDay.getTime()) / (1000 * 60 * 60 * 24)));
+
+        previousActiveDay = {
+          dateFormatted: formatIndonesianDate(startOfPrevDay),
+          daysAgo,
+          totalOrders: prevOrders.length,
+          totalRevenue: Math.round(prevRev),
+          totalRevenueFormatted: formatRupiah(prevRev),
+          averageBasketFormatted: formatRupiah(Math.round(prevRev / prevOrders.length)),
+          topProducts: prevAgg.topProducts,
+          topBeverages: prevAgg.topBeverages,
+          topFood: prevAgg.topFood,
+          peakHour: prevAgg.peakHour,
+          paymentMethods: prevAgg.paymentMethods,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[SalesAnalyticsEngine] Gagal mengambil previousActiveDay:', err.message);
+  }
+
+  return {
+    hasSales: false,
+    dateFormatted,
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalRevenueFormatted: 'Rp 0',
+    averageBasket: 0,
+    averageBasketFormatted: 'Rp 0',
+    topProducts: [],
+    topBeverages: [],
+    topFood: [],
+    peakHour: '-',
+    paymentMethods: [],
+    shifts: [],
+    previousActiveDay,
+  };
 }
 
 /**
@@ -238,7 +483,7 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
   try {
     const [
       todayMetrics,
-      yesterdayOrders,
+      yesterdayData,
       monthOrders,
       allCategories,
       allIngredients,
@@ -256,15 +501,18 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       // 1. Metrik penjualan hari ini (top produk & peringatan bahan)
       getTodayTopSellingData(10),
 
-      // 2. Transaksi lunas kemarin (hanya relevan untuk OWNER & MANAGER)
-      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
-        ? prisma.order
-            .findMany({
-              where: { status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] }, createdAt: { gte: startOfYesterday, lte: endOfYesterday } },
-              select: { id: true, total: true },
-            })
-            .catch(() => [])
-        : Promise.resolve([]),
+      // 2. Data lengkap analisis penjualan & operasional kemarin (semua role)
+      getYesterdayAnalyticsData(10).catch(() => ({
+        hasSales: false,
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalRevenueFormatted: 'Rp 0',
+        topProducts: [],
+        topBeverages: [],
+        topFood: [],
+        paymentMethods: [],
+        shifts: [],
+      })),
 
       // 3. Ringkasan bulan ini (HANYA untuk OWNER)
       normalizedRole === 'OWNER'
@@ -553,6 +801,15 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
             productName: p.productName,
             qtySold: p.qtySold,
           })),
+          yesterday: {
+            hasSales: yesterdayData.hasSales,
+            dateFormatted: yesterdayData.dateFormatted,
+            topBeverages: yesterdayData.topBeverages,
+            previousActiveDay: yesterdayData.previousActiveDay ? {
+              dateFormatted: yesterdayData.previousActiveDay.dateFormatted,
+              topBeverages: yesterdayData.previousActiveDay.topBeverages,
+            } : null,
+          },
         },
         inventory: {
           barIngredientsCount: beverageIngredients.length,
@@ -589,6 +846,15 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
             productName: p.productName,
             qtySold: p.qtySold,
           })),
+          yesterday: {
+            hasSales: yesterdayData.hasSales,
+            dateFormatted: yesterdayData.dateFormatted,
+            topFood: yesterdayData.topFood,
+            previousActiveDay: yesterdayData.previousActiveDay ? {
+              dateFormatted: yesterdayData.previousActiveDay.dateFormatted,
+              topFood: yesterdayData.previousActiveDay.topFood,
+            } : null,
+          },
         },
         inventory: {
           kitchenIngredientsCount: kitchenIngredients.length,
@@ -627,6 +893,24 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
             ordersHandledByMe: myOrdersCount,
             totalRevenueHandledByMe: formatRupiah(myRevenue),
           },
+          yesterday: {
+            hasSales: yesterdayData.hasSales,
+            dateFormatted: yesterdayData.dateFormatted,
+            totalOrders: yesterdayData.totalOrders,
+            peakHour: yesterdayData.peakHour,
+            topProductsForUpsell: (yesterdayData.topProducts || []).map((p) => ({
+              productName: p.productName,
+              qtySold: p.qtySold,
+            })),
+            previousActiveDay: yesterdayData.previousActiveDay ? {
+              dateFormatted: yesterdayData.previousActiveDay.dateFormatted,
+              totalOrders: yesterdayData.previousActiveDay.totalOrders,
+              topProductsForUpsell: (yesterdayData.previousActiveDay.topProducts || []).map((p) => ({
+                productName: p.productName,
+                qtySold: p.qtySold,
+              })),
+            } : null,
+          },
         },
         inventory: {
           criticalLowStockItems: lowStockIngredients.map((i) => ({
@@ -656,7 +940,6 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
 
     // 4. ROLE: MANAGER (Operasional Harian & Supervisi Tim)
     if (normalizedRole === 'MANAGER') {
-      const yesterdayRevenue = yesterdayOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
       const paymentBreakdown = todayPayments.map((p) => ({
         method: p.method,
         totalAmountFormatted: formatRupiah(parseFloat(p._sum.amount || 0)),
@@ -676,8 +959,22 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
             topProducts: todayMetrics.topProducts,
           },
           yesterday: {
-            totalOrders: yesterdayOrders.length,
-            totalRevenueFormatted: formatRupiah(yesterdayRevenue),
+            hasSales: yesterdayData.hasSales,
+            dateFormatted: yesterdayData.dateFormatted,
+            totalOrders: yesterdayData.totalOrders,
+            totalRevenue: yesterdayData.totalRevenue,
+            totalRevenueFormatted: yesterdayData.totalRevenueFormatted,
+            averageBasketFormatted: yesterdayData.averageBasketFormatted,
+            peakHour: yesterdayData.peakHour,
+            topProducts: yesterdayData.topProducts,
+            topBeverages: yesterdayData.topBeverages,
+            topFood: yesterdayData.topFood,
+            paymentMethods: yesterdayData.paymentMethods,
+            shifts: yesterdayData.shifts,
+            previousActiveDay: yesterdayData.previousActiveDay,
+            growthText: yesterdayData.hasSales && todayMetrics.todayTotalRevenue > 0
+              ? `${todayMetrics.todayTotalRevenue >= yesterdayData.totalRevenue ? '+' : ''}${Math.round(((todayMetrics.todayTotalRevenue - yesterdayData.totalRevenue) / (yesterdayData.totalRevenue || 1)) * 100)}% vs kemarin`
+              : 'N/A',
           },
           paymentMethodsToday: paymentBreakdown,
         },
@@ -716,7 +1013,6 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
     }
 
     // 5. ROLE: OWNER (Akses Penuh Eksekutif & Finansial)
-    const yesterdayRevenue = yesterdayOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
     const monthRevenue = parseFloat(monthOrders._sum.total || 0);
     const paymentBreakdown = todayPayments.map((p) => ({
       method: p.method,
@@ -738,8 +1034,22 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
           topProducts: todayMetrics.topProducts,
         },
         yesterday: {
-          totalOrders: yesterdayOrders.length,
-          totalRevenueFormatted: formatRupiah(yesterdayRevenue),
+          hasSales: yesterdayData.hasSales,
+          dateFormatted: yesterdayData.dateFormatted,
+          totalOrders: yesterdayData.totalOrders,
+          totalRevenue: yesterdayData.totalRevenue,
+          totalRevenueFormatted: yesterdayData.totalRevenueFormatted,
+          averageBasketFormatted: yesterdayData.averageBasketFormatted,
+          peakHour: yesterdayData.peakHour,
+          topProducts: yesterdayData.topProducts,
+          topBeverages: yesterdayData.topBeverages,
+          topFood: yesterdayData.topFood,
+          paymentMethods: yesterdayData.paymentMethods,
+          shifts: yesterdayData.shifts,
+          previousActiveDay: yesterdayData.previousActiveDay,
+          growthText: yesterdayData.hasSales && todayMetrics.todayTotalRevenue > 0
+            ? `${todayMetrics.todayTotalRevenue >= yesterdayData.totalRevenue ? '+' : ''}${Math.round(((todayMetrics.todayTotalRevenue - yesterdayData.totalRevenue) / (yesterdayData.totalRevenue || 1)) * 100)}% vs kemarin`
+            : 'N/A',
         },
         thisMonth: {
           totalOrders: monthOrders._count.id || 0,
@@ -986,8 +1296,98 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return text;
   }
 
-  // 9. Intent Omset / Penjualan (Hanya untuk OWNER & MANAGER)
-  if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('penjualan') || q.includes('transaksi') || q.includes('kemarin')) {
+  // 9a. Intent Khusus: Data & Penjualan Kemarin
+  const isYesterdayQuery = q.includes('kemarin') || q.includes('yesterday') || q.includes('hari lalu');
+  if (isYesterdayQuery) {
+    if (role === 'BARISTA') {
+      const yBev = yesterdayMetrics?.topBeverages || yesterdayMetrics?.previousActiveDay?.topBeverages || [];
+      if (yBev.length > 0) {
+        let text = `☕ **Minuman Terlaris Kemarin (${yesterdayMetrics?.dateFormatted || 'Kemarin'}):**\n\n`;
+        yBev.slice(0, 4).forEach((p, idx) => {
+          text += `- **#${idx + 1} ${p.productName}**: terjual **${p.qtySold} cup**\n`;
+        });
+        text += `\nGunakan data ini sebagai panduan persiapan bar dan bahan minuman hari ini.`;
+        return text;
+      }
+      return `Belum ada data penjualan minuman yang tercatat untuk kemarin.`;
+    }
+
+    if (role === 'KITCHEN') {
+      const yFood = yesterdayMetrics?.topFood || yesterdayMetrics?.previousActiveDay?.topFood || [];
+      if (yFood.length > 0) {
+        let text = `🥐 **Makanan/Pastry Terlaris Kemarin (${yesterdayMetrics?.dateFormatted || 'Kemarin'}):**\n\n`;
+        yFood.slice(0, 4).forEach((p, idx) => {
+          text += `- **#${idx + 1} ${p.productName}**: terjual **${p.qtySold} porsi**\n`;
+        });
+        text += `\nGunakan data ini untuk memperkirakan porsi persiapan dapur hari ini.`;
+        return text;
+      }
+      return `Belum ada data penjualan makanan yang tercatat untuk kemarin.`;
+    }
+
+    if (role === 'CASHIER') {
+      const yTop = yesterdayMetrics?.topProducts || yesterdayMetrics?.topProductsForUpsell || yesterdayMetrics?.previousActiveDay?.topProducts || [];
+      if (yTop.length > 0) {
+        let text = `☕ **Menu Terlaris Kemarin (${yesterdayMetrics?.dateFormatted || 'Kemarin'}):**\n\n`;
+        yTop.slice(0, 4).forEach((p, idx) => {
+          text += `- **#${idx + 1} ${p.productName}**: terjual **${p.qtySold} porsi/cup**\n`;
+        });
+        text += `\nMenu di atas sangat direkomendasikan untuk Anda tawarkan (upselling) ke pelanggan hari ini! *(Catatan: Laporan omset global kedai dapat diakses oleh Manager/Owner)*`;
+        return text;
+      }
+      return `Belum ada data menu terlaris kemarin yang tercatat di sistem kasir.`;
+    }
+
+    // Role OWNER & MANAGER
+    if (yesterdayMetrics?.hasSales) {
+      let text = `📊 **Laporan & Data Penjualan Kemarin (${yesterdayMetrics.dateFormatted}):**\n\n`;
+      text += `- **Total Omset**: **${yesterdayMetrics.totalRevenueFormatted}**\n`;
+      text += `- **Jumlah Transaksi Lunas**: **${yesterdayMetrics.totalOrders} transaksi**\n`;
+      if (yesterdayMetrics.averageBasketFormatted) {
+        text += `- **Rata-rata per Transaksi**: ${yesterdayMetrics.averageBasketFormatted}\n`;
+      }
+      if (yesterdayMetrics.peakHour && yesterdayMetrics.peakHour !== '-') {
+        text += `- **Jam Sibuk Kemarin**: Pukul ${yesterdayMetrics.peakHour}\n`;
+      }
+      if (yesterdayMetrics.topProducts && yesterdayMetrics.topProducts.length > 0) {
+        text += `\n**Menu Terlaris Kemarin:**\n`;
+        yesterdayMetrics.topProducts.slice(0, 3).forEach((p, idx) => {
+          text += `- **#${idx + 1} ${p.productName}**: ${p.qtySold} porsi (${p.revenueFormatted})\n`;
+        });
+      }
+      if (yesterdayMetrics.paymentMethods && yesterdayMetrics.paymentMethods.length > 0) {
+        text += `\n**Metode Pembayaran Kemarin:**\n`;
+        yesterdayMetrics.paymentMethods.forEach((m) => {
+          text += `- ${m.method}: ${m.totalAmountFormatted} (${m.transactionCount} transaksi)\n`;
+        });
+      }
+      if (todayMetrics?.todayTotalRevenueFormatted) {
+        text += `\n💡 **Perbandingan Hari Ini**: Omset hari ini sementara tercatat **${todayMetrics.todayTotalRevenueFormatted}** (${todayMetrics.todayTotalOrders || 0} transaksi).`;
+      }
+      return text;
+    } else {
+      const prev = yesterdayMetrics?.previousActiveDay;
+      let text = `📌 **Data Penjualan Kemarin (${yesterdayMetrics?.dateFormatted || 'Kemarin'}):**\n\n`;
+      text += `Pada hari kalender kemarin, **tidak tercatat transaksi lunas** di sistem (kedai libur/tutup atau belum ada penjualan).\n\n`;
+      if (prev) {
+        text += `🔍 **Hari Operasional Aktif Terakhir (${prev.dateFormatted}, ${prev.daysAgo} hari lalu):**\n`;
+        text += `- **Total Omset**: **${prev.totalRevenueFormatted}** (${prev.totalOrders} transaksi)\n`;
+        if (prev.topProducts && prev.topProducts.length > 0) {
+          text += `- **Menu Terlaris**: **${prev.topProducts[0].productName}** (${prev.topProducts[0].qtySold} porsi - ${prev.topProducts[0].revenueFormatted})\n`;
+        }
+        if (prev.peakHour && prev.peakHour !== '-') {
+          text += `- **Jam Tersibuk**: Pukul ${prev.peakHour}\n`;
+        }
+      }
+      if (todayMetrics?.todayTotalRevenueFormatted && todayMetrics.todayTotalOrders > 0) {
+        text += `\n💡 **Omset Hari Ini**: Sementara tercatat **${todayMetrics.todayTotalRevenueFormatted}** (${todayMetrics.todayTotalOrders} transaksi).`;
+      }
+      return text;
+    }
+  }
+
+  // 9b. Intent Omset / Penjualan Umum (Hanya untuk OWNER & MANAGER)
+  if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('penjualan') || q.includes('transaksi')) {
     if (role === 'CASHIER') {
       const pShift = contextOrMetrics?.salesSummary?.myPersonalShiftToday;
       return `Ringkasan Penjualan Shift Anda:\n\n- Total pesanan yang Anda layani: **${pShift?.ordersHandledByMe || 0} transaksi**\n- Total rupiah yang Anda proses: **${pShift?.totalRevenueHandledByMe || 'Rp 0'}**\n*(Catatan: Omset global seluruh kedai hanya dapat diakses oleh Manager/Owner)*`;

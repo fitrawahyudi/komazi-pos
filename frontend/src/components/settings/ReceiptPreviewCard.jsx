@@ -16,6 +16,7 @@ export default function ReceiptPreviewCard() {
   const { settings } = useSettingsStore();
   const [showTestModal, setShowTestModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [previewType, setPreviewType] = useState('customer');
 
   const handleTestPrint = async () => {
     setIsPrinting(true);
@@ -63,6 +64,33 @@ export default function ReceiptPreviewCard() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Template Type Switcher */}
+            <div className="flex items-center p-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border">
+              <button
+                type="button"
+                onClick={() => setPreviewType('customer')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  previewType === 'customer'
+                    ? 'bg-komazi-coral text-white shadow-xs'
+                    : 'text-komazi-muted hover:text-white'
+                }`}
+              >
+                Pelanggan
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewType('merchant')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  previewType === 'merchant'
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'text-komazi-muted hover:text-white'
+                }`}
+                title="Pratinjau Struk Pertinggal (Salinan Kasir / Arsip)"
+              >
+                Pertinggal
+              </button>
+            </div>
+
             {/* Paper Width Switcher */}
             <div className="flex items-center p-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border">
               <button
@@ -125,10 +153,14 @@ export default function ReceiptPreviewCard() {
 
             {/* Transaction Tag */}
             <div className="text-center py-1 bg-neutral-100 rounded my-2 border border-neutral-300">
-              <p className="font-bold text-[11px] text-neutral-800">STRUK TRANSAKSI POS</p>
-              <p className="text-[9px] text-neutral-500 uppercase tracking-widest font-mono">
-                KMZ-INV-20261008-001
+              <p className="font-bold text-[11px] text-neutral-800">
+                {previewType === 'merchant' ? '*** STRUK PERTINGGAL ***' : 'STRUK TRANSAKSI POS'}
               </p>
+              {previewType !== 'merchant' && (
+                <p className="text-[9px] text-neutral-500 uppercase tracking-widest font-mono">
+                  KMZ-INV-20261008-001
+                </p>
+              )}
             </div>
 
             {/* Order Meta */}
@@ -190,22 +222,25 @@ export default function ReceiptPreviewCard() {
               </div>
             </div>
 
-            <div className="border-b border-dashed border-neutral-400 my-2"></div>
-
-            {/* Receipt Footer Notes */}
-            <div className="text-center space-y-1 pt-1">
-              <p className="font-bold text-[10px]">Terima Kasih atas Kunjungan Anda!</p>
-              {receiptFooter && receiptFooter.trim() ? (
-                <p className="text-[9px] text-neutral-500 whitespace-pre-line">
-                  {receiptFooter.trim()}
-                </p>
-              ) : null}
-              {wifiName && settings?.receiptShowWifi !== false && (
-                <p className="text-[9px] text-neutral-600 pt-1">
-                  WiFi: {wifiName} | Password: {wifiPass || '-'}
-                </p>
-              )}
-            </div>
+            {/* Receipt Footer Notes (Khusus Struk Pelanggan) */}
+            {previewType !== 'merchant' && (
+              <>
+                <div className="border-b border-dashed border-neutral-400 my-2"></div>
+                <div className="text-center space-y-1 pt-1">
+                  <p className="font-bold text-[10px]">Terima Kasih atas Kunjungan Anda!</p>
+                  {receiptFooter && receiptFooter.trim() ? (
+                    <p className="text-[9px] text-neutral-500 whitespace-pre-line">
+                      {receiptFooter.trim()}
+                    </p>
+                  ) : null}
+                  {wifiName && settings?.receiptShowWifi !== false && (
+                    <p className="text-[9px] text-neutral-600 pt-1">
+                      WiFi: {wifiName} | Password: {wifiPass || '-'}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

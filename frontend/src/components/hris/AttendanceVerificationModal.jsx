@@ -36,7 +36,13 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
-export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess, mode = 'CLOCK_IN' }) {
+export default function AttendanceVerificationModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  mode = 'CLOCK_IN',
+  onOpenCloseSessionModal,
+}) {
   const { settings } = useSettingsStore();
   const { user } = useAuthStore();
   const clockIn = useHrisStore((state) => state.clockIn);
@@ -57,6 +63,7 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [facingMode, setFacingMode] = useState('user');
   const [cameraError, setCameraError] = useState(null);
+  const [activeSessionError, setActiveSessionError] = useState(null);
 
   // GPS state
   const [gpsLoading, setGpsLoading] = useState(true);
@@ -307,12 +314,14 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
 
   useEffect(() => {
     if (isOpen) {
+      setActiveSessionError(null);
       detectLocation();
       startCamera('user');
     } else {
       stopCamera();
       setPhotoDataUrl(null);
       setStaffNotes('');
+      setActiveSessionError(null);
     }
     return () => {
       stopCamera();
@@ -351,6 +360,7 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
 
     try {
       setIsSubmitting(true);
+      setActiveSessionError(null);
       const payload = {
         latitude: staffCoords?.latitude || null,
         longitude: staffCoords?.longitude || null,
@@ -374,6 +384,12 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
         onClose?.();
       }
     } catch (err) {
+      if (err.code === 'ACTIVE_CASHIER_SESSION_EXISTS' || err.errors?.code === 'ACTIVE_CASHIER_SESSION_EXISTS') {
+        setActiveSessionError({
+          message: err.message || 'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.',
+          details: err.errors || {},
+        });
+      }
       toast.error(err?.message || (isClockOut ? 'Gagal memproses presensi pulang' : 'Gagal memproses presensi'));
     } finally {
       setIsSubmitting(false);
@@ -418,6 +434,32 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
 
         {/* Content Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+          {/* Active Cashier Session Barrier Banner */}
+          {activeSessionError && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5 animate-in fade-in">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Sesi Kasir Masih Aktif</span>
+              </div>
+              <p className="text-amber-300/90 text-xs leading-relaxed">
+                {activeSessionError.message}
+              </p>
+              {onOpenCloseSessionModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose?.();
+                    onOpenCloseSessionModal?.();
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Tutup Sesi Kasir Sekarang</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* 1. Camera Viewfinder / Photo Preview */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -614,8 +656,8 @@ export default function AttendanceVerificationModal({ isOpen, onClose, onSuccess
                   </div>
                   <p className="text-[11px] opacity-90 leading-relaxed">
                     {isDistanceValid
-                      ? `Anda berada di area outlet (toleransi maks: ${maxRadiusMeters}m). Presensi diizinkan.`
-                      : `Jarak Anda ${distanceMeters}m dari outlet (maksimal: ${maxRadiusMeters}m). Anda harus berada di outlet.`}
+                      ? `Kamu berada di area komazi (toleransi maks: ${maxRadiusMeters}m).`
+                      : `Jarak kamu ${distanceMeters}m dari komazi (maksimal: ${maxRadiusMeters}m).`}
                   </p>
                 </div>
               </div>

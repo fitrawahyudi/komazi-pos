@@ -24,6 +24,15 @@ async function resolveBufferSafe(imageBufferPromise, timeoutMs = 8000) {
 }
 
 /**
+ * Helper to ensure the watermark footer @komazi-assistant is present on all bot messages
+ */
+export function ensureWatermark(captionHtml) {
+  if (!captionHtml || typeof captionHtml !== 'string') return captionHtml;
+  if (captionHtml.includes('@komazi-assistant')) return captionHtml;
+  return `${captionHtml.trim()}\n\n🤖 <i>@komazi-assistant</i>`;
+}
+
+/**
  * Send photo to chatId with automatic graceful fallback to text message
  */
 export async function sendPhotoWithFallback({
@@ -34,13 +43,14 @@ export async function sendPhotoWithFallback({
 }) {
   if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) return false;
 
+  const finalCaption = ensureWatermark(captionHtml);
   const photoBuffer = await resolveBufferSafe(imageBufferPromise);
 
   // 1. Try sending photo with caption
   if (photoBuffer) {
     try {
       await bot.api.sendPhoto(chatId, new InputFile(photoBuffer, 'komazi-card.png'), {
-        caption: captionHtml,
+        caption: finalCaption,
         parse_mode: 'HTML',
         reply_markup: replyMarkup || undefined,
       });
@@ -59,7 +69,7 @@ export async function sendPhotoWithFallback({
 
   // 2. Fallback to standard text message
   try {
-    await bot.api.sendMessage(chatId, captionHtml, {
+    await bot.api.sendMessage(chatId, finalCaption, {
       parse_mode: 'HTML',
       reply_markup: replyMarkup || undefined,
     });
@@ -87,12 +97,13 @@ export async function replyWithPhotoFallback(ctx, {
 }) {
   if (!ctx) return false;
 
+  const finalCaption = ensureWatermark(captionHtml);
   const photoBuffer = await resolveBufferSafe(imageBufferPromise);
 
   if (photoBuffer) {
     try {
       await ctx.replyWithPhoto(new InputFile(photoBuffer, 'komazi-card.png'), {
-        caption: captionHtml,
+        caption: finalCaption,
         parse_mode: 'HTML',
         reply_markup: replyMarkup || undefined,
       });
@@ -104,7 +115,7 @@ export async function replyWithPhotoFallback(ctx, {
 
   // Fallback to text reply
   try {
-    await ctx.reply(captionHtml, {
+    await ctx.reply(finalCaption, {
       parse_mode: 'HTML',
       reply_markup: replyMarkup || undefined,
     });

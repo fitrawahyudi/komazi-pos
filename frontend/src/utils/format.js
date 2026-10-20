@@ -175,3 +175,19 @@ export function getProductColor(name = '') {
   };
 }
 
+/**
+ * Check if a date string/object is today (local time)
+ */
+export function isToday(dateInput) {
+  if (!dateInput) return false;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+

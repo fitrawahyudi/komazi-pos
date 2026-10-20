@@ -13,6 +13,7 @@ import { executeBackupJob } from './handlers/backupHandler.js';
 import { executeMonitoringJob } from './handlers/monitoringHandler.js';
 import { executeReminderJob } from './handlers/reminderHandler.js';
 import { executeAiTaskJob } from './handlers/aiTaskHandler.js';
+import { executeDepreciationJob } from './handlers/depreciationHandler.js';
 import logger from '../../utils/logger.js';
 
 const WORKER_ID = `${os.hostname()}:${process.pid}`;
@@ -59,6 +60,8 @@ export const jobRunnerService = {
         return executeReminderJob(job);
       case 'AI_TASK':
         return executeAiTaskJob(job);
+      case 'DEPRECIATION':
+        return executeDepreciationJob(job);
       default:
         throw new Error(`Job type '${job.jobType}' tidak memiliki handler terdaftar.`);
     }

@@ -221,18 +221,6 @@ export default function HrisPage() {
             {pageHeaderInfo.desc}
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleRefreshAll}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-bold text-komazi-muted hover:text-komazi-text hover:border-komazi-coral/40 transition-all active:scale-95 shadow-sm"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-komazi-coral' : ''}`} />
-            <span>Segarkan</span>
-          </button>
-        </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────

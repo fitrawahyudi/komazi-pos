@@ -71,7 +71,7 @@ export const useShiftStore = create(
               totalCashOut: Number(shiftData.totalCashOut || 0),
               totalCashDrop: Number(shiftData.totalCashDrop || 0),
               totalCashRefund: Number(shiftData.totalCashRefund || 0),
-              paymentMethodsSummary: shiftData.paymentMethodsSummary || { CASH: 0, QRIS: 0, TRANSFER: 0 },
+              paymentMethodsSummary: shiftData.paymentMethodsSummary || { CASH: 0, CARD: 0, QRIS: 0, TRANSFER: 0, OTHER: 0 },
               cashMovements: Array.isArray(shiftData.cashMovements) ? shiftData.cashMovements : [],
               cashiers: Array.isArray(shiftData.cashiers) ? shiftData.cashiers : [],
               ordersCount: shiftData.ordersCount || 0,
@@ -138,7 +138,7 @@ export const useShiftStore = create(
               totalCashOut: 0,
               totalCashDrop: 0,
               totalCashRefund: 0,
-              paymentMethodsSummary: { CASH: 0, QRIS: 0, TRANSFER: 0 },
+              paymentMethodsSummary: { CASH: 0, CARD: 0, QRIS: 0, TRANSFER: 0, OTHER: 0 },
               cashMovements: [],
               cashiers: [],
               ordersCount: 0,
@@ -221,21 +221,28 @@ export const useShiftStore = create(
        * Catat kas masuk/keluar/drop operasional kasir langsung ke database MySQL
        */
       addCashMovement: async (typeOrPayload, amountVal = null, reasonVal = '') => {
-        let type = 'OUT';
+        let type = 'CASH_OUT';
         let amount = 0;
         let reason = '';
         let shiftId = get().activeShift?.id;
 
         if (typeof typeOrPayload === 'object' && typeOrPayload !== null) {
-          type = typeOrPayload.type || 'OUT';
+          type = typeOrPayload.type || 'CASH_OUT';
           amount = Number(typeOrPayload.amount) || 0;
           reason = typeOrPayload.reason || '';
           if (typeOrPayload.shiftId) shiftId = typeOrPayload.shiftId;
         } else {
-          type = typeOrPayload;
+          type = typeOrPayload || 'CASH_OUT';
           amount = Number(amountVal) || 0;
           reason = reasonVal;
         }
+
+        // Normalisasi enum tipe pergerakan kas
+        const uType = String(type).toUpperCase().trim();
+        if (uType === 'IN' || uType === 'CASH_IN') type = 'CASH_IN';
+        else if (uType === 'OUT' || uType === 'CASH_OUT') type = 'CASH_OUT';
+        else if (uType === 'DROP' || uType === 'CASH_DROP') type = 'CASH_DROP';
+        else type = 'CASH_OUT';
 
         if (!shiftId) throw new Error('Tidak ada shift aktif untuk mencatat arus kas.');
         if (amount <= 0) throw new Error('Nominal kas harus lebih dari Rp 0.');
@@ -302,8 +309,12 @@ export const useShiftStore = create(
         if (!shift || shift.isClosed) return;
 
         const numAmount = Number(amount) || 0;
+        const methodUpper = String(paymentMethod || '').toUpperCase();
+        const curSummary = shift.paymentMethodsSummary || { CASH: 0, CARD: 0, QRIS: 0, TRANSFER: 0, OTHER: 0 };
+        const updatedSummary = { ...curSummary };
 
-        if (paymentMethod === 'CASH') {
+        if (methodUpper === 'CASH') {
+          updatedSummary.CASH = (updatedSummary.CASH || 0) + numAmount;
           const newCashSales = (shift.totalCashSales || 0) + numAmount;
           const newExpected =
             (shift.openingCash || 0) +
@@ -318,15 +329,27 @@ export const useShiftStore = create(
               totalCashSales: newCashSales,
               totalSales: (shift.totalSales || 0) + numAmount,
               expectedCash: newExpected,
+              paymentMethodsSummary: updatedSummary,
               ordersCount: (shift.ordersCount || 0) + 1,
             },
           });
         } else {
+          if (['CARD', 'DEBIT', 'CREDIT', 'EDC'].includes(methodUpper)) {
+            updatedSummary.CARD = (updatedSummary.CARD || 0) + numAmount;
+          } else if (methodUpper.includes('QRIS') || methodUpper.includes('QR')) {
+            updatedSummary.QRIS = (updatedSummary.QRIS || 0) + numAmount;
+          } else if (methodUpper.includes('TRANSFER')) {
+            updatedSummary.TRANSFER = (updatedSummary.TRANSFER || 0) + numAmount;
+          } else {
+            updatedSummary.OTHER = (updatedSummary.OTHER || 0) + numAmount;
+          }
+
           set({
             activeShift: {
               ...shift,
               totalNonCashSales: (shift.totalNonCashSales || 0) + numAmount,
               totalSales: (shift.totalSales || 0) + numAmount,
+              paymentMethodsSummary: updatedSummary,
               ordersCount: (shift.ordersCount || 0) + 1,
             },
           });
@@ -374,7 +397,7 @@ export function initShiftSocketSync() {
     socket.on('shift:movement_added', (movement) => {
       console.log('📡 [ShiftStore] Realtime shift:movement_added received:', movement);
       const state = useShiftStore.getState();
-      if (state.activeShift?.id === movement?.shiftId) {
+      if (Number(state.activeShift?.id) === Number(movement?.shiftId) || !state.activeShift) {
         state.fetchActiveShift?.(state.selectedRegisterId).catch(() => {});
       }
     });

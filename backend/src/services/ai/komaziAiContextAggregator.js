@@ -66,20 +66,112 @@ export function formatOperationalSummary(unifiedContext) {
   sections.push(`Waktu Sekarang: ${nowWib} WIB`);
   sections.push(`Lawan Bicara: ${userName} (Hak Akses: ${role})`);
 
-  // Section 1: Data Finansial (Hanya untuk OWNER dan MANAGER)
+  // Section 1: Data Finansial Hari Ini (Hanya untuk OWNER dan MANAGER)
   if (role === 'OWNER' || role === 'MANAGER') {
     const revToday = sales.totalRevenueFormatted || rupiah(sales.totalRevenue || 0);
-    const revYest = yesterday.totalRevenueFormatted || rupiah(yesterday.totalRevenue || 0);
     const orderCount = sales.totalOrders || 0;
-    const peakHour = sales.peakHour ? `${sales.peakHour}:00 WIB` : 'Sedang dianalisis';
+    const peakHour = sales.peakHour
+      ? (sales.peakHour.includes('(') ? `${sales.peakHour} WIB` : `${sales.peakHour}:00 WIB`)
+      : 'Sedang dianalisis';
+    const avgBasket = sales.averageBasketFormatted || (orderCount > 0 ? rupiah(Math.round((sales.totalRevenue || 0) / orderCount)) : '-');
 
     sections.push(`
 === DATA PENJUALAN & OMZET HARI INI ===
 • Total Omzet Hari Ini: ${revToday} (${orderCount} transaksi selesai)
-• Total Omzet Kemarin: ${revYest}
 • Jam Tersibuk (Peak Hour): ${peakHour}
-• Rata-rata Nilai Transaksi: ${sales.averageBasketFormatted || '-'}
+• Rata-rata Nilai Transaksi: ${avgBasket}
     `.trim());
+
+    // Section 1b: Data Lengkap Penjualan & Operasional Kemarin
+    if (yesterday && yesterday.hasSales) {
+      const topList = (yesterday.topProducts || []).slice(0, 5).map((p, idx) =>
+        `  ${idx + 1}. ${p.productName}: ${p.qtySold} terjual (${p.revenueFormatted || rupiah(p.revenue)})`
+      ).join('\n');
+      const payList = (yesterday.paymentMethods || []).map((m) =>
+        `  - ${m.method}: ${m.totalAmountFormatted || rupiah(m.totalAmount)} (${m.transactionCount} transaksi)`
+      ).join('\n');
+
+      sections.push(`
+=== DATA PENJUALAN & OPERASIONAL KEMARIN (${yesterday.dateFormatted || 'Kemarin'}) ===
+• Total Omzet Kemarin: ${yesterday.totalRevenueFormatted || rupiah(yesterday.totalRevenue || 0)} (${yesterday.totalOrders || 0} transaksi lunas)
+• Rata-rata Nilai Transaksi Kemarin: ${yesterday.averageBasketFormatted || '-'}
+• Jam Tersibuk Kemarin (Peak Hour): ${yesterday.peakHour || '-'}
+• Menu Terlaris Kemarin:
+${topList || '  - Tidak ada data produk'}
+• Metode Pembayaran Kemarin:
+${payList || '  - Tidak ada data pembayaran'}
+• Pertumbuhan vs Kemarin: ${yesterday.growthText || '-'}
+      `.trim());
+    } else {
+      const prev = yesterday?.previousActiveDay;
+      let prevText = '';
+      if (prev) {
+        const prevTop = (prev.topProducts || []).slice(0, 3).map((p, idx) =>
+          `  ${idx + 1}. ${p.productName}: ${p.qtySold} terjual (${p.revenueFormatted || rupiah(p.revenue)})`
+        ).join('\n');
+        prevText = `\n• Referensi Hari Operasional Aktif Terakhir Sebelum Hari Ini (${prev.dateFormatted}, ${prev.daysAgo} hari lalu):
+  - Total Omzet: ${prev.totalRevenueFormatted} (${prev.totalOrders} transaksi)
+  - Menu Terlaris:
+${prevTop || '  - Tidak ada data produk'}
+  - Jam Tersibuk: ${prev.peakHour || '-'}`;
+      }
+      sections.push(`
+=== DATA PENJUALAN & OPERASIONAL KEMARIN (${yesterday?.dateFormatted || 'Kemarin'}) ===
+• Status: Tidak ada transaksi lunas tercatat pada hari kalender kemarin (kedai tutup/libur atau belum ada penjualan).${prevText}
+      `.trim());
+    }
+  } else if (role === 'CASHIER') {
+    if (yesterday?.hasSales) {
+      const yTop = yesterday?.topProducts || yesterday?.topProductsForUpsell || [];
+      const yTopList = yTop.slice(0, 4).map((p, idx) => `  ${idx + 1}. ${p.productName}: ${p.qtySold} porsi/cup`).join('\n');
+      sections.push(`
+=== DATA MENU TERLARIS KEMARIN (${yesterday.dateFormatted || 'Kemarin'}) ===
+• Menu Terlaris Kemarin:
+${yTopList || '  - Tidak ada data'}
+      `.trim());
+    } else {
+      const prev = yesterday?.previousActiveDay;
+      const prevTop = (prev?.topProductsForUpsell || prev?.topProducts || []).slice(0, 4).map((p, idx) => `  ${idx + 1}. ${p.productName}: ${p.qtySold} porsi/cup`).join('\n');
+      sections.push(`
+=== DATA MENU TERLARIS KEMARIN (${yesterday?.dateFormatted || 'Kemarin'}) ===
+• Status: Tidak ada transaksi pada hari kalender kemarin (kedai tutup/libur).
+${prev ? `• Menu Terlaris Hari Operasional Terakhir (${prev.dateFormatted}):\n${prevTop || '  - Tidak ada data'}` : ''}
+      `.trim());
+    }
+  } else if (role === 'BARISTA') {
+    if (yesterday?.hasSales) {
+      const yBev = yesterday?.topBeverages || [];
+      const yBevList = yBev.slice(0, 4).map((p, idx) => `  - ${p.productName}: ${p.qtySold} cup`).join('\n');
+      sections.push(`
+=== DATA MINUMAN TERLARIS KEMARIN (${yesterday.dateFormatted || 'Kemarin'}) ===
+${yBevList || '  - Tidak ada data'}
+      `.trim());
+    } else {
+      const prev = yesterday?.previousActiveDay;
+      const prevBev = (prev?.topBeverages || []).slice(0, 4).map((p, idx) => `  - ${p.productName}: ${p.qtySold} cup`).join('\n');
+      sections.push(`
+=== DATA MINUMAN TERLARIS KEMARIN (${yesterday?.dateFormatted || 'Kemarin'}) ===
+• Status: Tidak ada transaksi pada hari kalender kemarin (kedai tutup/libur).
+${prev ? `• Minuman Terlaris Hari Operasional Terakhir (${prev.dateFormatted}):\n${prevBev || '  - Tidak ada data'}` : ''}
+      `.trim());
+    }
+  } else if (role === 'KITCHEN') {
+    if (yesterday?.hasSales) {
+      const yFood = yesterday?.topFood || [];
+      const yFoodList = yFood.slice(0, 4).map((p, idx) => `  - ${p.productName}: ${p.qtySold} porsi`).join('\n');
+      sections.push(`
+=== DATA MAKANAN TERLARIS KEMARIN (${yesterday.dateFormatted || 'Kemarin'}) ===
+${yFoodList || '  - Tidak ada data'}
+      `.trim());
+    } else {
+      const prev = yesterday?.previousActiveDay;
+      const prevFood = (prev?.topFood || []).slice(0, 4).map((p, idx) => `  - ${p.productName}: ${p.qtySold} porsi`).join('\n');
+      sections.push(`
+=== DATA MAKANAN TERLARIS KEMARIN (${yesterday?.dateFormatted || 'Kemarin'}) ===
+• Status: Tidak ada transaksi pada hari kalender kemarin (kedai tutup/libur).
+${prev ? `• Makanan Terlaris Hari Operasional Terakhir (${prev.dateFormatted}):\n${prevFood || '  - Tidak ada data'}` : ''}
+      `.trim());
+    }
   }
 
   // Section 2: Shift Kasir Aktif

@@ -43,6 +43,8 @@ const SuppliersPage = lazy(() => import('./pages/inventory/SuppliersPage'));
 const InboundStockPage = lazy(() => import('./pages/inventory/InboundStockPage'));
 const StockOpnamePage = lazy(() => import('./pages/inventory/StockOpnamePage'));
 const AssetsPage = lazy(() => import('./pages/inventory/AssetsPage'));
+const ExpensesPage = lazy(() => import('./pages/finance/ExpensesPage'));
+const DepreciationPage = lazy(() => import('./pages/finance/DepreciationPage'));
 const HrisPage = lazy(() => import('./pages/hris/HrisPage'));
 const ShiftHistoryPage = lazy(() => import('./pages/ShiftHistoryPage'));
 
@@ -464,6 +466,26 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Manajemen Keuangan (Manager & Owner) */}
+          <Route
+            path="finance/expenses"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ExpensesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="finance/depreciation"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <DepreciationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="finance/assets" element={<Navigate to="/inventory/assets" replace />} />
+          <Route path="finance" element={<Navigate to="/finance/expenses" replace />} />
           {/* Backwards compatibility untuk /stock */}
           <Route path="stock" element={<Navigate to="/inventory/sources" replace />} />
 
@@ -474,6 +496,78 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
                 <ReportsPage tab="SALES" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/products"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="PRODUCTS" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/categories"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="CATEGORIES" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/customers"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="CUSTOMERS" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/order-types"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="ORDER_TYPES" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/payments"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="PAYMENTS" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/taxes"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="TAXES" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/discounts"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="DISCOUNTS" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/staff"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="STAFF" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports/cash-drawer"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <ReportsPage tab="CASH_DRAWER" />
               </ProtectedRoute>
             }
           />

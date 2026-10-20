@@ -18,6 +18,7 @@ import {
   createSchedule,
   deleteSchedule,
   getMyTodaySchedule,
+  getMyAttendanceStatus,
   getLeaveList,
   createLeaveRequest,
   updateLeaveStatus,
@@ -56,8 +57,13 @@ router.delete('/staff/:id', requireRole(['OWNER']), deleteStaff);
 
 // 3. Kehadiran & Koreksi Absensi
 router.get('/attendance', getAttendanceList);
+router.get('/attendance/status', getMyAttendanceStatus);
+router.get('/status', getMyAttendanceStatus);
+router.get('/my-attendance-status', getMyAttendanceStatus);
 router.post('/attendance/clock-in', clockIn);
 router.post('/attendance/clock-out', clockOut);
+router.post('/clock-in', clockIn);
+router.post('/clock-out', clockOut);
 router.post('/attendance/manual', requireRole(['OWNER', 'MANAGER']), createManualAttendance);
 router.delete('/attendance/:id', requireRole(['OWNER', 'MANAGER']), deleteAttendance);
 router.get('/attendance/corrections', getAttendanceCorrections);

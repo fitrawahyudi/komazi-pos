@@ -89,7 +89,7 @@ export async function getBotStatusData() {
 
   return {
     bot: {
-      name: 'Komazi Assistant',
+      name: '@komazi-assistant',
       status: 'ONLINE',
       mode: (() => {
         const m = getBotMode();

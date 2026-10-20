@@ -458,11 +458,21 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
       <div className="min-h-full flex items-center justify-center">
         <div className="w-full max-w-lg rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] my-auto">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-komazi-coral" />
+          <div className="flex items-center justify-between px-5 py-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral">
+                <CreditCard className="w-4 h-4" />
+              </div>
               <h2 className="font-bold text-base text-komazi-text">Pembayaran</h2>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors cursor-pointer"
+              title="Tutup / Batal"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Content */}
@@ -821,41 +831,38 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         </div>
 
         {/* Footer */}
-        <div className="p-3.5 sm:p-4 border-t border-komazi-border bg-komazi-surface flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="p-3.5 sm:p-4 border-t border-komazi-border bg-komazi-surface-2/40 flex items-center gap-2 sm:gap-2.5 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 min-h-[44px] rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white font-semibold text-xs transition-colors"
+            className="h-11 px-4 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 border border-komazi-border text-komazi-muted hover:text-white font-semibold text-xs transition-colors shrink-0 flex items-center justify-center cursor-pointer"
           >
             Batal
           </button>
 
-          <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
-            <button
-              type="button"
-              disabled={isPrintingBill || isProcessing}
-              onClick={handlePrintBill}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[44px] rounded-xl border border-komazi-border hover:border-komazi-teal hover:bg-komazi-teal/15 text-komazi-teal-light text-xs font-bold transition-all active:scale-95 shadow-sm"
-              title="Cetak struk tagihan (Bill) dahulu sebelum konfirmasi pembayaran"
-            >
-              <Printer className="w-4 h-4 text-komazi-teal" />
-              <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span>
-            </button>
+          <button
+            type="button"
+            disabled={isPrintingBill || isProcessing}
+            onClick={handlePrintBill}
+            className="h-11 px-3.5 sm:px-4 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 border border-komazi-border hover:border-neutral-600 text-komazi-text font-semibold text-xs transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
+            title="Cetak struk tagihan (Bill) dahulu sebelum konfirmasi pembayaran"
+          >
+            <Printer className="w-4 h-4 text-komazi-coral" />
+            <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span>
+          </button>
 
-            <LoadingButton
-              type="button"
-              disabled={method === 'CASH' && !isCashSufficient}
-              isLoading={isProcessing}
-              loadingText="Memproses..."
-              variant="primary"
-              size="md"
-              icon={CheckCircle}
-              onClick={() => handleConfirmPayment()}
-              className="min-h-[44px] text-xs sm:text-sm font-bold shadow-md"
-            >
-              {method === 'QRIS' ? 'Konfirmasi QRIS Lunas' : 'Konfirmasi Pembayaran'}
-            </LoadingButton>
-          </div>
+          <LoadingButton
+            type="button"
+            disabled={method === 'CASH' && !isCashSufficient}
+            isLoading={isProcessing}
+            loadingText="Memproses..."
+            variant="primary"
+            icon={CheckCircle}
+            onClick={() => handleConfirmPayment()}
+            className="flex-1 h-11 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white shadow-md flex items-center justify-center"
+          >
+            {method === 'QRIS' ? 'Konfirmasi QRIS Lunas' : 'Konfirmasi Pembayaran'}
+          </LoadingButton>
         </div>
       </div>
     </div>

@@ -36,31 +36,103 @@ let activeSerialPort = null;
  * Sanitizes hardware and browser Web Bluetooth/Serial error messages
  * into user-friendly Indonesian messages for cashier staff.
  */
-function formatFriendlyPrinterError(err) {
+export function formatFriendlyPrinterError(err) {
   if (!err) return 'Terjadi kendala pada printer.';
-  const msg = typeof err === 'string' ? err : err.message || String(err);
-  const name = err.name || '';
+  const rawMsg = typeof err === 'string' ? err : err?.message || String(err);
+  const name = err?.name || '';
+  const msg = rawMsg.toLowerCase();
 
-  if (name === 'NotFoundError' || msg.includes('cancelled') || msg.includes('User cancelled') || msg.includes('No port selected')) {
+  // 1. User cancellation
+  if (
+    name === 'NotFoundError' ||
+    msg.includes('cancelled') ||
+    msg.includes('user cancelled') ||
+    msg.includes('no port selected') ||
+    msg.includes('batal memilih') ||
+    msg.includes('dibatalkan')
+  ) {
     return 'Pemilihan perangkat printer dibatalkan.';
   }
-  if (msg.includes('adapter not available') || msg.includes('powered off') || msg.includes('Bluetooth adapter not powered')) {
-    return 'Bluetooth tidak aktif. Silakan nyalakan Bluetooth pada perangkat Anda.';
-  }
-  if (msg.includes('GATT Server is disconnected') || msg.includes('gattserverdisconnected') || msg.includes('Connection failed')) {
-    return 'Koneksi ke printer terputus. Pastikan printer dalam jangkauan dan daya baterai mencukupi.';
-  }
-  if (msg.includes('timeout') || msg.includes('timed out')) {
-    return 'Batas waktu koneksi terlampaui. Pastikan printer menyala dan tidak sedang terhubung ke perangkat lain.';
-  }
-  if (msg.includes('SPP') || msg.includes('karakteristik tulis BLE')) {
-    return 'Printer tidak mendukung mode transmisi BLE standar. Gunakan kabel USB atau driver sistem.';
-  }
-  if (msg.includes('Access denied') || msg.includes('Failed to open serial port') || msg.includes('device is already open')) {
-    return 'Port printer sedang digunakan aplikasi lain atau akses tidak diizinkan.';
+
+  // 2. User Gesture (Web Bluetooth browser security restriction)
+  if (
+    msg.includes('user gesture') ||
+    msg.includes('handling a user gesture') ||
+    msg.includes('requestdevice') ||
+    msg.includes('permission request')
+  ) {
+    return 'Printer Bluetooth belum terhubung. Silakan klik tombol "Hubungkan" untuk menyambungkan perangkat.';
   }
 
-  return `Kendala printer: ${msg}`;
+  // 3. Bluetooth is off or adapter unavailable
+  if (
+    msg.includes('adapter not available') ||
+    msg.includes('powered off') ||
+    msg.includes('bluetooth adapter not powered') ||
+    msg.includes('bluetooth is turned off') ||
+    msg.includes('bluetooth adapter is off')
+  ) {
+    return 'Bluetooth tidak aktif. Silakan aktifkan Bluetooth pada perangkat Anda.';
+  }
+
+  // 4. Insecure context or permissions policy
+  if (
+    name === 'SecurityError' ||
+    msg.includes('securityerror') ||
+    msg.includes('insecure context') ||
+    msg.includes('permissions policy')
+  ) {
+    return 'Akses Bluetooth dibatasi oleh browser. Pastikan menggunakan koneksi aman (HTTPS/localhost).';
+  }
+
+  // 5. GATT connection lost or unreachable
+  if (
+    msg.includes('gatt server is disconnected') ||
+    msg.includes('gattserverdisconnected') ||
+    msg.includes('connection failed') ||
+    msg.includes('networkerror') ||
+    msg.includes('device is no longer in range')
+  ) {
+    return 'Koneksi ke printer terputus. Pastikan printer menyala, dalam jangkauan Bluetooth, dan baterai mencukupi.';
+  }
+
+  // 6. Timeout
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return 'Batas waktu koneksi terlampaui. Pastikan printer menyala dan tidak sedang tersambung ke perangkat lain.';
+  }
+
+  // 7. SPP / BLE characteristics missing
+  if (msg.includes('spp') || msg.includes('karakteristik tulis ble')) {
+    return 'Printer tidak mendukung mode transmisi BLE standar. Silakan gunakan port USB atau mode Driver Sistem.';
+  }
+
+  // 8. Port access denied or already open
+  if (
+    msg.includes('access denied') ||
+    msg.includes('failed to open serial port') ||
+    msg.includes('device is already open')
+  ) {
+    return 'Port printer sedang digunakan oleh aplikasi lain atau izin akses tidak diberikan.';
+  }
+
+  // 9. Not supported browser
+  if (msg.includes('not supported') || msg.includes('tidak didukung')) {
+    return 'Fitur Web Bluetooth tidak didukung pada browser ini. Silakan gunakan Google Chrome desktop atau mode Driver Sistem.';
+  }
+
+  // 10. Filter any technical developer logs (Failed to execute, DOMException, TypeError, etc.)
+  if (
+    msg.includes('failed to execute') ||
+    msg.includes('typeerror') ||
+    msg.includes('domexception') ||
+    msg.includes('syntaxerror') ||
+    msg.includes('undefined') ||
+    msg.includes('null')
+  ) {
+    return 'Gagal menyambungkan ke printer. Silakan hidupkan ulang printer dan coba sambungkan kembali.';
+  }
+
+  return rawMsg.startsWith('Kendala printer:') ? rawMsg : `Kendala printer: ${rawMsg}`;
 }
 
 /**
@@ -140,6 +212,7 @@ export const usePrinterStore = create(
       paperWidth: '58mm', // '58mm' | '80mm'
       autoPrintOnCheckout: false,
       autoPrintKitchenOnCheckout: false,
+      autoPrintMerchantCopy: false,
       printCopies: 1,
       kickCashDrawer: true,
 
@@ -176,6 +249,7 @@ export const usePrinterStore = create(
       setConnectionType: (connectionType) => set({ connectionType }),
       setAutoPrintOnCheckout: (autoPrintOnCheckout) => set({ autoPrintOnCheckout }),
       setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => set({ autoPrintKitchenOnCheckout }),
+      setAutoPrintMerchantCopy: (autoPrintMerchantCopy) => set({ autoPrintMerchantCopy }),
       setPrintCopies: (printCopies) => set({ printCopies }),
       setKickCashDrawer: (kickCashDrawer) => set({ kickCashDrawer }),
 
@@ -474,14 +548,25 @@ export const usePrinterStore = create(
         return { success: printSuccess, message: errorMessage };
       },
 
+      // Print Struk Pertinggal (Merchant / Cashier Copy)
+      printMerchantReceiptForOrder: async (order, options = {}) => {
+        return get().printReceiptForOrder(order, {
+          ...options,
+          isMerchantCopy: true,
+          documentType: 'MERCHANT_RECEIPT',
+        });
+      },
+
       // Print Kitchen Ticket For Completed Order
       printKitchenTicketForOrder: async (order, options = {}) => {
         if (!order) return { success: false, message: 'Data pesanan kosong' };
         const { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob } = get();
 
-        const effectivePaperWidth = activeKitchenPrinter?.paperWidthMm
-          ? `${activeKitchenPrinter.paperWidthMm}mm`
-          : '58mm';
+        const effectivePaperWidth =
+          options.paperWidth ||
+          (activeKitchenPrinter?.paperWidthMm ? `${activeKitchenPrinter.paperWidthMm}mm` : null) ||
+          get().paperWidth ||
+          '58mm';
 
         let printSuccess = false;
         let errorMessage = null;
@@ -731,18 +816,24 @@ export const usePrinterStore = create(
 
           if (!device) {
             set({ isConnecting: false });
-            return { success: false, message: 'Batal memilih perangkat' };
+            return { success: false, cancelled: true };
           }
 
           return await get().connectBluetoothDevice(device);
         } catch (err) {
           set({ isConnecting: false });
-          if (err.name === 'NotFoundError' || err.message?.includes('cancelled')) {
+          if (
+            err.name === 'NotFoundError' ||
+            err.message?.includes('cancelled') ||
+            err.message?.includes('User cancelled')
+          ) {
             return { success: false, cancelled: true };
           }
           const friendly = formatFriendlyPrinterError(err);
-          toast.error(friendly);
-          return { success: false, message: friendly };
+          if (!err.message?.toLowerCase().includes('user gesture')) {
+            toast.error(friendly);
+          }
+          return { success: false, message: friendly, cancelled: err.message?.includes('cancelled') };
         }
       },
 
@@ -1019,6 +1110,7 @@ export const usePrinterStore = create(
         paperWidth: state.paperWidth,
         autoPrintOnCheckout: state.autoPrintOnCheckout,
         autoPrintKitchenOnCheckout: state.autoPrintKitchenOnCheckout,
+        autoPrintMerchantCopy: state.autoPrintMerchantCopy,
         printCopies: state.printCopies,
         kickCashDrawer: state.kickCashDrawer,
         connectedDeviceName: state.connectedDeviceName,

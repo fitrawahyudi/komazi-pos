@@ -142,6 +142,10 @@ model User {
   createdResetTokens     PasswordResetToken[]         @relation("ResetTokenCreator")
   deviceTokens           DeviceToken[]
   notifications          Notification[]
+  expensesCreated        Expense[]                    @relation("ExpenseCreator")
+  expensesUpdated        Expense[]                    @relation("ExpenseUpdater")
+  assetsCreated          FixedAsset[]                 @relation("AssetCreator")
+  depreciationsProcessed AssetDepreciation[]          @relation("DepreciationProcessor")
 }
 
 model Station {
@@ -996,5 +1000,113 @@ model BackupRecord {
   @@index([backupType])
   @@index([createdAt])
   @@index([retentionCategory, isProtected])
+}
+
+// ==========================================
+// Operational Expenses & Cost Management
+// ==========================================
+model ExpenseCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  expenses Expense[]
+}
+
+model Expense {
+  id              Int              @id @default(autoincrement())
+  referenceNo     String           @unique
+  date            DateTime
+  categoryId      Int
+  description     String
+  amount          Decimal          @db.Decimal(12, 2)
+  paymentMethod   String           @default("CASH")
+  paymentStatus   String           @default("PAID")
+  recipientVendor String?
+  sourceType      String?          @default("MANUAL")
+  sourceRef       String?
+  notes           String?          @db.Text
+  receiptUrl      String?          @db.LongText
+  createdById     Int
+  updatedById     Int?
+  isCancelled     Boolean          @default(false)
+  cancelledAt     DateTime?
+  cancelledReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
+  createdBy User            @relation("ExpenseCreator", fields: [createdById], references: [id])
+  updatedBy User?           @relation("ExpenseUpdater", fields: [updatedById], references: [id])
+
+  @@index([date])
+  @@index([categoryId])
+  @@index([paymentStatus])
+  @@index([isCancelled])
+  @@index([sourceRef])
+}
+
+// ==========================================
+// Fixed Assets & Equipment Management
+// ==========================================
+model FixedAsset {
+  id                      Int                 @id @default(autoincrement())
+  code                    String              @unique
+  name                    String
+  category                String
+  description             String?
+  purchaseDate            DateTime
+  startDate               DateTime
+  purchasePrice           Decimal             @db.Decimal(12, 2)
+  residualValue           Decimal             @default(0) @db.Decimal(12, 2)
+  usefulLifeMonths        Int
+  depreciationMethod      String              @default("STRAIGHT_LINE")
+  accumulatedDepreciation Decimal             @default(0) @db.Decimal(12, 2)
+  bookValue               Decimal             @db.Decimal(12, 2)
+  location                String              @default("Station Barista")
+  condition               String              @default("EXCELLENT")
+  status                  String              @default("ACTIVE")
+  serialNumber            String?
+  vendor                  String?
+  receiptUrl              String?             @db.LongText
+  disposedAt              DateTime?
+  disposalPrice           Decimal?            @db.Decimal(12, 2)
+  disposalNotes           String?             @db.Text
+  createdById             Int
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  createdBy     User                @relation("AssetCreator", fields: [createdById], references: [id])
+  depreciations AssetDepreciation[]
+
+  @@index([status])
+  @@index([category])
+  @@index([code])
+}
+
+// ==========================================
+// Asset Monthly Depreciation Schedule
+// ==========================================
+model AssetDepreciation {
+  id                 Int        @id @default(autoincrement())
+  assetId            Int
+  year               Int
+  month              Int
+  depreciationAmount Decimal    @db.Decimal(12, 2)
+  status             String     @default("PROCESSED")
+  processedAt        DateTime   @default(now())
+  processedById      Int?
+  notes              String?
+  createdAt          DateTime   @default(now())
+
+  asset       FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  processedBy User?      @relation("DepreciationProcessor", fields: [processedById], references: [id])
+
+  @@unique([assetId, year, month])
+  @@index([year, month])
+  @@index([status])
 }
 

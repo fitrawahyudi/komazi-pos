@@ -76,13 +76,7 @@ export function registerManager(bot) {
   bot.command('approval', requireRole('MANAGER', 'OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🔔 <b>Memeriksa daftar persetujuan (approval)...</b>',
-          '📋 <b>Memformat tiket permohonan kasir...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const list = await approvalService.listPending();
 
@@ -157,18 +151,11 @@ export function registerManager(bot) {
     }
   });
 
-  // 2) Cek Stok Bahan (Dengan Animasi Loading Kontekstual & Pagination 10 Item + Tombol Angka)
+  // 2) Cek Stok Bahan (Dengan Animasi Loading Bar & Pagination 10 Item + Tombol Angka)
   bot.command('stok', requireRole('MANAGER', 'OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '📦 <b>Membaca tabel bahan baku (Ingredient)...</b>',
-          '⚠️ <b>Memfilter persediaan di bawah minimum...</b>',
-          '📊 <b>Memformat daftar stok bahan...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const all = await stockService.listAll();
 
@@ -239,6 +226,8 @@ ${supplierLine}
 • Status Persediaan: ${isLow ? '⚠️ <b>KRITIS (DI BAWAH MINIMUM)</b>' : '🟢 <b>STOK AMAN</b>'}
 ━━━━━━━━━━━━━━━━━━━━━━
 <i>Gunakan tombol di bawah untuk mencatat mutasi atau memesan restock via WhatsApp.</i>
+
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     const kb = new InlineKeyboard()
@@ -292,17 +281,11 @@ ${supplierLine}
     return ctx.conversation.enter('recordWasteConv');
   });
 
-  // 4) Toggle Menu Habis / Tersedia (Dengan Animasi Loading & Pagination 10 Item + Tombol Angka)
+  // 4) Toggle Menu Habis / Tersedia (Dengan Animasi Loading Bar & Pagination 10 Item + Tombol Angka)
   bot.command('habis', requireRole('MANAGER', 'OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '📋 <b>Membaca katalog menu dan ketersediaan...</b>',
-          '🔍 <b>Memeriksa stasiun & varian produk...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const products = await menuService.listAllForToggle();
 
@@ -377,18 +360,11 @@ ${supplierLine}
     }
   });
 
-  // 5) Laporan Hari Ini (Manager/Owner) dengan Animasi Loading Kontekstual
+  // 5) Laporan Hari Ini (Manager/Owner) dengan Animasi Loading Bar
   bot.command('laporan', requireRole('MANAGER', 'OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '⏳ <b>Membaca riwayat transaksi periode...</b>',
-          '📈 <b>Mengagregasi item terlaris & diskon...</b>',
-          '📋 <b>Menyusun ringkasan laporan keuangan...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const summary = await orderService.getSummary('today');
 
@@ -410,7 +386,7 @@ ${supplierLine}
 <b>Top 5 Menu Paling Laris:</b>
 ${topLines}
 ━━━━━━━━━━━━━━━━━━
-<i>Data realtime POS Komazi Coffee & Workspace</i>
+<i>Data realtime POS • @komazi-assistant</i>
         `.trim();
 
         return replyWithPhotoFallback(ctx, {

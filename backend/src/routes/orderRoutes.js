@@ -33,4 +33,14 @@ router.patch('/:id/kitchen-status', updateKitchenStatus);
 router.post('/:id/void', requireRole(['OWNER', 'MANAGER', 'CASHIER']), validate(voidOrderSchema), voidOrder);
 router.post('/:id/refund', requireRole(['OWNER', 'MANAGER', 'CASHIER']), validate(refundOrderSchema), refundOrder);
 
+// Larang penghapusan transaksi langsung sesuai kebijakan keamanan & integritas data finansial
+const rejectOrderDeletion = (req, res) => {
+  return res.status(403).json({
+    success: false,
+    message: 'Transaksi tidak dapat dihapus. Gunakan prosedur pembatalan (void) atau refund resmi yang tersedia.',
+  });
+};
+router.delete('/:id', rejectOrderDeletion);
+router.delete('/', rejectOrderDeletion);
+
 export default router;

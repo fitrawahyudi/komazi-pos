@@ -1058,7 +1058,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4 flex-wrap">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <span className="text-xs font-semibold text-komazi-muted">Wajibkan Jadwal:</span>
                     <div className="relative inline-flex items-center cursor-pointer">
@@ -1071,8 +1071,8 @@ export default function SettingsPage() {
                           updateSettings({ enforceScheduleGuard: val });
                           toast.success(
                             val
-                              ? 'Validasi jadwal diaktifkan: Staf wajib memiliki jadwal terdaftar hari ini & melakukan presensi.'
-                              : 'Mode Fleksibel diaktifkan: Staf dapat presensi tanpa jadwal, namun tetap wajib presensi sebelum bertransaksi.'
+                              ? 'Validasi jadwal diaktifkan: Staf wajib memiliki jadwal terdaftar hari ini.'
+                              : 'Mode Fleksibel diaktifkan: Staf dapat bekerja tanpa jadwal harian terdaftar.'
                           );
                         }}
                         className="sr-only peer"
@@ -1080,24 +1080,52 @@ export default function SettingsPage() {
                       <div className="w-9 h-5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-komazi-coral"></div>
                     </div>
                   </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <span className="text-xs font-semibold text-komazi-muted">Wajibkan Presensi:</span>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formState.enforceAttendanceGuard !== false && formState.enforceAttendanceGuard !== 'false'}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          handleChange('enforceAttendanceGuard', val);
+                          updateSettings({ enforceAttendanceGuard: val });
+                          toast.success(
+                            val
+                              ? 'Aturan presensi diaktifkan: Seluruh staf wajib presensi sebelum buka kasir & bertransaksi.'
+                              : 'Presensi opsional diaktifkan: Staf dapat bertransaksi tanpa harus presensi terlebih dahulu.'
+                          );
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </div>
+                  </label>
                 </div>
               </div>
 
               <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs space-y-2">
                 <div className="flex items-start gap-2.5">
-                  {formState.enforceScheduleGuard ? (
+                  {formState.enforceAttendanceGuard === false || formState.enforceAttendanceGuard === 'false' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : formState.enforceScheduleGuard ? (
                     <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   ) : (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   )}
                   <div className="space-y-1">
                     <p className="font-semibold text-komazi-text">
-                      {formState.enforceScheduleGuard
+                      {formState.enforceAttendanceGuard === false || formState.enforceAttendanceGuard === 'false'
+                        ? 'Presensi Fleksibel (Opsional): Seluruh staf dapat membuka sesi kasir & bertransaksi secara bebas tanpa wajib presensi terlebih dahulu.'
+                        : formState.enforceScheduleGuard
                         ? 'Mode Ketat Aktif: Staf wajib memiliki jadwal terdaftar hari ini DAN wajib presensi sebelum dapat membuka kasir & bertransaksi.'
-                        : 'Mode Fleksibel Aktif: Staf dapat presensi tanpa jadwal harian, namun tetap wajib presensi sebelum membuka kasir & bertransaksi.'}
+                        : 'Mode Standar: Staf dapat bekerja tanpa jadwal harian, namun tetap wajib presensi sebelum membuka kasir & bertransaksi.'}
                     </p>
                     <p className="text-[11px] text-komazi-muted leading-relaxed">
-                      {formState.enforceScheduleGuard
+                      {formState.enforceAttendanceGuard === false || formState.enforceAttendanceGuard === 'false'
+                        ? 'Cocok jika Anda ingin kasir atau barista langsung melayani pelanggan saat jam sibuk tanpa terhambat verifikasi kehadiran.'
+                        : formState.enforceScheduleGuard
                         ? 'Pastikan Owner atau Manajer selalu menginput jadwal staf setiap hari sebelum outlet buka agar staf dapat presensi dan melayani transaksi kasir.'
                         : 'Jika Owner belum sempat menginput jadwal kerja, staf tetap dapat bekerja dengan melakukan presensi mandiri terlebih dahulu untuk membuka akses kasir.'}
                     </p>

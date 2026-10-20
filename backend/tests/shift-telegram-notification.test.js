@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { events } from '../src/bot/events.js';
 import { notifyShiftOpened, notifyShiftClosed } from '../src/services/telegramService.js';
+import { cleanupBrowserPool } from '../src/services/botImage/browserPool.js';
 
 test('1. Shift Opened & Closed Event Registration: events are defined on the emitter', () => {
   assert.equal(typeof events.emit, 'function');
@@ -103,4 +104,8 @@ test('4. Shift History Access Control: role owner/manager allowed, cashier denie
   assert.equal(isRoleAllowed('CASHIER'), false, 'Cashier must be forbidden from shift history');
   assert.equal(isRoleAllowed('BARISTA'), false, 'Barista must be forbidden from shift history');
   assert.equal(isRoleAllowed('KITCHEN'), false, 'Kitchen must be forbidden from shift history');
+});
+
+test('5. Cleanup background browser resources', async () => {
+  await cleanupBrowserPool();
 });

@@ -13,7 +13,7 @@ import {
 } from '../services/aiProactiveScheduler.js';
 import {
   classifyIntent,
-  resolveActionHint,
+  // resolveActionHint,
   composeUnifiedSystemPrompt,
 } from '../services/ai/aiPromptComposer.js';
 import { getUnifiedAiContext } from '../services/ai/komaziAiContextAggregator.js';
@@ -58,11 +58,11 @@ export async function askAi(req, res) {
 
     // 2. Klasifikasi intent pertanyaan dan pemetaan Action Hint
     const classification = classifyIntent(query);
-    const actionHint = resolveActionHint({
-      intent: classification.intent,
-      matchedSop: classification.matchedSop,
-      query,
-    });
+    // const actionHint = resolveActionHint({
+    //   intent: classification.intent,
+    //   matchedSop: classification.matchedSop,
+    //   query,
+    // });
 
     // 3. Ambil data konteks operasional terpadu (Role-Scoped Zero Data Leakage)
     const unifiedContext = await getUnifiedAiContext({
@@ -104,7 +104,7 @@ export async function askAi(req, res) {
       latencyTier: aiResult.latencyTier || 'Komazi AI',
       intent: classification.intent,
       intentMeta: classification.meta,
-      actionHint: actionHint || null,
+      // actionHint: actionHint || null,
       matchedSop: classification.matchedSop
         ? { id: classification.matchedSop.id, title: classification.matchedSop.title }
         : null,
@@ -112,7 +112,14 @@ export async function askAi(req, res) {
         todayTotalOrders: todaySales.totalOrders || 0,
         todayTotalRevenue: todaySales.totalRevenue || 0,
         todayTotalRevenueFormatted: todaySales.totalRevenueFormatted || null,
+        yesterdayTotalOrders: yesterdaySales.totalOrders || 0,
+        yesterdayTotalRevenue: yesterdaySales.totalRevenue || 0,
         yesterdayTotalRevenueFormatted: yesterdaySales.totalRevenueFormatted || null,
+        yesterdayHasSales: yesterdaySales.hasSales || false,
+        yesterdayDateFormatted: yesterdaySales.dateFormatted || null,
+        yesterdayPeakHour: yesterdaySales.peakHour || null,
+        yesterdayTopProducts: yesterdaySales.topProducts || yesterdaySales.topProductsForUpsell || [],
+        previousActiveDay: yesterdaySales.previousActiveDay || null,
         monthTotalRevenueFormatted: thisMonthSales.totalRevenueFormatted || null,
         isFallbackToRecent: todaySales.isFallbackToRecent || false,
         peakHour: todaySales.peakHour || null,

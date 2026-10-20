@@ -255,7 +255,7 @@ ${itemsDetailLines}
 🧮 <b>Subtotal (${totalQty} item):</b> Rp${Number(subtotal).toLocaleString('id-ID')}
 ${tax > 0 ? `🏛️ <b>PB1 Resto:</b> Rp${Number(tax).toLocaleString('id-ID')}\n` : ''}${discount > 0 ? `🎟️ <b>Diskon:</b> -Rp${Number(discount).toLocaleString('id-ID')}\n` : ''}💵 <b>TOTAL BAYAR:</b> <b>Rp${Number(total).toLocaleString('id-ID')}</b>
 ━━━━━━━━━━━━━━━━━━━━━
-☕ <i>Komazi Coffee & Workspace</i>
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     // 1. Generate Banner Grafis Canvas Digital Receipt
@@ -316,7 +316,7 @@ export async function notifyLowStock({ ingredientName, currentStock, minStock, u
 
 <i>Segera lakukan restock atau purchase order bahan baku ini.</i>
 ━━━━━━━━━━━━━━━━━━
-<i>POS Komazi Inventory Alert</i>
+🤖 <i>@komazi-assistant</i>
   `.trim();
 
     let photoBuffer = null;
@@ -379,7 +379,7 @@ export async function notifyShiftOpened({ shift, cashier, register, openingCash 
 <b>Modal Awal Kas:</b> Rp ${initialCash.toLocaleString('id-ID')}
 <b>Waktu Buka:</b> ${openedTimeStr} WIB
 ━━━━━━━━━━━━━━━━━━
-<i>Sesi kasir telah dibuka dan siap memproses transaksi POS.</i>
+<i>Sesi kasir telah dibuka • @komazi-assistant</i>
     `.trim();
 
     let photoBuffer = null;
@@ -462,7 +462,7 @@ ${closedByName && closedByName !== cashierName ? `<b>Kasir Penutup:</b> ${closed
 <b>Kas Fisik Aktual:</b> Rp ${countedCash.toLocaleString('id-ID')}
 <b>Status Rekonsiliasi:</b> <b>${diffText}</b>
 ${notes ? `<b>Catatan:</b> <i>${notes}</i>\n` : ''}━━━━━━━━━━━━━━━━━━
-<i>POS Komazi Z-Report Settlement</i>
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     let photoBuffer = null;
@@ -540,7 +540,7 @@ Berikut perintah kontrol & monitoring yang tersedia:
 💰 <b>/profit</b> — Estimasi laba kotor (Gross Profit & HPP)
 🔮 <b>/prediksi</b> — Prediksi jam sibuk & insight AI
 ━━━━━━━━━━━━━━━━━━
-<i>POS Komazi F&B Control Layer</i>
+🤖 <i>@komazi-assistant</i>
       `.trim();
       await sendTelegramMessage(helpMsg, chatId);
       break;
@@ -566,6 +566,8 @@ Berikut perintah kontrol & monitoring yang tersedia:
 • Transfer Bank: Rp ${Number(summary.byMethod?.TRANSFER || 0).toLocaleString('id-ID')}
 ━━━━━━━━━━━━━━━━━━
 <i>Gunakan /laporan untuk rincian selengkapnya.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         let photoBuffer = null;
@@ -640,7 +642,7 @@ Berikut perintah kontrol & monitoring yang tersedia:
             return `${icon} <b>${o.invoiceNo}</b> (${o.type} ${o.tableNo ? `Meja ${o.tableNo}` : ''})\n${items}\nStatus: <code>${o.status}</code>`;
           }).join('\n\n━━━━━━━━━━━━━━━━━━\n\n');
 
-          const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━`;
+          const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━\n\n🤖 <i>@komazi-assistant</i>`;
 
           let photoBuffer = null;
           try {
@@ -692,6 +694,8 @@ Berikut perintah kontrol & monitoring yang tersedia:
 ${list}
 ━━━━━━━━━━━━━━━━━━
 <i>Harap segera buat PO atau restock persediaan bahan!</i>
+
+🤖 <i>@komazi-assistant</i>
           `.trim();
 
           let photoBuffer = null;
@@ -738,6 +742,8 @@ ${list}
 ${topList}
 ━━━━━━━━━━━━━━━━━━
 <i>Terus pertahankan ketersediaan bahan menu unggulan ini!</i>
+
+🤖 <i>@komazi-assistant</i>
           `.trim();
           await sendTelegramMessage(menuMsg, chatId);
         }
@@ -765,6 +771,8 @@ ${topList}
 <b>Estimasi Laba Kotor:</b> Rp ${estProfit.toLocaleString('id-ID')}
 ━━━━━━━━━━━━━━━━━━
 <i>Dihitung berdasarkan komposisi HPP Resep (BOM) produk aktif.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
         await sendTelegramMessage(profitMsg, chatId);
       } catch (err) {
@@ -800,6 +808,8 @@ ${topList}
 ${topMenuText}
 ━━━━━━━━━━━━━━━━━━
 💡 <i>Detail analisis AI tertera di bawah.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         const fullMsg = `
@@ -814,7 +824,7 @@ ${topMenuText}
 🧠 <b>ANALISIS STRATEGI & TAKTIS:</b>
 ${aiInsight}
 ━━━━━━━━━━━━━━━━━━
-<i>Dianalisis secara real-time dari data riil transaksi POS Komazi.</i>
+<i>Dianalisis secara real-time • @komazi-assistant</i>
         `.trim();
 
         let photoBuffer = null;
@@ -831,7 +841,7 @@ ${aiInsight}
 ━━━━━━━━━━━━━━━━━━
 ${aiInsight}
 ━━━━━━━━━━━━━━━━━━
-<i>Dianalisis secara real-time dari data riil transaksi POS Komazi.</i>
+<i>Dianalisis secara real-time • @komazi-assistant</i>
           `.trim();
           await sendTelegramMessage(detailMsg, chatId);
         } else {
@@ -854,6 +864,8 @@ Status: <b>${stockForecast.hasCriticalRisk ? `${stockForecast.criticalCount} Bah
 ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: sisa ${it.currentStock} ${it.unit} (${it.estimatedRunoutTime ? `habis ~${it.hoursUntilStockout} jam / ${it.estimatedRunoutTime}` : 'habis'})`).join('\n') || 'Tidak ada bahan yang terancam habis dalam waktu dekat.'}
 ━━━━━━━━━━━━━━━━━━
 <i>Dihitung dari laju konsumsi pesanan aktif.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         let photoBuffer = null;
@@ -885,7 +897,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
 📈 <b>Pencapaian:</b> ${closeComparison.achievementRatePct}% (${closeComparison.badgeLabel})
 🧾 <b>Total Struk:</b> ${closeComparison.totalTransactions} pesanan
 ━━━━━━━━━━━━━━━━━━
-<i>Laporan performa harian Komazi POS Autonomous Engine.</i>
+<i>Laporan performa harian • @komazi-assistant</i>
         `.trim();
 
         let photoBuffer = null;
@@ -935,7 +947,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
 
 <b>Menu Teratas:</b> ${sales.topProducts?.[0]?.productName || summary.topProducts?.[0]?.name || '-'} (${sales.topProducts?.[0]?.qtySold || summary.topProducts?.[0]?.qty || 0} porsi)
 ━━━━━━━━━━━━━━━━━━
-<i>POS Komazi Autonomous Reporting Layer</i>
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         let photoBuffer = null;

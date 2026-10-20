@@ -204,7 +204,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => openAssistant()}
-              title="Tanya Komazi AI Analitik Penjualan"
+              title="Tanya Komazi AI"
               aria-label="Tanya Komazi AI"
               className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-komazi-primary/10 hover:bg-komazi-primary/20 border border-komazi-primary/30 text-komazi-primary text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-2xs flex items-center gap-1.5"
             >

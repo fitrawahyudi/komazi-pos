@@ -225,11 +225,8 @@ export default function RefundsPage() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display font-black text-xl sm:text-2xl text-komazi-text tracking-tight">
-                Pengembalian Dana (Refund)
+                Refund
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-danger/15 border border-danger/30 text-danger">
-                Audit &amp; Retur Transaksi
-              </span>
             </div>
             <p className="text-xs text-komazi-muted mt-1 leading-relaxed">
               Pencatatan pengembalian uang penjualan, retur nota pesanan, dan verifikasi otorisasi supervisor.

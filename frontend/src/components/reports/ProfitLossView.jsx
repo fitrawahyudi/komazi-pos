@@ -93,7 +93,7 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
   return (
     <div className="space-y-6">
       {/* 1. Executive Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* Omzet Penjualan */}
         <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -141,7 +141,7 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
         <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-komazi-muted uppercase tracking-wider">
-              Beban Operasional
+              Biaya Operasional
             </span>
             <div className="w-8 h-8 rounded-xl bg-danger/15 flex items-center justify-center text-danger">
               <Wallet className="w-4 h-4" />
@@ -149,19 +149,39 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
           </div>
           <div className="mt-3">
             <div className="font-mono font-black text-xl sm:text-2xl text-danger">
-              -{formatRupiah(summary.expenses?.totalOperatingExpenses || 0)}
+              -{formatRupiah((summary.expenses?.operationalExpenses || 0) + (summary.expenses?.pettyCashOut || 0))}
             </div>
-            <div className="text-[11px] text-komazi-muted mt-1 flex items-center gap-2 font-medium">
-              <span>Kas: {formatRupiah(summary.expenses?.pettyCashOut || 0)}</span>
+            <div className="text-[11px] text-komazi-muted mt-1 flex items-center gap-1 font-medium">
+              <span>Rutin: {formatRupiah(summary.expenses?.operationalExpenses || 0)}</span>
               <span>•</span>
-              <span>Waste: {formatRupiah(summary.expenses?.wasteCost || 0)}</span>
+              <span>Kas: {formatRupiah(summary.expenses?.pettyCashOut || 0)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Beban Penyusutan Aset */}
+        <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-komazi-muted uppercase tracking-wider">
+              Penyusutan Aset
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center text-purple-400">
+              <TrendingDown className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="font-mono font-black text-xl sm:text-2xl text-purple-400">
+              -{formatRupiah(summary.expenses?.depreciationCost || 0)}
+            </div>
+            <div className="text-[11px] text-komazi-muted mt-1 flex items-center gap-1 font-medium">
+              <span>Metode Garis Lurus Aktiva</span>
             </div>
           </div>
         </div>
 
         {/* Estimasi Laba Bersih (Net Profit) */}
         <div
-          className={`p-4 rounded-2xl border flex flex-col justify-between shadow-lg transition-all ${
+          className={`p-4 rounded-2xl border flex flex-col justify-between shadow-lg transition-all col-span-1 sm:col-span-2 lg:col-span-1 ${
             isProfitable
               ? 'bg-gradient-to-br from-success/15 via-komazi-surface to-komazi-surface border-success/40'
               : 'bg-gradient-to-br from-danger/15 via-komazi-surface to-komazi-surface border-danger/40'
@@ -212,15 +232,12 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
           <div>
             <h3 className="font-bold text-sm text-komazi-text flex items-center gap-2">
               <Scale className="w-4 h-4 text-komazi-coral" />
-              <span>Kalkulasi Laba Bersih (P&L Waterfall)</span>
+              <span>Kalkulasi Laba Bersih Lengkap</span>
             </h3>
             <p className="text-xs text-komazi-muted mt-0.5">
-              Rincian matematis dari Omzet Kotor hingga Laba Bersih yang dapat ditarik Owner.
+              Perhitungan komprehensif dari Omzet Kotor, HPP Resep, Biaya Operasional, hingga Penyusutan Aset.
             </p>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-xl bg-komazi-surface-2 border border-komazi-border text-komazi-muted self-start sm:self-auto">
-            Metode Akrual Resep POS
-          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -249,12 +266,12 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
           {/* Step 3: Operating Expenses */}
           <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-1">
             <div className="text-komazi-muted font-bold uppercase text-[10px]">Langkah 3</div>
-            <div className="text-komazi-text font-bold text-sm">Beban Pengeluaran</div>
+            <div className="text-komazi-text font-bold text-sm">Beban & Penyusutan</div>
             <div className="font-mono text-base font-black text-danger">
               -{formatRupiah(summary.expenses?.totalOperatingExpenses || 0)}
             </div>
-            <p className="text-[10px] text-komazi-muted">
-              Kas Kecil + Waste + Upah Shift
+            <p className="text-[10px] text-komazi-muted truncate">
+              Biaya + Kas + Depresiasi + Upah
             </p>
           </div>
 
@@ -267,7 +284,7 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
             }`}
           >
             <div className="text-komazi-muted font-bold uppercase text-[10px]">Hasil Akhir</div>
-            <div className="text-komazi-text font-bold text-sm">Estimasi Laba Bersih</div>
+            <div className="text-komazi-text font-bold text-sm">Laba Bersih Operasional</div>
             <div
               className={`font-mono text-base font-black ${
                 isProfitable ? 'text-success' : 'text-danger'
@@ -282,110 +299,123 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
         </div>
       </div>
 
-      {/* 3. Daily Net Profit Trend Chart */}
-      {data?.dailyTrends && data.dailyTrends.length > 0 && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-sm text-komazi-text flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-komazi-coral" />
-                <span>Tren Harian Omzet vs Laba Bersih</span>
-              </h3>
-              <p className="text-xs text-komazi-muted mt-0.5">
-                Perbandingan dinamis omzet masuk, beban operasional, dan hasil laba bersih per hari.
-              </p>
-            </div>
-          </div>
+      {/* 3. Detailed Expense Breakdowns: Biaya, Penyusutan, Petty Cash & Waste */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <ExpenseBreakdownCard
+          title="Biaya Operasional"
+          icon={Wallet}
+          iconColor="text-komazi-coral"
+          amountColor="text-danger"
+          total={summary.expenses?.operationalExpenses}
+          items={data?.breakdowns?.expensesByCategory}
+          labelKey="category"
+          valueKey="amount"
+          emptyText="Belum ada pengeluaran operasional"
+        />
 
-          <div className="h-64 sm:h-72 w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data.dailyTrends} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" opacity={0.4} />
-                <XAxis dataKey="date" stroke="#718096" fontSize={11} tickLine={false} />
-                <YAxis stroke="#718096" fontSize={11} tickLine={false} tickFormatter={(v) => `${v / 1000}k`} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1A202C',
-                    borderColor: '#2D3748',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                  }}
-                  formatter={(val, name) => [formatRupiah(val), name]}
-                />
-                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Bar dataKey="revenue" name="Omzet Penjualan" fill="#FF5A4D" radius={[6, 6, 0, 0]} barSize={20} />
-                <Bar dataKey="grossProfit" name="Laba Kotor" fill="#1F6F6B" radius={[6, 6, 0, 0]} barSize={20} />
-                <Line type="monotone" dataKey="netProfit" name="Laba Bersih" stroke="#10B981" strokeWidth={3} dot={{ r: 4 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
+        <ExpenseBreakdownCard
+          title="Penyusutan Aset"
+          icon={TrendingDown}
+          iconColor="text-purple-400"
+          amountColor="text-purple-400"
+          total={summary.expenses?.depreciationCost}
+          items={data?.breakdowns?.depreciationsByAsset}
+          labelKey="asset"
+          valueKey="amount"
+          emptyText="Belum ada depresiasi tercatat"
+        />
+
+        <ExpenseBreakdownCard
+          title="Kas Kecil Kasir"
+          icon={Receipt}
+          iconColor="text-komazi-coral"
+          amountColor="text-danger"
+          total={summary.expenses?.pettyCashOut}
+          items={data?.breakdowns?.pettyCashByReason}
+          labelKey="reason"
+          valueKey="amount"
+          emptyText="Tidak ada kas kecil"
+        />
+
+        <ExpenseBreakdownCard
+          title="Bahan Terbuang"
+          icon={Trash2}
+          iconColor="text-warning"
+          amountColor="text-warning"
+          total={summary.expenses?.wasteCost}
+          items={data?.breakdowns?.wasteByReason}
+          labelKey="reason"
+          valueKey="cost"
+          emptyText="Tidak ada catatan waste"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ExpenseBreakdownCard({
+  title,
+  icon: Icon,
+  iconColor = 'text-komazi-coral',
+  total = 0,
+  amountColor = 'text-danger',
+  items = [],
+  labelKey = 'label',
+  valueKey = 'amount',
+  emptyText = 'Belum ada data',
+}) {
+  const sortedItems = useMemo(() => {
+    if (!Array.isArray(items)) return [];
+    return [...items].sort((a, b) => (Number(b[valueKey]) || 0) - (Number(a[valueKey]) || 0));
+  }, [items, valueKey]);
+
+  return (
+    <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col h-[280px]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-komazi-border pb-2.5 shrink-0">
+        <h4 className="font-bold text-xs text-komazi-text flex items-center gap-1.5 min-w-0">
+          <Icon className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />
+          <span className="truncate">{title}</span>
+          {sortedItems.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-komazi-surface-2 text-komazi-muted border border-komazi-border shrink-0">
+              {sortedItems.length}
+            </span>
+          )}
+        </h4>
+        <span className={`font-mono font-bold text-xs ${amountColor} shrink-0`}>
+          -{formatRupiah(total || 0)}
+        </span>
+      </div>
+
+      {/* List Body with bounded scroll */}
+      <div className="space-y-1.5 overflow-y-auto pr-1 my-2 flex-1">
+        {sortedItems.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-center py-6">
+            <p className="text-[11px] text-komazi-muted">{emptyText}</p>
           </div>
+        ) : (
+          sortedItems.map((it, idx) => (
+            <div
+              key={idx}
+              className="flex items-center justify-between p-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-[11px] hover:border-komazi-border/80 transition-colors"
+            >
+              <span className="font-medium text-komazi-text truncate pr-2">
+                {it[labelKey] || '-'}
+              </span>
+              <span className={`font-mono font-bold ${amountColor} shrink-0`}>
+                -{formatRupiah(it[valueKey] || 0)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Subtle hint when list has more than 5 items */}
+      {sortedItems.length > 5 && (
+        <div className="pt-2 border-t border-komazi-border/50 text-[10px] text-komazi-muted text-center shrink-0">
+          Scroll untuk melihat {sortedItems.length} rincian
         </div>
       )}
-
-      {/* 4. Detailed Expense Breakdowns: Petty Cash & Waste */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Petty Cash Out Breakdown */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-3">
-          <div className="flex items-center justify-between border-b border-komazi-border pb-2.5">
-            <h4 className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5 text-komazi-coral" />
-              <span>Pengeluaran Kas Kecil (Petty Cash Out)</span>
-            </h4>
-            <span className="font-mono font-bold text-xs text-danger">
-              -{formatRupiah(summary.expenses?.pettyCashOut || 0)}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {!data?.breakdowns?.pettyCashByReason || data.breakdowns.pettyCashByReason.length === 0 ? (
-              <p className="text-xs text-komazi-muted py-6 text-center">
-                Tidak ada pengeluaran kas kecil tercatat pada periode ini.
-              </p>
-            ) : (
-              data.breakdowns.pettyCashByReason.map((it, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs"
-                >
-                  <span className="font-medium text-komazi-text">{it.reason}</span>
-                  <span className="font-mono font-bold text-danger">-{formatRupiah(it.amount)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Waste Breakdown */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-komazi-surface border border-komazi-border space-y-3">
-          <div className="flex items-center justify-between border-b border-komazi-border pb-2.5">
-            <h4 className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-              <Trash2 className="w-3.5 h-3.5 text-warning" />
-              <span>Kerugian Bahan Terbuang (Waste & Rusak)</span>
-            </h4>
-            <span className="font-mono font-bold text-xs text-warning">
-              -{formatRupiah(summary.expenses?.wasteCost || 0)}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {!data?.breakdowns?.wasteByReason || data.breakdowns.wasteByReason.length === 0 ? (
-              <p className="text-xs text-komazi-muted py-6 text-center">
-                Tidak ada catatan waste / bahan terbuang pada periode ini.
-              </p>
-            ) : (
-              data.breakdowns.wasteByReason.map((it, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs"
-                >
-                  <span className="font-medium text-komazi-text">{it.reason}</span>
-                  <span className="font-mono font-bold text-warning">-{formatRupiah(it.cost)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

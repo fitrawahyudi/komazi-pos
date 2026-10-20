@@ -15,7 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { usePrinterStore } from '../../store/printerStore';
+import { usePrinterStore, formatFriendlyPrinterError } from '../../store/printerStore';
 import { toast } from '../../store/toastStore';
 import { isAndroid, isNative } from '../../services/platform';
 
@@ -60,10 +60,10 @@ export default function BluetoothModal({ onClose }) {
       if (res && res.success) {
         // Success
       } else if (res && res.message && !res.cancelled) {
-        setErrorMsg(res.message);
+        setErrorMsg(formatFriendlyPrinterError(res.message));
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Gagal menyambungkan Bluetooth.');
+      setErrorMsg(formatFriendlyPrinterError(err));
     }
   };
 
@@ -75,10 +75,10 @@ export default function BluetoothModal({ onClose }) {
       if (res && res.success) {
         // Connected!
       } else if (res && res.message && !res.cancelled) {
-        setErrorMsg(res.message);
+        setErrorMsg(formatFriendlyPrinterError(res.message));
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Gagal menyambungkan Bluetooth.');
+      setErrorMsg(formatFriendlyPrinterError(err));
     }
   };
 
@@ -123,7 +123,7 @@ export default function BluetoothModal({ onClose }) {
             <div>
               <h2 className="text-sm font-bold text-komazi-text">Koneksi Printer Bluetooth</h2>
               <p className="text-[11px] text-komazi-muted">
-                {isAndroidPlatform ? 'Android Native ESC/POS (SPP)' : 'Direct Thermal ESC/POS (Wireless)'}
+                {isAndroidPlatform ? 'Android Native ESC/POS (SPP)' : 'Direct Thermal ESC/POS'}
               </p>
             </div>
           </div>
@@ -192,7 +192,7 @@ export default function BluetoothModal({ onClose }) {
             <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-danger/10 border border-danger/25 text-xs text-danger/90">
               <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="font-semibold text-danger">Koneksi Tidak Berhasil</p>
+                <p className="font-semibold text-danger">Koneksi Belum Berhasil</p>
                 <p className="leading-relaxed">{errorMsg}</p>
               </div>
             </div>

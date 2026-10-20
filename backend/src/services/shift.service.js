@@ -3,32 +3,46 @@ import { checkStaffShiftEligibility } from './scheduleGuard.service.js';
 
 export const shiftService = {
   /**
-   * Ambil shift aktif untuk register tertentu atau default register
+   * Ambil shift aktif untuk register tertentu, atau shift aktif milik kasir, atau shift aktif pertama yang tersedia
    */
-  async getCurrent(registerId = null) {
-    const where = {
-      closedAt: null,
-      ...(registerId ? { registerId: parseInt(registerId) } : {}),
-    };
-
-    return prisma.shift.findFirst({
-      where,
-      orderBy: { openedAt: 'desc' },
-      include: {
-        register: true,
-        cashier: { select: { id: true, name: true, username: true, role: true } },
-        closedByUser: { select: { id: true, name: true, username: true, role: true } },
-        cashMovements: {
-          include: { user: { select: { id: true, name: true } } },
-          orderBy: { createdAt: 'desc' },
-        },
-        orders: {
-          include: {
-            payments: true,
-            cashier: { select: { id: true, name: true, username: true } },
-          },
+  async getCurrent(registerId = null, cashierId = null) {
+    const shiftInclude = {
+      register: true,
+      cashier: { select: { id: true, name: true, username: true, role: true } },
+      closedByUser: { select: { id: true, name: true, username: true, role: true } },
+      cashMovements: {
+        include: { user: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+      orders: {
+        include: {
+          payments: true,
+          cashier: { select: { id: true, name: true, username: true } },
         },
       },
+    };
+
+    if (registerId) {
+      return prisma.shift.findFirst({
+        where: { registerId: parseInt(registerId), closedAt: null },
+        orderBy: { openedAt: 'desc' },
+        include: shiftInclude,
+      });
+    }
+
+    if (cashierId) {
+      const cashierShift = await prisma.shift.findFirst({
+        where: { cashierId: parseInt(cashierId), closedAt: null },
+        orderBy: { openedAt: 'desc' },
+        include: shiftInclude,
+      });
+      if (cashierShift) return cashierShift;
+    }
+
+    return prisma.shift.findFirst({
+      where: { closedAt: null },
+      orderBy: { openedAt: 'desc' },
+      include: shiftInclude,
     });
   },
 
@@ -39,7 +53,7 @@ export const shiftService = {
     let cashSales = 0;
     let nonCashSales = 0;
     let cashRefunds = 0;
-    const paymentMethods = { CASH: 0, QRIS: 0, TRANSFER: 0 };
+    const paymentMethods = { CASH: 0, CARD: 0, QRIS: 0, TRANSFER: 0, OTHER: 0 };
     const cashierSalesMap = {};
 
     for (const order of shift.orders || []) {
@@ -63,17 +77,31 @@ export const shiftService = {
 
       if (isPaidOrder) {
         cashierSalesMap[orderCashierId].ordersCount += 1;
-        for (const payment of order.payments || []) {
+        const paymentsList =
+          order.payments && order.payments.length > 0
+            ? order.payments
+            : order.paymentMethod
+            ? [{ method: order.paymentMethod, amount: parseFloat(order.total || 0) }]
+            : [];
+
+        for (const payment of paymentsList) {
           const amount = parseFloat(payment.amount || 0);
-          if (payment.method === 'CASH') {
+          const methodUpper = String(payment.method || '').toUpperCase();
+          if (methodUpper === 'CASH') {
             cashSales += amount;
-            paymentMethods.CASH += amount;
+            paymentMethods.CASH = (paymentMethods.CASH || 0) + amount;
             cashierSalesMap[orderCashierId].cashSales += amount;
             cashierSalesMap[orderCashierId].totalSales += amount;
           } else {
             nonCashSales += amount;
-            if (paymentMethods[payment.method] !== undefined) {
-              paymentMethods[payment.method] += amount;
+            if (['CARD', 'DEBIT', 'CREDIT', 'EDC'].includes(methodUpper)) {
+              paymentMethods.CARD = (paymentMethods.CARD || 0) + amount;
+            } else if (methodUpper.includes('QRIS') || methodUpper.includes('QR')) {
+              paymentMethods.QRIS = (paymentMethods.QRIS || 0) + amount;
+            } else if (methodUpper.includes('TRANSFER')) {
+              paymentMethods.TRANSFER = (paymentMethods.TRANSFER || 0) + amount;
+            } else {
+              paymentMethods.OTHER = (paymentMethods.OTHER || 0) + amount;
             }
             cashierSalesMap[orderCashierId].totalSales += amount;
           }
@@ -187,7 +215,7 @@ export const shiftService = {
   /**
    * Tutup shift kasir dan rekap selisih kas secara atomik
    */
-  async close(userId, actualCash, notes = null, shiftId = null) {
+  async close(userId, actualCash, notes = null, shiftId = null, userRole = null) {
     return prisma.$transaction(async (tx) => {
       let shift = null;
       if (shiftId) {
@@ -232,6 +260,16 @@ export const shiftService = {
         throw new Error('Tidak ada shift aktif yang ditemukan untuk ditutup.');
       }
 
+      // Verifikasi otorisasi: Kasir tidak boleh menutup sesi kasir lain tanpa hak
+      const isOwnShift = shift.cashierId === userId;
+      const isSupervisor = ['OWNER', 'MANAGER'].includes(userRole);
+
+      if (!isOwnShift && !isSupervisor) {
+        const err = new Error('Anda tidak memiliki izin untuk menutup sesi kasir milik karyawan lain.');
+        err.statusCode = 403;
+        throw err;
+      }
+
       // Validasi tidak boleh menutup shift jika masih ada open bills
       const openOrdersCount = await tx.order.count({
         where: {
@@ -250,8 +288,12 @@ export const shiftService = {
       const countedCash = parseFloat(actualCash) || 0;
       const difference = countedCash - metrics.expectedCash;
 
-      const closed = await tx.shift.update({
-        where: { id: shift.id },
+      // Cegah race condition: updateMany atomik memastikan hanya 1 penutupan berhasil
+      const updateResult = await tx.shift.updateMany({
+        where: {
+          id: shift.id,
+          closedAt: null,
+        },
         data: {
           closedAt: new Date(),
           closedByUserId: userId,
@@ -259,6 +301,14 @@ export const shiftService = {
           expectedCash: metrics.expectedCash,
           notes: notes || null,
         },
+      });
+
+      if (updateResult.count === 0) {
+        throw new Error('Sesi kasir ini sudah ditutup sebelumnya atau tidak lagi aktif.');
+      }
+
+      const closed = await tx.shift.findUnique({
+        where: { id: shift.id },
         include: {
           register: true,
           cashier: { select: { id: true, name: true, username: true } },
@@ -270,10 +320,14 @@ export const shiftService = {
       await tx.auditLog.create({
         data: {
           userId,
-          action: 'SHIFT_CLOSE',
+          action: isOwnShift ? 'SHIFT_CLOSE' : 'SHIFT_CLOSE_BY_SUPERVISOR',
           detail: {
             shiftId: closed.id,
             registerId: closed.registerId,
+            cashierId: shift.cashierId,
+            closedByUserId: userId,
+            isOwnShift,
+            closedBySupervisor: !isOwnShift,
             openingCash: metrics.openingCash,
             closingCash: countedCash,
             expectedCash: metrics.expectedCash,
@@ -296,15 +350,23 @@ export const shiftService = {
   /**
    * Catat arus kas (CASH_IN, CASH_OUT, CASH_DROP) ke database
    */
-  async addMovement(userId, { type, amount, reason, shiftId = null }) {
+  async addMovement(userId, { type, amount, reason, shiftId = null, userRole = null }) {
     return prisma.$transaction(async (tx) => {
       let targetShiftId = shiftId ? parseInt(shiftId) : null;
       if (!targetShiftId) {
-        const active = await tx.shift.findFirst({
-          where: { closedAt: null },
+        // Prioritaskan shift aktif milik kasir yang bersangkutan terlebih dahulu
+        let active = await tx.shift.findFirst({
+          where: { cashierId: userId, closedAt: null },
           orderBy: { openedAt: 'desc' },
-          select: { id: true },
+          select: { id: true, cashierId: true },
         });
+        if (!active) {
+          active = await tx.shift.findFirst({
+            where: { closedAt: null },
+            orderBy: { openedAt: 'desc' },
+            select: { id: true, cashierId: true },
+          });
+        }
         if (!active) {
           throw new Error('Tidak ada shift aktif untuk mencatat arus kas.');
         }
@@ -313,16 +375,45 @@ export const shiftService = {
 
       const shift = await tx.shift.findUnique({
         where: { id: targetShiftId },
-        select: { id: true, closedAt: true },
+        select: { id: true, closedAt: true, cashierId: true },
       });
 
       if (!shift || shift.closedAt !== null) {
         throw new Error('Sesi kasir sudah ditutup. Tidak dapat mencatat arus kas pada sesi ini.');
       }
 
+      // Pastikan kasir tidak mencatat arus kas ke shift kasir lain kecuali MANAGER atau OWNER
+      const isManagerOrOwner = ['MANAGER', 'OWNER'].includes(userRole);
+      if (userRole && !isManagerOrOwner && shift.cashierId !== userId) {
+        const error = new Error('Akses ditolak: Anda hanya dapat mencatat arus kas pada sesi kasir Anda sendiri.');
+        error.statusCode = 403;
+        throw error;
+      }
+
       const parsedAmount = Math.max(0, parseFloat(amount) || 0);
       if (parsedAmount <= 0) {
         throw new Error('Nominal arus kas harus lebih dari Rp 0.');
+      }
+
+      // Validasi proteksi setor brankas (CASH_DROP) agar tidak melebihi uang kas fisik di laci
+      if (type === 'CASH_DROP') {
+        const fullShift = await tx.shift.findUnique({
+          where: { id: targetShiftId },
+          include: {
+            cashMovements: true,
+            orders: {
+              include: { payments: true },
+            },
+          },
+        });
+        if (fullShift) {
+          const metrics = shiftService.calculateShiftMetrics(fullShift);
+          if (parsedAmount > metrics.expectedCash) {
+            const formattedExpected = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(metrics.expectedCash);
+            const formattedDrop = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(parsedAmount);
+            throw new Error(`Setor brankas (${formattedDrop}) tidak boleh melebihi saldo kas fisik yang ada di laci (${formattedExpected}).`);
+          }
+        }
       }
 
       const movement = await tx.cashMovement.create({

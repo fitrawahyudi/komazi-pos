@@ -70,43 +70,405 @@ export default function AiSalesAssistantModal() {
     askQuestion(chipQuery);
   };
 
-  // Helper to render basic markdown bold & bullets
+  // Helper to parse inline markdown (bold, italic, code)
+  const renderInlineMarkdown = (text) => {
+    if (!text && text !== 0) return null;
+    const str = String(text);
+    const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`)/g;
+    const parts = str.split(regex);
+
+    return parts.map((part, idx) => {
+      if (!part) return null;
+      if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+        return (
+          <strong key={idx} className="font-semibold text-komazi-text font-sans">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
+        return (
+          <em key={idx} className="italic text-neutral-300">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+        return (
+          <code
+            key={idx}
+            className="px-1.5 py-0.5 rounded bg-komazi-surface border border-komazi-border text-komazi-coral text-xs font-mono"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      return part;
+    });
+  };
+
+  // Helper to render special table cell types (status badges, currency, row labels)
+  const renderTableCell = (cellText, colHeader = '', alignment = 'left') => {
+    if (!cellText && cellText !== 0) return <span className="text-komazi-muted">-</span>;
+
+    const trimmed = String(cellText).trim();
+    const cleanLower = trimmed.replace(/\*\*/g, '').trim().toLowerCase();
+
+    // Operational / Active / Success badge
+    if (
+      cleanLower === 'operasional' ||
+      cleanLower === 'buka' ||
+      cleanLower === 'aktif' ||
+      cleanLower === 'sukses' ||
+      cleanLower === 'lunas'
+    ) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          {trimmed.replace(/\*\*/g, '')}
+        </span>
+      );
+    }
+
+    // Holiday / Closed / No Sales badge
+    if (
+      cleanLower.includes('libur') ||
+      cleanLower === 'tutup' ||
+      cleanLower.includes('tidak ada penjualan') ||
+      cleanLower === 'batal'
+    ) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          {trimmed.replace(/\*\*/g, '')}
+        </span>
+      );
+    }
+
+    // Currency values (e.g. "Rp 592.000", "Rp 0", "+Rp 592.000")
+    if (/^[+-]?\s*Rp\s*[\d.,]+/i.test(trimmed.replace(/\*\*/g, ''))) {
+      const cleanVal = trimmed.replace(/\*\*/g, '');
+      const isZero = cleanVal.includes('Rp 0') || cleanVal === 'Rp0';
+      return (
+        <span
+          className={`font-semibold tabular-nums font-sans ${
+            isZero ? 'text-komazi-muted' : 'text-emerald-400'
+          }`}
+        >
+          {renderInlineMarkdown(trimmed)}
+        </span>
+      );
+    }
+
+    // "Hari Ini" row label highlight
+    if (cleanLower === 'hari ini') {
+      return (
+        <span className="font-bold text-komazi-text flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral" />
+          {renderInlineMarkdown(trimmed)}
+        </span>
+      );
+    }
+
+    // "Kemarin" row label highlight
+    if (cleanLower === 'kemarin') {
+      return (
+        <span className="font-medium text-komazi-muted flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
+          {renderInlineMarkdown(trimmed)}
+        </span>
+      );
+    }
+
+    // Default cell rendering with inline markdown
+    return <span>{renderInlineMarkdown(trimmed)}</span>;
+  };
+
+  // Helper to parse markdown string into structured blocks (tables, headings, bullets, paragraphs)
+  const parseMarkdownToBlocks = (text) => {
+    if (!text) return [];
+    const rawLines = text.split(/\r?\n/);
+    const blocks = [];
+    let i = 0;
+
+    const isSeparatorLine = (str) => {
+      if (!str || !str.includes('-')) return false;
+      return /^\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?$/.test(str.trim());
+    };
+
+    const parseRow = (rowStr) => {
+      let parts = rowStr.split('|');
+      if (rowStr.trim().startsWith('|')) parts = parts.slice(1);
+      if (rowStr.trim().endsWith('|')) parts = parts.slice(0, -1);
+      return parts.map((c) => c.trim());
+    };
+
+    while (i < rawLines.length) {
+      const line = rawLines[i];
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        blocks.push({ type: 'empty' });
+        i++;
+        continue;
+      }
+
+      const nextLine = i + 1 < rawLines.length ? rawLines[i + 1].trim() : '';
+
+      // 1. Check for Markdown Table (Header + Separator row)
+      if (line.includes('|') && isSeparatorLine(nextLine)) {
+        const headers = parseRow(line);
+        const sepParts = parseRow(nextLine);
+        const alignments = headers.map((_, colIdx) => {
+          const sep = sepParts[colIdx] || '';
+          const startsColon = sep.startsWith(':');
+          const endsColon = sep.endsWith(':');
+          if (startsColon && endsColon) return 'center';
+          if (endsColon) return 'right';
+          return 'left';
+        });
+
+        i += 2;
+        const rows = [];
+        while (i < rawLines.length) {
+          const rowLine = rawLines[i];
+          const trimmedRow = rowLine.trim();
+          if (!trimmedRow || !trimmedRow.includes('|')) {
+            break;
+          }
+          const cells = parseRow(rowLine);
+          while (cells.length < headers.length) {
+            cells.push('');
+          }
+          rows.push(cells);
+          i++;
+        }
+
+        blocks.push({
+          type: 'table',
+          headers,
+          alignments,
+          rows,
+        });
+        continue;
+      }
+
+      // 2. Check for Headings (#, ##, ###, ####)
+      const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+      if (headingMatch) {
+        blocks.push({
+          type: 'heading',
+          level: headingMatch[1].length,
+          text: headingMatch[2].trim(),
+        });
+        i++;
+        continue;
+      }
+
+      // 3. Check for Bullet Points (- item, * item, • item)
+      const bulletMatch = line.match(/^[-*•]\s+(.+)$/);
+      if (bulletMatch) {
+        blocks.push({
+          type: 'bullet',
+          text: bulletMatch[1].trim(),
+        });
+        i++;
+        continue;
+      }
+
+      // 4. Check for Numbered List (1. item, 2. item)
+      const numberedMatch = line.match(/^(\d+)\.\s+(.+)$/);
+      if (numberedMatch) {
+        blocks.push({
+          type: 'numbered',
+          number: numberedMatch[1],
+          text: numberedMatch[2].trim(),
+        });
+        i++;
+        continue;
+      }
+
+      // 5. Standalone section title (e.g. "Interpretasi singkat")
+      if (
+        trimmed.length > 0 &&
+        trimmed.length < 35 &&
+        !trimmed.endsWith('.') &&
+        !trimmed.includes(':') &&
+        (i + 1 < rawLines.length && !rawLines[i + 1].trim())
+      ) {
+        blocks.push({
+          type: 'subheading',
+          text: trimmed,
+        });
+        i++;
+        continue;
+      }
+
+      // 6. Paragraph with key-value label (e.g. "Peningkatan omset: Dari Rp 0...")
+      const kvMatch = line.match(/^([A-Za-z0-9\s()&/-]+):\s+(.+)$/);
+      if (kvMatch && !kvMatch[1].startsWith('http') && kvMatch[1].length < 35) {
+        blocks.push({
+          type: 'keyvalue',
+          key: kvMatch[1].trim(),
+          value: kvMatch[2].trim(),
+        });
+        i++;
+        continue;
+      }
+
+      // 7. Regular Paragraph
+      blocks.push({
+        type: 'paragraph',
+        text: line,
+      });
+      i++;
+    }
+
+    return blocks;
+  };
+
+  // Helper to render rich formatted text with tables, headings, and lists
   const renderFormattedText = (text) => {
     if (!text) return null;
-    const lines = text.split('\n');
+    const blocks = parseMarkdownToBlocks(text);
 
     return (
-      <div className="space-y-1.5 text-sm leading-relaxed text-komazi-text-secondary">
-        {lines.map((line, idx) => {
-          if (!line.trim()) return <div key={idx} className="h-1" />;
+      <div className="space-y-2 text-sm leading-relaxed text-komazi-text-secondary">
+        {blocks.map((block, idx) => {
+          if (block.type === 'empty') {
+            return <div key={idx} className="h-1" />;
+          }
 
-          // Parse bullet points
-          const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
-          const cleanLine = isBullet ? line.trim().replace(/^[-*]\s+/, '') : line;
-
-          // Replace **bold**
-          const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
-          const parsedContent = parts.map((part, pIdx) => {
-            if (part.startsWith('**') && part.endsWith('**')) {
-              return (
-                <strong key={pIdx} className="font-semibold text-komazi-text font-sans">
-                  {part.slice(2, -2)}
-                </strong>
-              );
-            }
-            return part;
-          });
-
-          if (isBullet) {
+          if (block.type === 'table') {
             return (
-              <div key={idx} className="flex items-start gap-2 pl-2">
-                <span className="text-komazi-primary mt-1.5 h-1.5 w-1.5 rounded-full bg-komazi-primary shrink-0" />
-                <span>{parsedContent}</span>
+              <div
+                key={idx}
+                className="my-3 overflow-hidden rounded-xl border border-komazi-border/80 bg-komazi-surface/90 shadow-md"
+              >
+                <div className="overflow-x-auto scrollbar-thin">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-komazi-surface-2 border-b border-komazi-border text-[11px] font-bold text-komazi-muted uppercase tracking-wider">
+                        {block.headers.map((h, colIdx) => {
+                          const align = block.alignments[colIdx] || 'left';
+                          const alignClass =
+                            align === 'center'
+                              ? 'text-center'
+                              : align === 'right'
+                              ? 'text-right'
+                              : 'text-left';
+                          return (
+                            <th
+                              key={colIdx}
+                              className={`py-2.5 px-3.5 whitespace-nowrap font-bold ${alignClass}`}
+                            >
+                              {renderInlineMarkdown(h)}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-komazi-border/50 text-komazi-text-secondary">
+                      {block.rows.map((row, rIdx) => (
+                        <tr
+                          key={rIdx}
+                          className={`transition-colors ${
+                            rIdx % 2 === 1
+                              ? 'bg-komazi-surface-2/30 hover:bg-komazi-surface-2/60'
+                              : 'bg-transparent hover:bg-komazi-surface-2/40'
+                          }`}
+                        >
+                          {row.map((cell, cIdx) => {
+                            const align = block.alignments[cIdx] || 'left';
+                            const alignClass =
+                              align === 'center'
+                                ? 'text-center'
+                                : align === 'right'
+                                ? 'text-right'
+                                : 'text-left';
+                            return (
+                              <td
+                                key={cIdx}
+                                className={`py-2.5 px-3.5 whitespace-nowrap ${alignClass}`}
+                              >
+                                {renderTableCell(cell, block.headers[cIdx], align)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             );
           }
 
-          return <p key={idx}>{parsedContent}</p>;
+          if (block.type === 'heading') {
+            return (
+              <div key={idx} className="mt-3.5 mb-1.5">
+                <h4 className="text-sm font-bold text-komazi-text flex items-center gap-1.5 text-komazi-coral">
+                  <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral" />
+                  {renderInlineMarkdown(block.text)}
+                </h4>
+              </div>
+            );
+          }
+
+          if (block.type === 'subheading') {
+            return (
+              <div key={idx} className="mt-3.5 mb-1 pt-1.5 border-t border-komazi-border/50">
+                <h5 className="text-xs font-bold uppercase tracking-wider text-komazi-coral flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral" />
+                  {renderInlineMarkdown(block.text)}
+                </h5>
+              </div>
+            );
+          }
+
+          if (block.type === 'bullet') {
+            return (
+              <div key={idx} className="flex items-start gap-2 pl-1.5 my-1">
+                <span className="text-komazi-coral mt-1.5 h-1.5 w-1.5 rounded-full bg-komazi-coral shrink-0" />
+                <span className="text-komazi-text-secondary text-sm">
+                  {renderInlineMarkdown(block.text)}
+                </span>
+              </div>
+            );
+          }
+
+          if (block.type === 'numbered') {
+            return (
+              <div key={idx} className="flex items-start gap-2 pl-1 my-1">
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-komazi-surface-2 border border-komazi-border text-[10px] font-bold text-komazi-coral shrink-0 mt-0.5">
+                  {block.number}
+                </span>
+                <span className="text-komazi-text-secondary text-sm">
+                  {renderInlineMarkdown(block.text)}
+                </span>
+              </div>
+            );
+          }
+
+          if (block.type === 'keyvalue') {
+            return (
+              <div key={idx} className="flex items-start gap-2 pl-1 my-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-komazi-coral/80 mt-2 shrink-0" />
+                <p className="text-sm leading-relaxed text-komazi-text-secondary">
+                  <strong className="font-semibold text-komazi-text">
+                    {block.key}:{' '}
+                  </strong>
+                  {renderInlineMarkdown(block.value)}
+                </p>
+              </div>
+            );
+          }
+
+          return (
+            <p key={idx} className="text-sm leading-relaxed text-komazi-text-secondary">
+              {renderInlineMarkdown(block.text)}
+            </p>
+          );
         })}
       </div>
     );
@@ -116,7 +478,7 @@ export default function AiSalesAssistantModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-komazi-surface border border-komazi-border/80 rounded-2xl shadow-2xl flex flex-col h-[85vh] max-h-[720px] overflow-hidden">
+      <div className="w-full max-w-2xl md:max-w-3xl bg-komazi-surface border border-komazi-border/80 rounded-2xl shadow-2xl flex flex-col h-[85vh] max-h-[740px] overflow-hidden">
         
         {/* ─── Modal Header ────────────────────────────────────────────── */}
         <div className="px-5 py-4 border-b border-komazi-border bg-komazi-surface-2/60 flex items-center justify-between">
@@ -166,7 +528,13 @@ export default function AiSalesAssistantModal() {
                   </div>
                 )}
 
-                <div className={`max-w-[85%] sm:max-w-[80%] space-y-2.5`}>
+                <div
+                  className={`${
+                    isUser
+                      ? 'max-w-[85%] sm:max-w-[75%]'
+                      : 'w-full max-w-[95%] sm:max-w-[92%]'
+                  } space-y-2.5`}
+                >
                   <div
                     className={`p-4 rounded-2xl ${
                       isUser

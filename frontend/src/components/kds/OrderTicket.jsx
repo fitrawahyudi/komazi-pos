@@ -9,6 +9,7 @@ import {
   Pause,
   ArrowRight,
   Eye,
+  Printer,
 } from 'lucide-react';
 import { formatOrderType, isDrinkItem, formatTime } from '../../utils/format';
 
@@ -23,6 +24,7 @@ export default function OrderTicket({
   onBumpItem,
   onBumpTicket,
   onRequeueStatus,
+  onPrintTicket,
   tvMode = false,
   canBump = true,
 }) {
@@ -160,30 +162,47 @@ export default function OrderTicket({
           </p>
         </div>
 
-        {/* Timer & Delay Warning Badge */}
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <div
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold shadow-sm ${
-              status === 'SERVED'
-                ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-                : isDelayed
-                ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/25'
-                : isWarning
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : tvMode
-                ? 'bg-[#222] text-neutral-300 border border-white/10'
-                : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>{orderTimeFormatted}</span>
-          </div>
-
-          {isDelayed && (
-            <span className="text-[8px] font-black uppercase tracking-wider text-red-400 bg-red-950/80 px-1.5 py-0.5 rounded border border-red-800 animate-pulse">
-              ⚠ DELAYED ({targetMinutes}m)
-            </span>
+        {/* Print Button & Timer */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onPrintTicket && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPrintTicket(order);
+              }}
+              className="p-1.5 rounded-xl bg-black/40 hover:bg-komazi-coral text-neutral-300 hover:text-white border border-white/10 transition-all cursor-pointer shadow-sm active:scale-90"
+              title="Cetak Tiket Pesanan / Struk"
+            >
+              <Printer className="w-3.5 h-3.5 text-komazi-coral hover:text-white" />
+            </button>
           )}
+
+          {/* Timer & Delay Warning Badge */}
+          <div className="flex flex-col items-end gap-1">
+            <div
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold shadow-sm ${
+                status === 'SERVED'
+                  ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                  : isDelayed
+                  ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/25'
+                  : isWarning
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : tvMode
+                  ? 'bg-[#222] text-neutral-300 border border-white/10'
+                  : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>{orderTimeFormatted}</span>
+            </div>
+
+            {isDelayed && (
+              <span className="text-[8px] font-black uppercase tracking-wider text-red-400 bg-red-950/80 px-1.5 py-0.5 rounded border border-red-800 animate-pulse">
+                ⚠ DELAYED ({targetMinutes}m)
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -291,7 +310,7 @@ export default function OrderTicket({
         {!canBump ? (
           <div className="w-full py-2.5 px-3 rounded-xl bg-komazi-surface/80 border border-komazi-border text-center text-xs font-semibold text-komazi-muted flex items-center justify-center gap-1.5 shadow-inner">
             <Eye className="w-3.5 h-3.5 text-komazi-coral" />
-            <span>Mode Pantau (Hanya Staf Dapur/Bar yang dapat BUMP)</span>
+            <span>Hanya Baca</span>
           </div>
         ) : status !== 'SERVED' ? (
           <button

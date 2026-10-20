@@ -468,3 +468,170 @@ export function exportReportToExcel({
   triggerFileDownload(blob, filename);
   return { success: true, filename, count: rows.length };
 }
+
+/**
+ * Generic export for custom table reports (Products, Categories, Customers, Taxes, Staff, etc.)
+ */
+export function exportCustomTableToCsv({
+  title = 'Laporan',
+  dateRangeLabel = '',
+  headers = [],
+  rows = [], // 2D array: array of row arrays
+  summaryRow = null,
+  filenamePrefix = 'Laporan',
+  storeName = 'Komazi Coffee & Workspace',
+}) {
+  const csvLines = [
+    'sep=;',
+    `${storeName.toUpperCase()} - ${title.toUpperCase()};;;;;;;;;;;;;`,
+    `Periode: ${dateRangeLabel || 'Semua'} | Dicetak Pada: ${formatWibDateTime(new Date())};;;;;;;;;;;;;`,
+    '',
+    headers.map(escapeCsvSemicolon).join(';'),
+  ];
+
+  rows.forEach((r) => {
+    const rowVals = r.map((val) => {
+      if (typeof val === 'number') return val;
+      return escapeCsvSemicolon(val);
+    });
+    csvLines.push(rowVals.join(';'));
+  });
+
+  if (summaryRow && Array.isArray(summaryRow)) {
+    csvLines.push('');
+    csvLines.push(summaryRow.map((v) => (typeof v === 'number' ? v : escapeCsvSemicolon(v))).join(';'));
+  }
+
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const cleanRange = (dateRangeLabel || 'Semua').replace(/\s+/g, '_');
+  const cleanPrefix = filenamePrefix.replace(/\s+/g, '_');
+  const filename = `KOMAZI_${cleanPrefix}_${cleanRange}_${dateStr}.csv`;
+
+  triggerFileDownload(blob, filename);
+  return { success: true, filename, count: rows.length };
+}
+
+export function exportCustomTableToExcel({
+  title = 'Laporan',
+  dateRangeLabel = '',
+  headers = [],
+  rows = [], // 2D array: array of row arrays
+  summaryRow = null,
+  filenamePrefix = 'Laporan',
+  storeName = 'Komazi Coffee & Workspace',
+}) {
+  const wb = XLSX.utils.book_new();
+  const titleRow = [`${storeName.toUpperCase()} - ${title.toUpperCase()}`];
+  const metaRow = [`Periode: ${dateRangeLabel || 'Semua'} | Diunduh: ${formatWibDateTime(new Date())}`];
+  const emptyRow = [];
+
+  const aoa = [
+    titleRow,
+    metaRow,
+    emptyRow,
+    headers,
+    ...rows,
+  ];
+
+  if (summaryRow && Array.isArray(summaryRow)) {
+    aoa.push(emptyRow);
+    aoa.push(summaryRow);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  const colWidths = headers.map((h, colIdx) => {
+    let maxLen = String(h).length;
+    rows.slice(0, 200).forEach((r) => {
+      const cellVal = String(r[colIdx] ?? '');
+      if (cellVal.length > maxLen) maxLen = cellVal.length;
+    });
+    return { wch: Math.min(Math.max(maxLen + 4, 12), 40) };
+  });
+  ws['!cols'] = colWidths;
+
+  const headerRowIdx = 4;
+  ws['!rows'] = [
+    { hpt: 22 }, // Title
+    { hpt: 16 }, // Meta
+    { hpt: 8 },  // Empty
+    { hpt: 26 }, // Headers
+  ];
+
+  if (ws['A1']) ws['A1'].s = EXCEL_STYLES.title;
+  if (ws['A2']) ws['A2'].s = EXCEL_STYLES.guideText;
+
+  headers.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}${headerRowIdx}`;
+    if (ws[cellRef]) ws[cellRef].s = EXCEL_STYLES.header;
+  });
+
+  const dataStartRowIdx = 5;
+  const dataEndRowIdx = dataStartRowIdx + rows.length - 1;
+  rows.forEach((r, rIdx) => {
+    const rowNum = dataStartRowIdx + rIdx;
+    const isEven = rIdx % 2 === 1;
+    const baseStyle = isEven ? EXCEL_STYLES.cellZebra : EXCEL_STYLES.cell;
+
+    r.forEach((val, cIdx) => {
+      const colLetter = getColumnLetter(cIdx);
+      const cellRef = `${colLetter}${rowNum}`;
+      if (ws[cellRef]) {
+        const isNum = typeof val === 'number';
+        ws[cellRef].s = {
+          ...baseStyle,
+          alignment: {
+            ...baseStyle.alignment,
+            horizontal: isNum ? 'right' : cIdx === 0 ? 'center' : 'left',
+          },
+        };
+      }
+    });
+  });
+
+  if (summaryRow && Array.isArray(summaryRow)) {
+    const sumRowIdx = dataEndRowIdx + 2;
+    headers.forEach((_, cIdx) => {
+      const colLetter = getColumnLetter(cIdx);
+      const cellRef = `${colLetter}${sumRowIdx}`;
+      if (ws[cellRef]) {
+        const val = summaryRow[cIdx];
+        const isNum = typeof val === 'number';
+        ws[cellRef].s = {
+          fill: { fgColor: { rgb: 'F3F4F6' } },
+          font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '105932' } },
+          alignment: { vertical: 'center', horizontal: isNum ? 'right' : 'left' },
+          border: {
+            top: { style: 'medium', color: { rgb: '105932' } },
+            bottom: { style: 'double', color: { rgb: '105932' } },
+            left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+            right: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          },
+        };
+      }
+    });
+  }
+
+  if (rows.length > 0) {
+    const lastColLetter = getColumnLetter(headers.length - 1);
+    ws['!autofilter'] = { ref: `A${headerRowIdx}:${lastColLetter}${dataEndRowIdx}` };
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
+
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([excelBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const cleanRange = (dateRangeLabel || 'Semua').replace(/\s+/g, '_');
+  const cleanPrefix = filenamePrefix.replace(/\s+/g, '_');
+  const filename = `KOMAZI_${cleanPrefix}_${cleanRange}_${dateStr}.xlsx`;
+
+  triggerFileDownload(blob, filename);
+  return { success: true, filename, count: rows.length };
+}

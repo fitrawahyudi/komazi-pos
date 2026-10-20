@@ -344,7 +344,7 @@ export default function CustomersPage() {
             type="button"
             onClick={() => {
               fetchCustomers();
-              toast.info('Memperbarui data pelanggan dari server...');
+              toast.info('Memperbarui data pelanggan');
             }}
             disabled={isLoading}
             className="p-2 rounded-xl bg-komazi-surface border border-komazi-border text-komazi-muted hover:text-white transition-colors"

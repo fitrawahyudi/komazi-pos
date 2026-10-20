@@ -38,10 +38,18 @@ import {
   ShoppingBag,
   Bike,
   Store,
+  Settings,
+  Printer,
 } from 'lucide-react';
 import { toast } from '../store/toastStore';
 import OrderTicket from '../components/kds/OrderTicket';
+import KdsHistoryTable from '../components/kds/KdsHistoryTable';
+import KdsPrinterModal from '../components/kds/KdsPrinterModal';
+import KdsPrintActionModal from '../components/kds/KdsPrintActionModal';
+import { usePrinterStore } from '../store/printerStore';
 import Pagination from '../components/ui/Pagination';
+import NotificationService from '../services/notification.service';
+import EditProfileModal from '../components/profile/EditProfileModal';
 
 // ─── Station Panel ────────────────────────────────────────────────────────────
 function StationPanel({
@@ -54,6 +62,7 @@ function StationPanel({
   onBumpItem,
   onBumpTicket,
   onRequeueStatus,
+  onPrintTicket,
   canBump = true,
   hasActiveFilters = false,
 }) {
@@ -121,6 +130,7 @@ function StationPanel({
               onBumpItem={onBumpItem}
               onBumpTicket={onBumpTicket}
               onRequeueStatus={onRequeueStatus}
+              onPrintTicket={onPrintTicket}
               canBump={canBump}
             />
           ))}
@@ -160,6 +170,10 @@ export default function KdsPage() {
   const [statusTab, setStatusTab] = usePersistentState('kds_statusTab', 'ACTIVE');
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
+  const [printOrderTarget, setPrintOrderTarget] = useState(null);
+  const { isConnected: isPrinterConnected, connectedDeviceName } = usePrinterStore();
 
   // ─── Search & Filters State ───
   const [searchQuery, setSearchQuery] = useState('');
@@ -213,7 +227,53 @@ export default function KdsPage() {
   const { isConnected } = useKdsSocket({
     stationCode: socketStationCode,
     onOrderNew: (newOrder) => {
-      playKitchenChime();
+      // Periksa relevansi pesanan dengan station KDS aktif
+      const items = newOrder.items || [];
+      const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+      const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+
+      let isRelevant = true;
+      if (isBarista || effectiveViewMode === 'BAR') {
+        isRelevant = hasDrinks;
+      } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
+        isRelevant = hasFood;
+      }
+
+      if (isRelevant) {
+        playKitchenChime();
+        const stationTitle = isBarista ? 'Bar (BDS)' : isKitchen ? 'Dapur (KDS)' : 'KDS';
+        NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => {});
+
+        // Otomatis cetak tiket dapur jika auto-print aktif & printer Bluetooth terhubung
+        const {
+          autoPrintKitchenOnCheckout,
+          isConnected: isPrinterConnected,
+          printKitchenTicketForOrder,
+        } = usePrinterStore.getState();
+
+        if (autoPrintKitchenOnCheckout && isPrinterConnected) {
+          let relevantItems = items;
+          if (isBarista || effectiveViewMode === 'BAR') {
+            relevantItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+          } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
+            relevantItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+          }
+
+          printKitchenTicketForOrder(newOrder, {
+            stationName: stationTitle,
+            items: relevantItems.length > 0 ? relevantItems : items,
+          })
+            .then((res) => {
+              if (res?.success) {
+                toast.success(`🖨️ Tiket dapur otomatis dicetak: ${newOrder.invoiceNo}`);
+              }
+            })
+            .catch((err) => {
+              console.error('[KDS Page] Gagal cetak otomatis tiket:', err);
+            });
+        }
+      }
+
       applySocketNewOrder(newOrder);
       toast.info(`🔔 Pesanan baru masuk: ${newOrder.invoiceNo}`);
     },
@@ -237,6 +297,7 @@ export default function KdsPage() {
   // Sinkronisasi awal & event bus local
   useEffect(() => {
     fetchBackendOrders();
+    NotificationService.init().catch(() => {});
 
     const handleSync = () => {
       useOrdersStore.persist.rehydrate();
@@ -678,10 +739,47 @@ export default function KdsPage() {
             onClick={handleManualSync}
             disabled={isSyncing}
             title="Sinkronkan dengan pesanan server & kasir"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-bold border border-komazi-border transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-bold border border-komazi-border transition-colors disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-komazi-coral' : ''}`} />
             <span className="hidden sm:inline">Sinkron</span>
+          </button>
+
+          {/* Bluetooth Thermal Printer Button with Status Badge */}
+          <button
+            type="button"
+            onClick={() => setIsPrinterModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
+              isPrinterConnected
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                : 'bg-komazi-surface-2 hover:bg-komazi-border text-neutral-400 border-komazi-border hover:text-white'
+            }`}
+            title={
+              isPrinterConnected
+                ? `Printer Bluetooth Terhubung: ${connectedDeviceName || 'Printer'}`
+                : 'Hubungkan Printer Bluetooth / Pengaturan Struk'
+            }
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isPrinterConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'
+              }`}
+            />
+            <span className="hidden sm:inline">
+              {isPrinterConnected ? 'Printer' : 'Hubungkan Printer'}
+            </span>
+          </button>
+
+          {/* Settings & Profile Button */}
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-bold border border-komazi-border transition-colors cursor-pointer"
+            title="Pengaturan KDS, Notifikasi Android & Edit Profil"
+          >
+            <Settings className="w-3.5 h-3.5 text-komazi-coral" />
+            <span className="hidden sm:inline">Pengaturan</span>
           </button>
 
           {/* Station Mode Indicator or Switcher */}
@@ -745,8 +843,22 @@ export default function KdsPage() {
         </div>
       </div>
 
-      {/* ── Stats Bar (Clickable for Instant Filter) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* ── Tab View: SERVED Table vs ACTIVE Ticket Board ── */}
+      {statusTab === 'SERVED' ? (
+        <KdsHistoryTable
+          orders={orders}
+          station={effectiveViewMode}
+          onRecall={handleRequeueStatus}
+          onPrint={(order) => setPrintOrderTarget(order)}
+          canBump={canBump}
+          onRefresh={handleManualSync}
+          isRefreshing={isSyncing}
+          isStandalone={false}
+        />
+      ) : (
+        <>
+          {/* ── Stats Bar (Clickable for Instant Filter) ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           {
             key: 'PENDING',
@@ -1149,6 +1261,7 @@ export default function KdsPage() {
             onBumpItem={handleBumpItem}
             onBumpTicket={handleBumpTicket}
             onRequeueStatus={handleRequeueStatus}
+            onPrintTicket={(order) => setPrintOrderTarget(order)}
             canBump={canBump}
             hasActiveFilters={hasActiveFilters}
           />
@@ -1170,6 +1283,7 @@ export default function KdsPage() {
             onBumpItem={handleBumpItem}
             onBumpTicket={handleBumpTicket}
             onRequeueStatus={handleRequeueStatus}
+            onPrintTicket={(order) => setPrintOrderTarget(order)}
             canBump={canBump}
             hasActiveFilters={hasActiveFilters}
           />
@@ -1196,29 +1310,47 @@ export default function KdsPage() {
                   onBumpItem={handleBumpItem}
                   onBumpTicket={handleBumpTicket}
                   onRequeueStatus={handleRequeueStatus}
+                  onPrintTicket={(orderToPrint) => setPrintOrderTarget(orderToPrint)}
                   canBump={canBump}
                 />
               );
             })}
           </div>
-
-          {statusTab === 'SERVED' && displayedOrders.length > 0 && (
-            <div className="pt-2">
-              <Pagination
-                currentPage={servedPage}
-                totalItems={displayedOrders.length}
-                itemsPerPage={servedPerPage}
-                onPageChange={setServedPage}
-                onItemsPerPageChange={(newLimit) => {
-                  setServedPerPage(newLimit);
-                  setServedPage(1);
-                }}
-                itemLabel="pesanan selesai"
-              />
-            </div>
-          )}
         </div>
       )}
+        </>
+      )}
+
+      {/* Edit Profile & KDS Settings Modal */}
+      {isSettingsModalOpen && (
+        <EditProfileModal
+          onClose={() => setIsSettingsModalOpen(false)}
+          isKdsMode={true}
+          initialTab="profile"
+          kdsProps={{
+            isSoundEnabled: true,
+            setIsSoundEnabled: () => {},
+            stationFilter: effectiveViewMode,
+            setStationFilter: setViewMode,
+            isStaffOnly: isBarista || isKitchen,
+          }}
+        />
+      )}
+
+      {/* Modal Pengaturan Printer & Struk Bluetooth */}
+      <KdsPrinterModal
+        isOpen={isPrinterModalOpen}
+        onClose={() => setIsPrinterModalOpen(false)}
+      />
+
+      {/* Modal Pilihan Cetak Tiket Dapur / Struk Pembayaran */}
+      <KdsPrintActionModal
+        isOpen={Boolean(printOrderTarget)}
+        onClose={() => setPrintOrderTarget(null)}
+        order={printOrderTarget}
+        station={effectiveViewMode}
+        onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
+      />
     </div>
   );
 }

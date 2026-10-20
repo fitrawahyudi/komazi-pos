@@ -30,6 +30,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import PromptModal from '../ui/PromptModal';
+import AlertModal from '../ui/AlertModal';
 import AttendanceVerificationModal from '../hris/AttendanceVerificationModal';
 import DynamicPriceModal from './DynamicPriceModal';
 import { toast } from '../../store/toastStore';
@@ -84,10 +85,12 @@ export default function CartSidebar({
   const fetchMyTodaySchedule = useHrisStore((state) => state.fetchMyTodaySchedule);
   const fetchTodayAttendance = useHrisStore((state) => state.fetchTodayAttendance);
 
+  const { settings } = useSettingsStore();
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
   const isOwner = user?.role === 'OWNER';
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
-  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
-  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
+  const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
 
   const [showVerifyModal, setShowVerifyModal] = useState(false);
 
@@ -103,11 +106,11 @@ export default function CartSidebar({
   }).length;
 
   const { customers, fetchCustomers } = useCustomerStore();
-  const { settings } = useSettingsStore();
   const [isDiscountOpen, setIsDiscountOpen] = useState(false);
   const [tempDiscountType, setTempDiscountType] = useState(discountType);
   const [tempDiscountVal, setTempDiscountVal] = useState(discountValue);
   const [isHoldBillPromptOpen, setIsHoldBillPromptOpen] = useState(false);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   // Fetch customers if not loaded
   useEffect(() => {
@@ -555,10 +558,13 @@ export default function CartSidebar({
 
           {!isEmpty && (
             <button
-              onClick={clearCart}
-              className="text-[11px] text-komazi-muted hover:text-danger"
+              type="button"
+              onClick={() => setIsClearConfirmOpen(true)}
+              className="text-[11px] text-komazi-muted hover:text-danger hover:underline transition-colors flex items-center gap-1 active:scale-95"
+              title="Kosongkan seluruh item pesanan dari keranjang"
             >
-              Kosongkan
+              <Trash2 className="w-3 h-3" />
+              <span>Kosongkan</span>
             </button>
           )}
         </div>
@@ -830,6 +836,22 @@ export default function CartSidebar({
         defaultValue={customerName ? `${customerName} (Meja ${tableNo || '-'})` : `Meja ${tableNo || 'Takeaway'}`}
         confirmText="Simpan Bill"
         icon={BookmarkCheck}
+      />
+
+      {/* Clear Cart Confirmation Modal */}
+      <AlertModal
+        isOpen={isClearConfirmOpen}
+        onClose={() => setIsClearConfirmOpen(false)}
+        onConfirm={() => {
+          clearCart();
+          setIsClearConfirmOpen(false);
+          toast.info('Keranjang pesanan telah dikosongkan');
+        }}
+        type="danger"
+        title="Kosongkan Keranjang?"
+        message="Seluruh item pesanan yang telah dipilih akan dihapus dari keranjang. Anda yakin ingin mengosongkannya?"
+        confirmText="Ya, Kosongkan"
+        cancelText="Batal"
       />
 
       {/* Attendance Verification Modal */}

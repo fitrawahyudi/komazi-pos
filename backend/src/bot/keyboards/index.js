@@ -1,6 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { rupiah, esc } from '../utils/format.js';
 export { buildPaginatedNumericKeyboard, formatPaginatedList } from './pagination.js';
+export { buildStaffReplyKeyboard } from './replyKeyboard.js';
 
 export function mainMenu(role) {
   const kb = new InlineKeyboard();

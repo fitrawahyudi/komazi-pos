@@ -15,8 +15,14 @@ import {
 } from 'lucide-react';
 import { NotificationService } from '../../services/notification.service';
 import { toast } from '../../store/toastStore';
+import { useAuthStore } from '../../store/authStore';
 
-export default function AndroidNotificationCard() {
+export default function AndroidNotificationCard({ isKdsMode = false }) {
+  const { user } = useAuthStore();
+  const role = (user?.role || '').toUpperCase();
+  const isKdsStaff = isKdsMode || role === 'BARISTA' || role === 'KITCHEN';
+  const isManagerOrOwner = role === 'OWNER' || role === 'MANAGER';
+
   const [permissionStatus, setPermissionStatus] = useState('prompt');
   const [isChecking, setIsChecking] = useState(false);
   const [settings, setSettings] = useState(NotificationService.getSettings());
@@ -140,8 +146,10 @@ export default function AndroidNotificationCard() {
               <ShoppingBag className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-xs font-bold text-komazi-text">Pesanan Masuk & KDS</p>
-              <p className="text-[10px] text-komazi-muted">Alert order baru & pesanan siap saji</p>
+              <p className="text-xs font-bold text-komazi-text">
+                {isKdsStaff ? 'Pesanan Masuk KDS / BDS' : 'Pesanan Masuk'}
+              </p>
+              <p className="text-[10px] text-komazi-muted">Alert order baru & antrean tiket</p>
             </div>
           </div>
           <button
@@ -159,66 +167,14 @@ export default function AndroidNotificationCard() {
           </button>
         </div>
 
-        {/* Toggle 2: Peringatan Stok */}
-        <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-komazi-surface text-amber-400 border border-komazi-border flex items-center justify-center">
-              <Boxes className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-komazi-text">Peringatan Stok Menipis</p>
-              <p className="text-[10px] text-komazi-muted">Bahan mencapai stok minimum</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleToggle('stockAlerts')}
-            className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
-              settings.stockAlerts ? 'bg-amber-500' : 'bg-neutral-800'
-            }`}
-          >
-            <div
-              className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                settings.stockAlerts ? 'translate-x-4' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Toggle 3: Otorisasi Supervisor */}
-        <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-komazi-surface text-rose-400 border border-komazi-border flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-komazi-text">Otorisasi Supervisor</p>
-              <p className="text-[10px] text-komazi-muted">Permintaan void & diskon kasir</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleToggle('approvalAlerts')}
-            className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
-              settings.approvalAlerts ? 'bg-rose-500' : 'bg-neutral-800'
-            }`}
-          >
-            <div
-              className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                settings.approvalAlerts ? 'translate-x-4' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Toggle 4: Bunyi & Suara */}
+        {/* Toggle 2: Bunyi & Suara */}
         <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-komazi-surface text-blue-400 border border-komazi-border flex items-center justify-center">
               <Volume2 className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-xs font-bold text-komazi-text">Bunyi Notifikasi</p>
+              <p className="text-xs font-bold text-komazi-text">Bunyi & Suara</p>
               <p className="text-[10px] text-komazi-muted">Mainkan nada dering saat notifikasi masuk</p>
             </div>
           </div>
@@ -236,6 +192,88 @@ export default function AndroidNotificationCard() {
             />
           </button>
         </div>
+
+        {/* Toggle 3: Getaran HP Android */}
+        <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-komazi-surface text-purple-400 border border-komazi-border flex items-center justify-center">
+              <Vibrate className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-komazi-text">Getaran HP Android</p>
+              <p className="text-[10px] text-komazi-muted">Getarkan perangkat saat notifikasi pesanan tiba</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleToggle('vibrate')}
+            className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
+              settings.vibrate ? 'bg-purple-500' : 'bg-neutral-800'
+            }`}
+          >
+            <div
+              className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                settings.vibrate ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Toggle 4: Peringatan Stok (Khusus Owner & Manager) */}
+        {isManagerOrOwner && (
+          <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-komazi-surface text-amber-400 border border-komazi-border flex items-center justify-center">
+                <Boxes className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-komazi-text">Peringatan Stok Menipis</p>
+                <p className="text-[10px] text-komazi-muted">Bahan mencapai batas stok minimum</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggle('stockAlerts')}
+              className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
+                settings.stockAlerts ? 'bg-amber-500' : 'bg-neutral-800'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  settings.stockAlerts ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
+        {/* Toggle 5: Otorisasi Supervisor (Khusus Owner & Manager) */}
+        {isManagerOrOwner && (
+          <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-komazi-surface text-rose-400 border border-komazi-border flex items-center justify-center">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-komazi-text">Otorisasi Supervisor</p>
+                <p className="text-[10px] text-komazi-muted">Permintaan void & diskon kasir</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggle('approvalAlerts')}
+              className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
+                settings.approvalAlerts ? 'bg-rose-500' : 'bg-neutral-800'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  settings.approvalAlerts ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -80,7 +80,7 @@ export default function SyncStatusBadge({ className = '' }) {
       </button>
 
       {/* 2. Bluetooth Printer Status Pill (Clickable to Manage / Connect Printer) */}
-      <button
+      {/* <button
         type="button"
         onClick={() => {
           try {
@@ -108,10 +108,10 @@ export default function SyncStatusBadge({ className = '' }) {
         }`}
         title={
           isPrinterConnecting
-            ? 'Sedang menyambungkan ke printer... Klik untuk kelola'
+            ? 'Sedang menyambungkan ke printer...'
             : isPrinterConnected
-              ? 'Printer Siap Digunakan (Klik untuk kelola)'
-              : 'Printer Belum Tersambung (Klik untuk menyambungkan)'
+              ? 'Printer Siap Digunakan'
+              : 'Printer Belum Tersambung'
         }
       >
         {isPrinterConnecting ? (
@@ -130,7 +130,7 @@ export default function SyncStatusBadge({ className = '' }) {
             <span className="hidden md:inline text-komazi-muted/70">Printer Belum Konek</span>
           </>
         )}
-      </button>
+      </button> */}
     </div>
   );
 }

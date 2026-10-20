@@ -2,6 +2,19 @@ import prisma from '../config/db.js';
 import { calculateProductCogs } from './cogsService.js';
 
 /**
+ * Helper to format a date into YYYY-MM-DD in local system timezone (WIB)
+ */
+function formatDayKey(d) {
+  if (!d) return '';
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return '';
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Helper to determine date boundaries in Asia/Jakarta timezone or standard Date
  */
 function resolveDateRange(period = 'today', customStart = null, customEnd = null) {
@@ -11,7 +24,9 @@ function resolveDateRange(period = 'today', customStart = null, customEnd = null
 
   if (customStart && customEnd) {
     start = new Date(customStart);
+    start.setHours(0, 0, 0, 0);
     end = new Date(customEnd);
+    end.setHours(23, 59, 59, 999);
     return { start, end };
   }
 
@@ -95,6 +110,46 @@ export const profitService = {
       },
     });
 
+    // 5. Fetch operational expenses (non-cancelled, matching by incurred date or recording date)
+    const expenses = await prisma.expense.findMany({
+      where: {
+        isCancelled: false,
+        OR: [
+          { date: { gte: start, lte: end } },
+          { createdAt: { gte: start, lte: end } },
+        ],
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    // 6. Fetch asset depreciations for the period
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+    const startMonth = start.getMonth() + 1;
+    const endMonth = end.getMonth() + 1;
+
+    const depreciations = await prisma.assetDepreciation.findMany({
+      where: {
+        status: 'PROCESSED',
+        OR: [
+          { createdAt: { gte: start, lte: end } },
+          {
+            AND: [
+              { year: { gte: startYear, lte: endYear } },
+              ...(startYear === endYear && startMonth === endMonth ? [{ month: startMonth }] : []),
+            ],
+          },
+        ],
+      },
+      include: {
+        asset: { select: { id: true, code: true, name: true, category: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // Calculations:
     let grossRevenue = 0;
     let totalDiscount = 0;
@@ -124,11 +179,8 @@ export const profitService = {
 
       for (const item of order.items || []) {
         let itemCogs = parseFloat(item.lineCost || 0);
-        // Fallback calculation if lineCost was 0
         if (itemCogs <= 0 && item.productId) {
-          const qty = parseFloat(item.quantity || item.qty || 1);
-          // Rough base estimate if recorded cost missing
-          itemCogs = 0; 
+          itemCogs = 0;
         }
         totalCogs += itemCogs;
       }
@@ -162,7 +214,6 @@ export const profitService = {
     totalWasteCost = Math.round(totalWasteCost * 100) / 100;
 
     // Labor Shift Cost Calculation:
-    // Count unique staff shifts per day
     let totalLaborCost = 0;
     const staffShiftCount = {};
     for (const shift of shifts) {
@@ -180,19 +231,48 @@ export const profitService = {
     }
     totalLaborCost = Math.round(totalLaborCost * 100) / 100;
 
-    // Total Operating Expenses (Beban Operasional):
-    const totalOperatingExpenses = Math.round((totalPettyCashOut + totalWasteCost + totalLaborCost) * 100) / 100;
+    // Operational Expenses Breakdown:
+    let totalOperationalExpenses = 0;
+    const expenseCategoryBreakdown = {};
+    for (const exp of expenses) {
+      const amt = parseFloat(exp.amount || 0);
+      totalOperationalExpenses += amt;
+      const cat = exp.category?.name || 'Biaya Lainnya';
+      expenseCategoryBreakdown[cat] = (expenseCategoryBreakdown[cat] || 0) + amt;
+    }
+    totalOperationalExpenses = Math.round(totalOperationalExpenses * 100) / 100;
 
-    // Net Profit (Estimasi Laba Bersih):
+    // Asset Depreciation Breakdown:
+    let totalDepreciationCost = 0;
+    const depreciationAssetBreakdown = {};
+    for (const dep of depreciations) {
+      const amt = parseFloat(dep.depreciationAmount || 0);
+      totalDepreciationCost += amt;
+      const assetName = dep.asset?.name || 'Aset Tetap';
+      depreciationAssetBreakdown[assetName] = (depreciationAssetBreakdown[assetName] || 0) + amt;
+    }
+    totalDepreciationCost = Math.round(totalDepreciationCost * 100) / 100;
+
+    // Total Operating Expenses (Total Beban Operasional Lengkap):
+    const totalOperatingExpenses =
+      Math.round(
+        (totalPettyCashOut +
+          totalWasteCost +
+          totalLaborCost +
+          totalOperationalExpenses +
+          totalDepreciationCost) *
+          100
+      ) / 100;
+
+    // Net Profit (Estimasi Laba Bersih Komprehensif):
     const netProfit = Math.round((grossProfit - totalOperatingExpenses) * 100) / 100;
     const netMarginPct = grossRevenue > 0 ? Math.round((netProfit / grossRevenue) * 1000) / 10 : 0;
 
     // Day-by-Day Waterfall Summary (for chart / trends)
     const dayMap = {};
-    // Populate days in range
     let curDay = new Date(start);
     while (curDay <= end) {
-      const dStr = curDay.toISOString().slice(0, 10);
+      const dStr = formatDayKey(curDay);
       dayMap[dStr] = {
         date: dStr,
         revenue: 0,
@@ -201,6 +281,9 @@ export const profitService = {
         cashOut: 0,
         waste: 0,
         labor: 0,
+        operationalExpenses: 0,
+        depreciation: 0,
+        totalExpenses: 0,
         netProfit: 0,
         ordersCount: 0,
       };
@@ -208,41 +291,62 @@ export const profitService = {
     }
 
     orders.forEach((o) => {
-      const dStr = new Date(o.createdAt).toISOString().slice(0, 10);
+      const dStr = formatDayKey(o.createdAt);
       if (dayMap[dStr]) {
         const rev = parseFloat(o.total || 0);
         let cogs = 0;
-        (o.items || []).forEach((it) => { cogs += parseFloat(it.lineCost || 0); });
+        (o.items || []).forEach((it) => {
+          cogs += parseFloat(it.lineCost || 0);
+        });
         dayMap[dStr].revenue += rev;
         dayMap[dStr].cogs += cogs;
-        dayMap[dStr].grossProfit += (rev - cogs);
+        dayMap[dStr].grossProfit += rev - cogs;
         dayMap[dStr].ordersCount += 1;
       }
     });
 
     cashOutMovements.forEach((cm) => {
-      const dStr = new Date(cm.createdAt).toISOString().slice(0, 10);
+      const dStr = formatDayKey(cm.createdAt);
       if (dayMap[dStr]) {
         dayMap[dStr].cashOut += parseFloat(cm.amount || 0);
       }
     });
 
     wasteMovements.forEach((wm) => {
-      const dStr = new Date(wm.createdAt).toISOString().slice(0, 10);
+      const dStr = formatDayKey(wm.createdAt);
       if (dayMap[dStr]) {
         dayMap[dStr].waste += Math.abs(parseFloat(wm.totalCost || 0));
       }
     });
 
     shifts.forEach((s) => {
-      const dStr = new Date(s.openedAt).toISOString().slice(0, 10);
+      const dStr = formatDayKey(s.openedAt);
       if (dayMap[dStr] && s.cashier) {
         dayMap[dStr].labor += parseFloat(s.cashier.dailyAllowance || 0);
       }
     });
 
+    expenses.forEach((exp) => {
+      const dDateStr = formatDayKey(exp.date);
+      const dCreatedStr = formatDayKey(exp.createdAt);
+      const targetDay = dayMap[dDateStr] ? dDateStr : dayMap[dCreatedStr] ? dCreatedStr : Object.keys(dayMap)[0];
+      if (targetDay && dayMap[targetDay]) {
+        dayMap[targetDay].operationalExpenses += parseFloat(exp.amount || 0);
+      }
+    });
+
+    depreciations.forEach((dep) => {
+      const dStr = formatDayKey(dep.createdAt || dep.processedAt);
+      const targetDay = dayMap[dStr] ? dStr : Object.keys(dayMap)[0];
+      if (targetDay && dayMap[targetDay]) {
+        dayMap[targetDay].depreciation += parseFloat(dep.depreciationAmount || 0);
+      }
+    });
+
     const dailyTrends = Object.values(dayMap).map((d) => {
-      const net = d.grossProfit - d.cashOut - d.waste - d.labor;
+      const dayTotalExpenses =
+        d.cashOut + d.waste + d.labor + d.operationalExpenses + d.depreciation;
+      const net = d.grossProfit - dayTotalExpenses;
       return {
         ...d,
         revenue: Math.round(d.revenue),
@@ -251,6 +355,9 @@ export const profitService = {
         cashOut: Math.round(d.cashOut),
         waste: Math.round(d.waste),
         labor: Math.round(d.labor),
+        operationalExpenses: Math.round(d.operationalExpenses),
+        depreciation: Math.round(d.depreciation),
+        totalExpenses: Math.round(dayTotalExpenses),
         netProfit: Math.round(net),
         marginPct: d.revenue > 0 ? Math.round((net / d.revenue) * 100) : 0,
       };
@@ -273,6 +380,8 @@ export const profitService = {
           pettyCashOut: totalPettyCashOut,
           wasteCost: totalWasteCost,
           laborCost: totalLaborCost,
+          operationalExpenses: totalOperationalExpenses,
+          depreciationCost: totalDepreciationCost,
           totalOperatingExpenses,
         },
         netProfit,
@@ -280,8 +389,47 @@ export const profitService = {
         isProfitable: netProfit >= 0,
       },
       breakdowns: {
-        pettyCashByReason: Object.entries(pettyCashBreakdown).map(([reason, amount]) => ({ reason, amount })),
-        wasteByReason: Object.entries(wasteBreakdown).map(([reason, cost]) => ({ reason, cost })),
+        pettyCashByReason: Object.entries(pettyCashBreakdown)
+          .map(([reason, amount]) => ({
+            reason,
+            amount,
+          }))
+          .sort((a, b) => b.amount - a.amount),
+        wasteByReason: Object.entries(wasteBreakdown)
+          .map(([reason, cost]) => ({
+            reason,
+            cost,
+          }))
+          .sort((a, b) => b.cost - a.cost),
+        expensesByCategory: Object.entries(expenseCategoryBreakdown)
+          .map(([category, amount]) => ({
+            category,
+            amount: Math.round(amount * 100) / 100,
+          }))
+          .sort((a, b) => b.amount - a.amount),
+        depreciationsByAsset: Object.entries(depreciationAssetBreakdown)
+          .map(([asset, amount]) => ({
+            asset,
+            amount: Math.round(amount * 100) / 100,
+          }))
+          .sort((a, b) => b.amount - a.amount),
+        recentExpenses: expenses.slice(0, 5).map((e) => ({
+          id: e.id,
+          referenceNo: e.referenceNo,
+          description: e.description,
+          amount: parseFloat(e.amount),
+          category: e.category?.name,
+          date: e.date,
+        })),
+        recentDepreciations: depreciations.slice(0, 5).map((d) => ({
+          id: d.id,
+          assetName: d.asset?.name,
+          assetCode: d.asset?.code,
+          year: d.year,
+          month: d.month,
+          amount: parseFloat(d.depreciationAmount),
+          createdAt: d.createdAt,
+        })),
         recentPettyCash: cashOutMovements.slice(0, 5),
         recentWaste: wasteMovements.slice(0, 5),
       },

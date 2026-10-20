@@ -434,15 +434,36 @@ export default function HrisStaffTab({
 
                       {/* Status Akun */}
                       <td className="py-3.5 px-4">
-                        {staff.isActive ? (
-                          <span className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                            <span>Aktif</span>
-                          </span>
+                        {isManagerOrOwner && !isSelf && (isOwner || staff.role !== 'OWNER') ? (
+                          <button
+                            type="button"
+                            onClick={() => onUpdateStaff(staff.id, { isActive: !staff.isActive })}
+                            title={staff.isActive ? 'Klik untuk menonaktifkan akun staf' : 'Klik untuk mengaktifkan akun staf'}
+                            className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                              staff.isActive
+                                ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/30'
+                                : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 border border-neutral-700'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                staff.isActive ? 'bg-emerald-400' : 'bg-neutral-500'
+                              }`}
+                            />
+                            <span>{staff.isActive ? 'Aktif' : 'Nonaktif'}</span>
+                          </button>
                         ) : (
-                          <span className="text-neutral-500 text-xs font-bold flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-neutral-600" />
-                            <span>Nonaktif</span>
+                          <span
+                            className={`text-xs font-bold flex items-center gap-1.5 ${
+                              staff.isActive ? 'text-emerald-400' : 'text-neutral-500'
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                staff.isActive ? 'bg-emerald-400' : 'bg-neutral-600'
+                              }`}
+                            />
+                            <span>{staff.isActive ? 'Aktif' : 'Nonaktif'}</span>
                           </span>
                         )}
                       </td>
@@ -472,12 +493,12 @@ export default function HrisStaffTab({
                               </button>
                             )}
 
-                            {/* Deactivate button (not allowed on self or owner if caller is manager) */}
+                            {/* Delete button (not allowed on self or owner if caller is manager) */}
                             {(!isSelf && (isOwner || staff.role !== 'OWNER')) && (
                               <button
                                 type="button"
                                 onClick={() => setStaffToDelete(staff)}
-                                title="Nonaktifkan Akun"
+                                title="Hapus Akun Staf"
                                 className="p-1.5 rounded-lg text-komazi-muted hover:text-rose-400 hover:bg-komazi-surface transition-all"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -766,13 +787,13 @@ export default function HrisStaffTab({
         </div>
       )}
 
-      {/* Deactivate Confirmation Modal */}
+      {/* Delete Confirmation Modal */}
       {staffToDelete && (
         <AlertModal
           isOpen={true}
-          title="Nonaktifkan Staf?"
-          message={`Apakah Anda yakin ingin menonaktifkan akun ${staffToDelete.name} (@${staffToDelete.username})? Data riwayat presensi dan order tetap aman tersimpan.`}
-          confirmText="Ya, Nonaktifkan"
+          title="Hapus Akun Staf?"
+          message={`Apakah Anda yakin ingin menghapus akun ${staffToDelete.name} (@${staffToDelete.username})? Jika staf belum memiliki riwayat transaksi atau presensi, akun akan dihapus permanen dari sistem. Jika sudah memiliki riwayat, akun akan dinonaktifkan secara aman agar pembukuan dan laporan keuangan tetap utuh.`}
+          confirmText="Ya, Hapus Staf"
           cancelText="Batal"
           type="danger"
           onConfirm={handleConfirmDelete}

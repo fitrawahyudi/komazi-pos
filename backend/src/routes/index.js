@@ -29,6 +29,9 @@ import printerRoutes, {
 import publicRoutes from './publicRoutes.js';
 import cmsRoutes from './cmsRoutes.js';
 import backupRoutes from './backupRoutes.js';
+import expenseRoutes from './expenseRoutes.js';
+import assetRoutes from './assetRoutes.js';
+import depreciationRoutes from './depreciationRoutes.js';
 
 const router = Router();
 
@@ -38,6 +41,7 @@ router.use('/cms', cmsRoutes);
 
 router.use('/backup', backupRoutes);
 router.use('/hris', hrisRoutes);
+router.use('/attendance', hrisRoutes);
 router.use('/approvals', approvalRoutes);
 router.use('/notifications', notificationRoutes);
 
@@ -58,12 +62,16 @@ router.use('/stations', stationRoutes);
 router.use('/shifts', shiftRoutes);
 router.use('/workspace', workspaceRoutes);
 router.use('/ingredients', stockRoutes);
+router.use('/stock', stockRoutes);
 router.use('/reports', reportRoutes);
 router.use('/settings', settingRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/analytics/ai', aiAnalyticsRoutes);
 router.use('/telegram', telegramRoutes);
+router.use('/expenses', expenseRoutes);
+router.use('/assets', assetRoutes);
+router.use('/depreciations', depreciationRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

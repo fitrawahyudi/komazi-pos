@@ -324,8 +324,16 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     encoder.bold(true).line(`*** ${headerText.trim()} ***`).bold(false);
   }
 
+  const isMerchantCopy = Boolean(options.isMerchantCopy || order.isMerchantCopy);
+
   if (order.isBillCheck) {
     encoder.bold(true).line('*** TAGIHAN SEMENTARA (BILL) ***').bold(false);
+  } else if (isMerchantCopy) {
+    encoder
+      .align('center')
+      .bold(true)
+      .line('*** STRUK PERTINGGAL ***')
+      .bold(false);
   }
 
   encoder
@@ -409,6 +417,14 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     encoder.bold(true);
     encoder.twoColumns('Kembalian:', formatRupiah(cashChange || 0), paperWidth);
     encoder.bold(false);
+  }
+
+  // Jika struk pertinggal, selesai sampai metode pembayaran / tunai & kembalian
+  if (isMerchantCopy) {
+    encoder
+      .feed(3)
+      .cut();
+    return encoder.encode();
   }
 
   // Print Dynamic QRIS section if payment method is QRIS, or explicitly requested

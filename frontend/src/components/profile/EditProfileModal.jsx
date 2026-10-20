@@ -22,11 +22,23 @@ import {
   Unlink,
   RefreshCw,
   Bell,
+  LogOut,
+  Tv,
+  Volume2,
+  VolumeX,
+  Coffee,
+  Utensils,
+  ChefHat,
+  SlidersHorizontal,
+  Maximize2,
+  Minimize2,
+  ArrowRight,
 } from 'lucide-react';
 import LoadingButton from '../ui/loading/LoadingButton';
 import { useShiftStore } from '../../store/shiftStore';
 import { toast } from '../../store/toastStore';
 import { formatRupiah, formatDateTime } from '../../utils/format';
+import { playKitchenChime } from '../../utils/audio';
 import AndroidNotificationCard from '../settings/AndroidNotificationCard';
 
 const AVATAR_PRESETS = [
@@ -37,19 +49,27 @@ const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
 ];
 
-export default function EditProfileModal({ onClose }) {
+export default function EditProfileModal({
+  onClose,
+  initialTab = 'profile',
+  isKdsMode = false,
+  kdsProps = null,
+}) {
   const {
     user,
     updateProfile,
     refreshProfile,
     generateTelegramLinkCode,
     unlinkTelegram,
+    logout,
   } = useAuthStore();
   const { activeShift } = useShiftStore();
   const fileInputRef = useRef(null);
 
+  const isKdsStaff = isKdsMode || user?.role === 'BARISTA' || user?.role === 'KITCHEN';
+
   // Active tab state
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState(initialTab || 'profile');
 
   // Profile fields
   const [name, setName] = useState(user?.name || '');
@@ -300,7 +320,7 @@ export default function EditProfileModal({ onClose }) {
       id: 'profile',
       label: 'Profil Akun',
       icon: User,
-      badge: activeShift ? 'Shift Aktif' : null,
+      badge: activeShift && !isKdsStaff ? 'Shift Aktif' : null,
       badgeVariant: 'success',
     },
     {
@@ -308,6 +328,15 @@ export default function EditProfileModal({ onClose }) {
       label: 'Notifikasi HP',
       icon: Bell,
     },
+    ...(isKdsMode
+      ? [
+          {
+            id: 'kds',
+            label: 'Layar KDS/BDS',
+            icon: Tv,
+          },
+        ]
+      : []),
     {
       id: 'telegram',
       label: 'Bot Telegram',
@@ -332,14 +361,16 @@ export default function EditProfileModal({ onClose }) {
         <div className="p-4 sm:p-5 border-b border-komazi-border flex items-center justify-between bg-komazi-surface-2/50 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral shadow-inner">
-              <User className="w-5 h-5" />
+              {isKdsMode ? <Tv className="w-5 h-5" /> : <User className="w-5 h-5" />}
             </div>
             <div>
               <h2 id="profile-dialog-title" className="font-display font-bold text-sm text-komazi-text">
-                Pengaturan Profil
+                {isKdsMode ? 'Pengaturan KDS & Profil Akun' : 'Pengaturan Profil'}
               </h2>
               <p className="text-[11px] text-komazi-muted">
-                Profil staf, notifikasi, Telegram, dan kata sandi
+                {isKdsMode
+                  ? 'Profil staf, notifikasi Android, suara lonceng, dan kata sandi'
+                  : 'Profil staf, notifikasi, Telegram, dan kata sandi'}
               </p>
             </div>
           </div>
@@ -607,9 +638,14 @@ export default function EditProfileModal({ onClose }) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-komazi-muted flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-komazi-teal-light" />
-                      <span>Status Shift Kasir:</span>
+                      <span>{isKdsStaff ? 'Status Stasiun KDS:' : 'Status Shift Kasir:'}</span>
                     </span>
-                    {activeShift ? (
+                    {isKdsStaff ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Online & Siap Produksi</span>
+                      </span>
+                    ) : activeShift ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-success/15 border border-success/30 text-success">
                         <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                         <span>Shift Aktif #{activeShift.id}</span>
@@ -621,7 +657,7 @@ export default function EditProfileModal({ onClose }) {
                     )}
                   </div>
 
-                  {activeShift && (
+                  {!isKdsStaff && activeShift && (
                     <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-komazi-border/50">
                       <div>
                         <span className="text-komazi-muted block text-[10px]">Mulai Shift:</span>
@@ -653,7 +689,20 @@ export default function EditProfileModal({ onClose }) {
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center justify-end pt-3 border-t border-komazi-border">
+              <div className="flex items-center justify-between pt-3 border-t border-komazi-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    onClose();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/30 rounded-xl transition-colors cursor-pointer"
+                  title="Keluar dari akun staf dan ganti akun"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Ganti Akun / Logout</span>
+                </button>
+
                 <LoadingButton
                   type="submit"
                   isLoading={isSubmitting || isUploadingAvatar}
@@ -677,7 +726,186 @@ export default function EditProfileModal({ onClose }) {
               aria-labelledby="tab-notifications"
               className="space-y-4 animate-fadeIn"
             >
-              <AndroidNotificationCard />
+              <AndroidNotificationCard isKdsMode={isKdsMode} />
+            </div>
+          )}
+
+          {/* TAB 2.5: PENGATURAN KDS & BDS */}
+          {activeTab === 'kds' && (
+            <div
+              id="panel-kds"
+              role="tabpanel"
+              aria-labelledby="tab-kds"
+              className="space-y-4 animate-fadeIn"
+            >
+              <div className="p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-komazi-coral/15 border border-komazi-coral/30 flex items-center justify-center text-komazi-coral shrink-0">
+                      <Tv className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-komazi-text">
+                        Preferensi Layar KDS & BDS
+                      </h3>
+                      <p className="text-[10px] text-komazi-muted">
+                        Kontrol audio lonceng, stasiun operasional, dan layar produksi
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 1. Suara Lonceng Pesanan Baru */}
+                <div className="p-3.5 rounded-xl bg-komazi-surface border border-komazi-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                        <Volume2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-komazi-text block">
+                          Suara Lonceng Pesanan Baru (Chime)
+                        </span>
+                        <span className="text-[10px] text-komazi-muted">
+                          Bunyikan denting audio lonceng saat pesanan baru masuk dari kasir
+                        </span>
+                      </div>
+                    </div>
+
+                    {kdsProps?.setIsSoundEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          kdsProps.setIsSoundEnabled(!kdsProps.isSoundEnabled);
+                          toast.success(
+                            !kdsProps.isSoundEnabled
+                              ? 'Suara lonceng KDS diaktifkan'
+                              : 'Suara lonceng KDS dimatikan'
+                          );
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          kdsProps.isSoundEnabled ? 'bg-emerald-500' : 'bg-neutral-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            kdsProps.isSoundEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-komazi-border/50 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playKitchenChime();
+                        toast.info('🔔 Memutar suara lonceng dapur/bar');
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-semibold border border-komazi-border transition-colors cursor-pointer"
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Uji Coba Suara Lonceng</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Pilihan Stasiun Tampilan */}
+                {kdsProps?.setStationFilter && (
+                  <div className="p-3.5 rounded-xl bg-komazi-surface border border-komazi-border space-y-3">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="w-4 h-4 text-komazi-coral" />
+                      <span className="text-xs font-bold text-komazi-text">
+                        Filter Stasiun Produksi
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { key: 'ALL', label: 'Semua Station', icon: ChefHat },
+                        { key: 'KITCHEN', label: 'Dapur (KDS)', icon: Utensils },
+                        { key: 'BAR', label: 'Barista (BDS)', icon: Coffee },
+                      ].map(({ key, label, icon: Icon }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => {
+                            kdsProps.setStationFilter(key);
+                            toast.success(`Filter stasiun diubah ke: ${label}`);
+                          }}
+                          className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-bold transition-all gap-1.5 ${
+                            kdsProps.stationFilter === key
+                              ? 'bg-komazi-coral/15 border-komazi-coral text-komazi-coral shadow-sm'
+                              : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-white'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="text-[11px] text-center">{label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Notifikasi Android Quick Link */}
+                <div className="p-3.5 rounded-xl bg-komazi-surface border border-komazi-border flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-komazi-text block">
+                        Notifikasi Sistem Android
+                      </span>
+                      <span className="text-[10px] text-komazi-muted">
+                        Terima heads-up notifikasi & getaran pesanan di HP Android
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('notifications')}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <span>Atur Notifikasi</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* 4. Layar Penuh (Fullscreen) */}
+                {kdsProps?.toggleFullscreen && (
+                  <div className="p-3.5 rounded-xl bg-komazi-surface border border-komazi-border flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-komazi-text block">
+                        Mode Layar Penuh (Fullscreen TV)
+                      </span>
+                      <span className="text-[10px] text-komazi-muted">
+                        KDS tampil optimal pada Smart TV atau tablet dapur
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={kdsProps.toggleFullscreen}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text text-xs font-bold border border-komazi-border transition-colors cursor-pointer"
+                    >
+                      {kdsProps.isFullscreen ? (
+                        <>
+                          <Minimize2 className="w-3.5 h-3.5" />
+                          <span>Kecilkan</span>
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>Layar Penuh</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

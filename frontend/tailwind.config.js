@@ -14,6 +14,12 @@ export default {
             dark: "#E0453A",
             soft: "rgba(255, 90, 77, 0.15)"
           },
+          primary: {
+            DEFAULT: "#FF5A4D",
+            hover: "#E0453A",
+            dark: "#E0453A",
+            soft: "rgba(255, 90, 77, 0.15)"
+          },
           teal: {
             DEFAULT: "#1F6F6B",
             light: "#2FA39C",

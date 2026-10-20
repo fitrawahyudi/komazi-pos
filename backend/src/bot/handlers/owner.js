@@ -39,18 +39,11 @@ function buildSentinelKeyboard(sentinelJob) {
 }
 
 export function registerOwner(bot) {
-  // 1) Ringkasan Realtime (Dengan Animasi Loading Kontekstual)
+  // 1) Ringkasan Realtime (Dengan Animasi Loading Bar)
   bot.command('ringkasan', requireRole('OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'upload_photo',
-        frames: [
-          '⏳ <b>Menghubungkan ke database MySQL...</b>',
-          '📊 <b>Mengkalkulasi omzet & metode bayar...</b>',
-          '🎨 <b>Merender kartu eksekutif realtime...</b>',
-        ],
-      },
+      { chatAction: 'upload_photo' },
       async () => {
         const [today, yesterday, activeWs] = await Promise.all([
           orderService.getSummary('today'),
@@ -82,6 +75,8 @@ export function registerOwner(bot) {
 • Transfer Bank: ${rupiah(today.byMethod.TRANSFER)}
 ━━━━━━━━━━━━━━━━━━
 <i>Gunakan /laporan untuk melihat laporan per periode.</i>
+
+🤖 <i>@komazi-assistant</i>
         `.trim();
 
         return replyWithPhotoFallback(ctx, {
@@ -120,14 +115,7 @@ export function registerOwner(bot) {
 
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'upload_photo',
-        frames: [
-          '⏳ <b>Membaca riwayat transaksi periode...</b>',
-          '📈 <b>Mengagregasi item terlaris & diskon...</b>',
-          '📋 <b>Menyusun ringkasan laporan keuangan...</b>',
-        ],
-      },
+      { chatAction: 'upload_photo' },
       async () => {
         const summary = await orderService.getSummary(period);
 
@@ -204,6 +192,8 @@ ${topLines}
 Status Keuangan: ${statusIcon}
 ━━━━━━━━━━━━━━━━━━
 <i>Dihitung realtime: Omzet - HPP - Kas Keluar - Waste - Upah Shift.</i>
+
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     const kb = new InlineKeyboard()
@@ -220,14 +210,7 @@ Status Keuangan: ${statusIcon}
   bot.command(['profit', 'lababersih'], requireRole('OWNER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '💰 <b>Menghitung omzet penjualan & HPP resep...</b>',
-          '💸 <b>Merekonsiliasi kas keluar & kerugian waste...</b>',
-          '📊 <b>Mengkalkulasi estimasi laba bersih (P&L)...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         try {
           const report = await profitService.calculateProfitAndLoss({ period: 'today' });
@@ -303,15 +286,7 @@ Status Keuangan: ${statusIcon}
   bot.command(['prediksi', 'briefing'], requireRole('OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🧠 <b>Mengakses AI Predictive Analytics Engine...</b>',
-          '📈 <b>Menganalisis kurva 30 hari transaksi & tren 7 hari...</b>',
-          '🎯 <b>Menghitung proyeksi omset & jam ramai riil...</b>',
-          '💡 <b>Menyusun executive strategic briefing AI...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         try {
           const forecast = await calculatePeakHourAndRevenueForecast();
@@ -346,7 +321,7 @@ ${topMenuText}
 ━━━━━━━━━━━━━━━━━━
 ${aiInsight}
 ━━━━━━━━━━━━━━━━━━
-<i>Dianalisis secara real-time dari data riil transaksi POS Komazi.</i>
+<i>Dianalisis secara real-time • @komazi-assistant</i>
           `.trim();
 
           const kb = new InlineKeyboard()
@@ -394,14 +369,7 @@ ${aiInsight}
   bot.command(['cek_stok_kritis', 'prediksi_stok'], requireRole('OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🔍 <b>Membaca laju konsumsi bahan 7 hari...</b>',
-          '⚡ <b>Menghitung sisa jam runout persediaan...</b>',
-          '⚠️ <b>Mengompilasi rekomendasi restock...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         try {
           const stockForecast = await calculateStockRunoutForecast();
@@ -439,6 +407,8 @@ Status: <b>${stockForecast.hasCriticalRisk ? `${stockForecast.criticalCount} Bah
 ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: sisa ${it.currentStock} ${it.unit} (${it.estimatedRunoutTime ? `habis ~${it.hoursUntilStockout} jam / ${it.estimatedRunoutTime}` : 'habis'})`).join('\n') || 'Tidak ada bahan yang terancam habis dalam waktu dekat.'}
 ━━━━━━━━━━━━━━━━━━
 <i>Dihitung dari laju konsumsi pesanan aktif.${ingredientsWithSupplier.length > 0 ? ' Klik tombol di bawah untuk langsung pesan ke WhatsApp supplier.' : ''}</i>
+
+🤖 <i>@komazi-assistant</i>
           `.trim();
 
           return replyWithPhotoFallback(ctx, {
@@ -456,13 +426,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
   bot.command('evaluasi_ai', requireRole('OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🌙 <b>Mengumpulkan data rekonsiliasi penutupan hari ini...</b>',
-          '🎯 <b>Mengkalkulasi rasio pencapaian target...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         try {
           const closeComparison = await generateClosingComparison();
@@ -474,7 +438,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
 📈 <b>Pencapaian:</b> ${closeComparison.achievementRatePct}% (${closeComparison.badgeLabel})
 🧾 <b>Total Struk:</b> ${closeComparison.totalTransactions} pesanan
 ━━━━━━━━━━━━━━━━━━
-<i>Laporan performa harian Komazi POS Autonomous Engine.</i>
+<i>Laporan performa harian • @komazi-assistant</i>
           `.trim();
 
           return replyWithPhotoFallback(ctx, {
@@ -492,14 +456,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
   bot.command(['sentinel', 'status', 'health', 'cek_sistem'], requireRole('OWNER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🛡️ <b>Memeriksa kesehatan database MySQL...</b>',
-          '🤖 <b>Memverifikasi status engine Komazi AI...</b>',
-          '📦 <b>Memindai stok kritis & memory server...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const status = await checkSystemHealth({ checkAi: true });
         const sentinelJob = await prisma.scheduledJob.findFirst({
@@ -734,14 +691,7 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
     await ctx.answerCallbackQuery({ text: '🧠 Menghitung prediksi terbaru...' }).catch(() => {});
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🧠 <b>Menghubungkan ke AI Analytics Engine...</b>',
-          '📊 <b>Menganalisis kurva riil & tren terkini...</b>',
-          '🎯 <b>Menyusun analisis eksekutif terbaru...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         try {
           const forecast = await calculatePeakHourAndRevenueForecast();
@@ -771,7 +721,7 @@ ${topMenuText}
 🧠 <b>ANALISIS STRATEGI & TAKTIS:</b>
 ${aiInsight}
 ━━━━━━━━━━━━━━━━━━
-<i>Diperbarui secara real-time dari data transaksi POS Komazi.</i>
+<i>Diperbarui secara real-time • @komazi-assistant</i>
           `.trim();
 
           const kb = new InlineKeyboard()
@@ -802,7 +752,7 @@ ${aiInsight}
 Status: <b>${stockForecast.hasCriticalRisk ? `${stockForecast.criticalCount} Bahan Berisiko Kritis ⚠️` : 'Semua Bahan Aman Terkendali ✅'}</b>
 ${stockForecast.criticalItems.slice(0, 5).map((it) => `• <b>${esc(it.name)}</b>: sisa ${it.currentStock} ${esc(it.unit)} (${it.estimatedRunoutTime ? `habis ~${it.hoursUntilStockout} jam / ${it.estimatedRunoutTime}` : 'habis'})`).join('\n') || 'Tidak ada bahan yang terancam habis dalam waktu dekat.'}
 ━━━━━━━━━━━━━━━━━━
-<i>Dihitung dari laju konsumsi pesanan aktif database.</i>
+<i>Dihitung dari laju konsumsi pesanan aktif • @komazi-assistant</i>
       `.trim();
 
       return replyWithPhotoFallback(ctx, {
@@ -848,7 +798,7 @@ ${stockForecast.criticalItems.slice(0, 5).map((it) => `• <b>${esc(it.name)}</b
    • QRIS: ${today.qrisShare}%
    • Transfer: ${today.transferShare}%
 ━━━━━━━━━━━━━━━━━━
-<i>Data sinkronisasi real-time Komazi POS.</i>
+<i>Data sinkronisasi real-time • @komazi-assistant</i>
       `.trim();
 
       return replyWithPhotoFallback(ctx, {

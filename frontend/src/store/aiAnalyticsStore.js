@@ -256,7 +256,73 @@ export const useAiAnalyticsStore = create(
           'Berapa total omset dan transaksi hari ini?',
         ];
       }
-      // 2. Intent Omset / Penjualan
+      // 1b. Intent Data & Penjualan Kemarin
+      else if (q.includes('kemarin') || q.includes('yesterday') || q.includes('hari lalu')) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yOrders = orders.filter((o) => {
+          if (o.status !== 'PAID' || !o.createdAt) return false;
+          const d = new Date(o.createdAt);
+          return (
+            d.getFullYear() === yesterday.getFullYear() &&
+            d.getMonth() === yesterday.getMonth() &&
+            d.getDate() === yesterday.getDate()
+          );
+        });
+
+        const yRev = yOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const yProductMap = {};
+        yOrders.forEach((o) => {
+          (o.items || []).forEach((item) => {
+            const name = item.name || item.productName || 'Produk';
+            if (!yProductMap[name]) yProductMap[name] = { name, qty: 0, revenue: 0 };
+            yProductMap[name].qty += Number(item.qty || 1);
+            yProductMap[name].revenue += Number(item.lineTotal || (item.price * (item.qty || 1)));
+          });
+        });
+        const ySorted = Object.values(yProductMap).sort((a, b) => b.qty - a.qty);
+
+        if (yOrders.length > 0) {
+          narrative = `📊 **Ringkasan Penjualan Kemarin:**\n\n- **Total Omset Kemarin**: **${formatRupiah(yRev)}**\n- **Jumlah Transaksi**: **${yOrders.length} transaksi**\n- Rata-rata per Transaksi: **${formatRupiah(Math.round(yRev / yOrders.length))}**\n`;
+          if (ySorted.length > 0) {
+            narrative += `- **Menu Terlaris Kemarin**: **${ySorted[0].name}** (${ySorted[0].qty} terjual - ${formatRupiah(ySorted[0].revenue)})\n`;
+          }
+          narrative += `\n💡 **Perbandingan Hari Ini**: Omset hari ini tercatat **${formatRupiah(totalRevenue)}** (${validOrders.length} transaksi).`;
+        } else {
+          // Cari pesanan sebelum hari ini jika ada
+          const pastOrders = orders.filter((o) => {
+            if (o.status !== 'PAID' || !o.createdAt) return false;
+            const d = new Date(o.createdAt);
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            return d < todayStart;
+          }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+          if (pastOrders.length > 0) {
+            const lastDate = new Date(pastOrders[0].createdAt);
+            const lastDateStr = lastDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            const sameDayPastOrders = pastOrders.filter((o) => {
+              const d = new Date(o.createdAt);
+              return (
+                d.getFullYear() === lastDate.getFullYear() &&
+                d.getMonth() === lastDate.getMonth() &&
+                d.getDate() === lastDate.getDate()
+              );
+            });
+            const pRev = sameDayPastOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+            narrative = `📌 **Data Penjualan Kemarin:**\n\nPada hari kalender kemarin, **tidak tercatat transaksi lunas** di sistem (kedai libur/tutup atau belum ada penjualan).\n\n🔍 **Hari Operasional Aktif Terakhir (${lastDateStr}):**\n- **Total Omset**: **${formatRupiah(pRev)}** (${sameDayPastOrders.length} transaksi)\n\n💡 **Omset Hari Ini**: Sementara tercatat **${formatRupiah(totalRevenue)}** (${validOrders.length} transaksi).`;
+          } else {
+            narrative = `📌 **Data Penjualan Kemarin:**\n\nPada hari kalender kemarin, tidak tercatat transaksi lunas di sistem (kedai libur/tutup atau belum ada penjualan).\n\n💡 **Omset Hari Ini**: Sementara tercatat **${formatRupiah(totalRevenue)}** (${validOrders.length} transaksi).`;
+          }
+        }
+        customFollowUps = [
+          'Menu apa yang paling laku hari ini?',
+          'Berapa total omset dan transaksi hari ini?',
+          'Berapa sisa stok bahan baku?',
+        ];
+      }
+      // 2. Intent Omset / Penjualan Umum
       else if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('transaksi') || q.includes('penjualan')) {
         narrative = `💰 **Ringkasan Pendapatan Kedai Hari Ini:**\n\n- **Total Omset**: **${formatRupiah(totalRevenue)}**\n- **Jumlah Transaksi Lunas**: **${validOrders.length} transaksi**\n- Rata-rata per Transaksi: **${validOrders.length > 0 ? formatRupiah(Math.round(totalRevenue / validOrders.length)) : 'Rp 0'}**`;
         customFollowUps = [

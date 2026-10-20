@@ -15,14 +15,21 @@ import {
   Coins,
   Receipt,
   FileSpreadsheet,
+  LogOut,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { formatRupiah, formatDateTime } from '../../utils/format';
 import { usePrinterStore } from '../../store/printerStore';
 import { useShiftStore } from '../../store/shiftStore';
+import { useHrisStore } from '../../store/hrisStore';
+import { useAuthStore } from '../../store/authStore';
 import { toast } from '../../store/toastStore';
 import { exportZReportToExcel } from '../../utils/excel';
 
-export default function CloseSessionReportModal({ session, onClose }) {
+export default function CloseSessionReportModal({ session, onClose, onProceedToClockOut }) {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const myTodayAttendance = useHrisStore((state) => state.myTodayAttendance);
   const { isConnected: isPrinterConnected } = usePrinterStore();
   const printRef = useRef(null);
 
@@ -44,8 +51,10 @@ export default function CloseSessionReportModal({ session, onClose }) {
 
   const paymentMethods = session.paymentMethodsSummary || {
     CASH: totalCashSales,
+    CARD: 0,
     QRIS: totalNonCashSales,
     TRANSFER: 0,
+    OTHER: 0,
   };
 
   const cashiers = session.cashiers || [
@@ -84,6 +93,19 @@ export default function CloseSessionReportModal({ session, onClose }) {
       toast.success(`Laporan Z-Report berhasil diekspor (${result.fileName})!`);
     } catch (err) {
       toast.error('Gagal mengekspor laporan: ' + err.message);
+    }
+  };
+
+  const isCurrentUserClockedIn = Boolean(
+    myTodayAttendance && myTodayAttendance.clockIn && !myTodayAttendance.clockOut
+  );
+
+  const handleProceedToClockOut = () => {
+    if (onProceedToClockOut) {
+      onProceedToClockOut();
+    } else {
+      onClose();
+      navigate('/hris/attendance?action=clockout');
     }
   };
 
@@ -265,15 +287,21 @@ export default function CloseSessionReportModal({ session, onClose }) {
               <span>Rincian Pembayaran Penjualan</span>
               <span className="font-mono font-black text-komazi-text">{formatRupiah(totalSales)}</span>
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface border border-komazi-border">
-                <span className="text-komazi-muted">Uang Tunai</span>
+                <span className="text-komazi-muted">Tunai</span>
                 <span className="font-mono font-bold text-komazi-text">
                   {formatRupiah(paymentMethods.CASH || 0)}
                 </span>
               </div>
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface border border-komazi-border">
-                <span className="text-komazi-muted">QRIS Digital</span>
+                <span className="text-komazi-muted">Kartu</span>
+                <span className="font-mono font-bold text-komazi-text">
+                  {formatRupiah(paymentMethods.CARD || 0)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface border border-komazi-border">
+                <span className="text-komazi-muted">QRIS</span>
                 <span className="font-mono font-bold text-komazi-text">
                   {formatRupiah(paymentMethods.QRIS || 0)}
                 </span>
@@ -282,6 +310,12 @@ export default function CloseSessionReportModal({ session, onClose }) {
                 <span className="text-komazi-muted">Transfer Bank</span>
                 <span className="font-mono font-bold text-komazi-text">
                   {formatRupiah(paymentMethods.TRANSFER || 0)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-komazi-surface border border-komazi-border">
+                <span className="text-komazi-muted">Lainnya</span>
+                <span className="font-mono font-bold text-komazi-text">
+                  {formatRupiah(paymentMethods.OTHER || 0)}
                 </span>
               </div>
             </div>
@@ -309,6 +343,31 @@ export default function CloseSessionReportModal({ session, onClose }) {
               </div>
             </div>
           )}
+
+          {/* 5. Alur Lanjutan: Presensi Pulang jika sedang bekerja */}
+          {isCurrentUserClockedIn && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-emerald-200">
+                    Sesi Kasir Selesai Ditutup
+                  </div>
+                  <p className="text-emerald-300/80 text-[11px] leading-relaxed">
+                    Giliran kerja Anda masih tercatat masuk (Clock-In). Jika Anda ingin mengakhiri giliran kerja hari ini, silakan lanjutkan ke presensi pulang.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleProceedToClockOut}
+                className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/20 transition-all flex items-center justify-center gap-2 shrink-0 active:scale-95"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Lanjutkan Presensi Pulang</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Modal Action Buttons */}
@@ -329,6 +388,26 @@ export default function CloseSessionReportModal({ session, onClose }) {
             >
               <Printer className="w-4 h-4" />
               <span>Cetak Laporan</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isCurrentUserClockedIn && (
+              <button
+                type="button"
+                onClick={handleProceedToClockOut}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-sm transition-all active:scale-95"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Presensi Pulang</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 text-komazi-text font-bold text-xs border border-komazi-border transition-all"
+            >
+              Tutup Laporan
             </button>
           </div>
         </div>

@@ -8,18 +8,11 @@ import { replyWithPhotoFallback, sendPhotoWithFallback } from '../utils/sendVisu
 import { withLoadingAnimation } from '../utils/loading.js';
 
 export function registerBarista(bot) {
-  // 1) Lihat antrean pesanan sesuai role staf (Dengan Animasi Loading Kontekstual)
+  // 1) Lihat antrean pesanan sesuai role staf (Dengan Animasi Loading Bar)
   bot.command(['antrean', 'antrian'], requireRole('BARISTA', 'KITCHEN', 'MANAGER', 'OWNER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'upload_photo',
-        frames: [
-          '🔍 <b>Memindai tiket pesanan aktif stasiun...</b>',
-          '☕ <b>Menyortir urutan antrean racikan...</b>',
-          '🎨 <b>Menyiapkan papan antrean visual...</b>',
-        ],
-      },
+      { chatAction: 'upload_photo' },
       async () => {
         const userRole = (ctx.user?.role || 'BARISTA').toUpperCase();
         const queue = await orderService.listQueue(userRole);
@@ -68,7 +61,7 @@ export function registerBarista(bot) {
           return `${icon} <b>${esc(o.invoiceNo)}</b> (${o.type} ${o.tableNo ? `Meja ${esc(o.tableNo)}` : ''})\n${items}\nStatus: <code>${o.status}</code>`;
         }).join('\n\n━━━━━━━━━━━━━━━━━━\n\n');
 
-        const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━`;
+        const caption = `${roleTitle}\n━━━━━━━━━━━━━━━━━━\n\n${cards}\n\n━━━━━━━━━━━━━━━━━━\n\n🤖 <i>@komazi-assistant</i>`;
 
         return replyWithPhotoFallback(ctx, {
           imageBufferPromise: generateBotImage('queue_dashboard', {

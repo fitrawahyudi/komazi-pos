@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePersistentState } from '../hooks/usePersistentState';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useOrdersStore } from '../store/ordersStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useStockStore } from '../store/stockStore';
@@ -28,7 +28,25 @@ import {
   FileSpreadsheet,
   FileText,
   LineChart as LucideLineChart,
+  Package,
+  Tag,
+  Users,
+  Utensils,
+  UserCheck,
+  Wallet,
 } from 'lucide-react';
+import {
+  ProductsReportView,
+  CategoriesReportView,
+  CustomersReportView,
+  OrderTypesReportView,
+  PaymentsReportView,
+  TaxesReportView,
+  DiscountsReportView,
+  StaffReportView,
+  CashDrawerReportView,
+} from '../components/reports/ReportTableViews';
+import { api } from '../services/api';
 import {
   AreaChart,
   Area,
@@ -48,7 +66,6 @@ export default function ReportsPage({ tab: propTab }) {
   const { user } = useAuthStore();
   const canViewCogs = user?.role === 'OWNER' || user?.role === 'MANAGER';
   const location = useLocation();
-  const navigate = useNavigate();
 
   const orders = useOrdersStore((s) => s.orders);
   const fetchOrders = useOrdersStore((s) => s.fetchOrders);
@@ -58,16 +75,20 @@ export default function ReportsPage({ tab: propTab }) {
 
   const activeTab = React.useMemo(() => {
     if (propTab) return propTab;
-    if (location.pathname.includes('/cogs')) return 'COGS';
-    if (location.pathname.includes('/profit-loss')) return 'PROFIT_LOSS';
+    const path = location.pathname;
+    if (path.includes('/products')) return 'PRODUCTS';
+    if (path.includes('/categories')) return 'CATEGORIES';
+    if (path.includes('/customers')) return 'CUSTOMERS';
+    if (path.includes('/order-types')) return 'ORDER_TYPES';
+    if (path.includes('/payments')) return 'PAYMENTS';
+    if (path.includes('/taxes')) return 'TAXES';
+    if (path.includes('/discounts')) return 'DISCOUNTS';
+    if (path.includes('/staff')) return 'STAFF';
+    if (path.includes('/cash-drawer')) return 'CASH_DRAWER';
+    if (path.includes('/cogs')) return 'COGS';
+    if (path.includes('/profit-loss')) return 'PROFIT_LOSS';
     return 'SALES';
   }, [propTab, location.pathname]);
-
-  const handleTabChange = (newTab) => {
-    if (newTab === 'COGS') navigate('/reports/cogs');
-    else if (newTab === 'PROFIT_LOSS') navigate('/reports/profit-loss');
-    else navigate('/reports/sales');
-  };
 
   const [dateRange, setDateRange] = usePersistentState('reports_dateRange', 'TODAY'); // 'TODAY' | 'WEEK' | 'MONTH'
 
@@ -272,22 +293,85 @@ export default function ReportsPage({ tab: propTab }) {
     handleExport('EXCEL', 'FILTERED');
   };
 
+  const [shifts, setShifts] = useState([]);
+  React.useEffect(() => {
+    if (activeTab === 'CASH_DRAWER') {
+      api.shifts.getHistory({ limit: 100 })
+        .then((res) => {
+          if (res && res.success && Array.isArray(res.data)) {
+            setShifts(res.data);
+          }
+        })
+        .catch((err) => console.warn('Gagal memuat riwayat shift:', err));
+    }
+  }, [activeTab]);
+
+  const filteredShifts = React.useMemo(() => {
+    if (!shifts || shifts.length === 0) return [];
+    return shifts.filter((sh) => isOrderInDateRange(sh.openedAt, dateRange));
+  }, [shifts, dateRange]);
+
   // Dynamic header metadata per tab
   const pageMeta = {
     SALES: {
-      title: 'Laporan Penjualan & Omzet',
+      title: 'Ringkasan Penjualan',
       desc: 'Dashboard visual performa omzet harian, tren per jam, komposisi pembayaran, dan menu terlaris.',
       icon: TrendingUp,
     },
+    PRODUCTS: {
+      title: 'Laporan Penjualan Produk',
+      desc: 'Analisis kuantitas terjual, omzet menu, takaran HPP, dan margin laba kotor per item produk.',
+      icon: Package,
+    },
+    CATEGORIES: {
+      title: 'Laporan Kategori Menu',
+      desc: 'Distribusi penjualan dan kontribusi omzet per kategori menu makanan, minuman, dan workspace.',
+      icon: Tag,
+    },
+    CUSTOMERS: {
+      title: 'Laporan Pelanggan & Tamu',
+      desc: 'Statistik loyalitas pelanggan, frekuensi kunjungan, dan akumulasi nilai transaksi pelanggan.',
+      icon: Users,
+    },
+    ORDER_TYPES: {
+      title: 'Laporan Tipe Pesanan',
+      desc: 'Perbandingan omzet dan transaksi antara layanan Dine-In (makan di tempat) vs Take-Away.',
+      icon: Utensils,
+    },
+    PAYMENTS: {
+      title: 'Laporan Metode Pembayaran',
+      desc: 'Rincian penerimaan transaksi kasir melalui QRIS, Uang Tunai (Cash), dan Transfer Bank.',
+      icon: CreditCard,
+    },
+    TAXES: {
+      title: 'Laporan Pajak Penjualan (PB1)',
+      desc: 'Rekapitulasi dasar pengenaan pajak (DPP) dan setoran pajak restoran PB1 dari transaksi lunas.',
+      icon: Receipt,
+    },
+    DISCOUNTS: {
+      title: 'Laporan Diskon & Promosi',
+      desc: 'Daftar transaksi yang mendapatkan potongan harga, promosi, dan persentase diskon yang diberikan.',
+      icon: Percent,
+    },
+    STAFF: {
+      title: 'Laporan Kinerja Pegawai / Kasir',
+      desc: 'Jumlah struk pesanan yang ditangani dan total omzet yang berhasil diproses oleh setiap kasir.',
+      icon: UserCheck,
+    },
+    CASH_DRAWER: {
+      title: 'Laporan Kas Laci Kasir',
+      desc: 'Rekapitulasi mutasi kas harian, modal awal, kas keluar, setor brankas, dan selisih kas fisik.',
+      icon: Wallet,
+    },
     COGS: {
-      title: 'Laporan Laba Kotor & Analisis Margin HPP (COGS)',
+      title: 'Laporan Laba Kotor (COGS)',
       desc: 'Perhitungan laba kotor otomatis berdasarkan takaran resep (BOM) dan snapshot modal setiap transaksi.',
       icon: Scale,
     },
     PROFIT_LOSS: {
-      title: 'Laporan Estimasi Laba Bersih (P&L)',
-      desc: 'Analisis laba bersih akrual: Omzet dikurangi HPP, petty cash kas keluar, kerugian waste bahan, dan upah shift.',
-      icon: LucideLineChart,
+      title: 'Laporan Estimasi Laba Rugi',
+      desc: 'Analisis laba bersih akrual: Omzet dikurangi HPP, kas kecil kasir, depresiasi aset, dan waste.',
+      icon: Scale,
     },
   }[activeTab] || {
     title: 'Laporan & Analisis Bisnis',
@@ -345,119 +429,176 @@ export default function ReportsPage({ tab: propTab }) {
             </button>
           </div>
 
-          {/* Export Dropdown Group */}
-          <div className="relative" ref={exportMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-komazi-teal to-emerald-600 hover:from-komazi-teal-light hover:to-emerald-500 text-white text-xs font-bold shadow-md transition-all active:scale-95"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export Laporan</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                  showExportMenu ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
+          {/* Export Dropdown Group (Hanya ditampilkan pada Ringkasan Penjualan / SALES) */}
+          {activeTab === 'SALES' && (
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-komazi-teal to-emerald-600 hover:from-komazi-teal-light hover:to-emerald-500 text-white text-xs font-bold shadow-md transition-all active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Laporan</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    showExportMenu ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
-            {/* Dropdown Menu */}
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl p-3 z-50 animate-scale-in space-y-2 backdrop-blur-xl">
-                <div className="px-2 pt-1 pb-2 border-b border-komazi-border/60">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted">
-                    Pilih Format Ekspor Laporan
-                  </p>
-                  <p className="text-xs text-komazi-text font-medium mt-0.5">
-                    Filter aktif:{' '}
-                    <span className="text-komazi-teal font-bold">{dateRangeLabel}</span>{' '}
-                    ({filteredOrders.length} transaksi)
-                  </p>
-                </div>
+              {/* Dropdown Menu */}
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl p-3 z-50 animate-scale-in space-y-2 backdrop-blur-xl">
+                  <div className="px-2 pt-1 pb-2 border-b border-komazi-border/60">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted">
+                      Pilih Format Ekspor Laporan
+                    </p>
+                    <p className="text-xs text-komazi-text font-medium mt-0.5">
+                      Filter aktif:{' '}
+                      <span className="text-komazi-teal font-bold">{dateRangeLabel}</span>{' '}
+                      ({filteredOrders.length} transaksi)
+                    </p>
+                  </div>
 
-                {/* Option 1: Excel (.xlsx) */}
-                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border/80 hover:border-emerald-500/40 transition-all space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
-                        <FileSpreadsheet className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-komazi-text">Microsoft Excel (.xlsx)</span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            Rekomendasi
-                          </span>
+                  {/* Option 1: Excel (.xlsx) */}
+                  <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border/80 hover:border-emerald-500/40 transition-all space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
+                          <FileSpreadsheet className="w-4 h-4" />
                         </div>
-                        <p className="text-[10px] text-komazi-muted mt-0.5">
-                          Spreadsheet rapi, lebar kolom otomatis, format angka & kartu ringkasan.
-                        </p>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-komazi-text">Microsoft Excel (.xlsx)</span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              Rekomendasi
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-komazi-muted mt-0.5">
+                            Spreadsheet rapi, lebar kolom otomatis, format angka & kartu ringkasan.
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleExport('EXCEL', 'FILTERED')}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold text-center transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
-                    >
-                      <span>{dateRangeLabel} ({filteredOrders.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleExport('EXCEL', 'ALL')}
-                      className="px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border hover:border-emerald-500/50 text-komazi-text text-[11px] font-medium text-center transition-all active:scale-95 flex items-center justify-center gap-1"
-                    >
-                      <span>Semua ({orders.length})</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Option 2: CSV (.csv) */}
-                <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border/80 hover:border-komazi-teal/40 transition-all space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-komazi-teal/15 text-komazi-teal-light shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-komazi-text">File CSV (.csv)</span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-komazi-teal/20 text-komazi-teal-light border border-komazi-teal/30">
-                            Excel ID
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-komazi-muted mt-0.5">
-                          Pemisah titik-koma (;) & UTF-8 BOM, kolom terpisah rapi di Excel.
-                        </p>
-                      </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleExport('EXCEL', 'FILTERED')}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold text-center transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <span>{dateRangeLabel} ({filteredOrders.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport('EXCEL', 'ALL')}
+                        className="px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border hover:border-emerald-500/50 text-komazi-text text-[11px] font-medium text-center transition-all active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <span>Semua ({orders.length})</span>
+                      </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleExport('CSV', 'FILTERED')}
-                      className="px-2.5 py-1.5 rounded-lg bg-komazi-teal hover:bg-komazi-teal-light text-white text-[11px] font-bold text-center transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
-                    >
-                      <span>{dateRangeLabel} ({filteredOrders.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleExport('CSV', 'ALL')}
-                      className="px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border hover:border-komazi-teal/50 text-komazi-text text-[11px] font-medium text-center transition-all active:scale-95 flex items-center justify-center gap-1"
-                    >
-                      <span>Semua ({orders.length})</span>
-                    </button>
+
+                  {/* Option 2: CSV (.csv) */}
+                  <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border/80 hover:border-komazi-teal/40 transition-all space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-komazi-teal/15 text-komazi-teal-light shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-komazi-text">File CSV (.csv)</span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-komazi-teal/20 text-komazi-teal-light border border-komazi-teal/30">
+                              Excel ID
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-komazi-muted mt-0.5">
+                            Pemisah titik-koma (;) & UTF-8 BOM, kolom terpisah rapi di Excel.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleExport('CSV', 'FILTERED')}
+                        className="px-2.5 py-1.5 rounded-lg bg-komazi-teal hover:bg-komazi-teal-light text-white text-[11px] font-bold text-center transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <span>{dateRangeLabel} ({filteredOrders.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport('CSV', 'ALL')}
+                        className="px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border hover:border-komazi-teal/50 text-komazi-text text-[11px] font-medium text-center transition-all active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <span>Semua ({orders.length})</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Render Tab Content */}
-      {activeTab === 'COGS' && canViewCogs ? (
+      {/* 2. Render Tab Content */}
+      {activeTab === 'PRODUCTS' ? (
+        <ProductsReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          canViewCogs={canViewCogs}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'CATEGORIES' ? (
+        <CategoriesReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'CUSTOMERS' ? (
+        <CustomersReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'ORDER_TYPES' ? (
+        <OrderTypesReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'PAYMENTS' ? (
+        <PaymentsReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'TAXES' ? (
+        <TaxesReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'DISCOUNTS' ? (
+        <DiscountsReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'STAFF' ? (
+        <StaffReportView
+          orders={filteredOrders}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'CASH_DRAWER' ? (
+        <CashDrawerReportView
+          shiftHistory={filteredShifts}
+          dateRangeLabel={dateRangeLabel}
+          storeName={settings?.storeName}
+        />
+      ) : activeTab === 'COGS' && canViewCogs ? (
         <CogsReportView
           dateRange={dateRange}
           onExportCSV={handleExportCSV}

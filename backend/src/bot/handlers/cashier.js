@@ -81,18 +81,11 @@ export function registerCashier(bot) {
     ctx.conversation.enter('quickOrder')
   );
 
-  // 3) Daftar Open Bill / Pesanan Aktif (Dengan Animasi Loading & Pagination 10 Item + Tombol Angka)
+  // 3) Daftar Open Bill / Pesanan Aktif (Dengan Animasi Loading Bar & Pagination 10 Item + Tombol Angka)
   bot.command('pesanan', requireRole('CASHIER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🧾 <b>Mengambil daftar open bill belum lunas...</b>',
-          '🔍 <b>Memvalidasi status pesanan kasir...</b>',
-          '📋 <b>Menampilkan daftar pesanan aktif...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const openOrders = await orderService.listOpenBills();
 
@@ -168,6 +161,8 @@ ${itemsLines}
 ${Number(order.discount) > 0 ? `• Diskon: -${rupiah(order.discount)}\n` : ''}<b>TOTAL AKHIR: ${rupiah(order.total)}</b>
 ━━━━━━━━━━━━━━━━━━━━━━
 <i>Gunakan tombol di bawah untuk mengajukan persetujuan atau kembali ke daftar:</i>
+
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     const kb = new InlineKeyboard()
@@ -186,18 +181,11 @@ ${Number(order.discount) > 0 ? `• Diskon: -${rupiah(order.discount)}\n` : ''}<
     return ctx.conversation.enter('requestApproval');
   });
 
-  // 4) Area Workspace & Timer (Dengan Animasi Loading Kontekstual)
+  // 4) Area Workspace & Timer (Dengan Animasi Loading Bar)
   bot.command('workspace', requireRole('CASHIER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'find_location',
-        frames: [
-          '💻 <b>Memeriksa sensor area workspace...</b>',
-          '⏱ <b>Mengkalkulasi durasi sesi & status overtime...</b>',
-          '📋 <b>Menyiapkan denah status meja...</b>',
-        ],
-      },
+      { chatAction: 'find_location' },
       async () => {
         const areas = await workspaceService.listAllAreasWithStatus();
 
@@ -246,17 +234,11 @@ ${Number(order.discount) > 0 ? `• Diskon: -${rupiah(order.discount)}\n` : ''}<
     return ctx.conversation.enter('checkinWorkspace');
   });
 
-  // 5) Check-out Workspace (Dengan Animasi Loading & Pagination 10 Item + Tombol Angka)
+  // 5) Check-out Workspace (Dengan Animasi Loading Bar & Pagination 10 Item + Tombol Angka)
   async function handleCheckoutList(ctx) {
     return withLoadingAnimation(
       ctx,
-      {
-        chatAction: 'typing',
-        frames: [
-          '🔍 <b>Membaca sesi tamu workspace aktif...</b>',
-          '⏱ <b>Mengkalkulasi durasi berjalan & overtime...</b>',
-        ],
-      },
+      { chatAction: 'typing' },
       async () => {
         const activeSessions = await workspaceService.getActiveSessions();
 

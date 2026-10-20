@@ -64,7 +64,7 @@ export async function getRegisters(req, res) {
 export async function getCurrentShift(req, res) {
   try {
     const registerId = req.query.registerId ? parseInt(req.query.registerId) : null;
-    const currentShift = await shiftService.getCurrent(registerId);
+    const currentShift = await shiftService.getCurrent(registerId, req.user?.id);
 
     if (!currentShift) {
       return successResponse(res, null, 'Tidak ada sesi kasir aktif saat ini');
@@ -148,6 +148,7 @@ export async function openShift(req, res) {
       totalCashOut: 0,
       totalCashDrop: 0,
       totalCashRefund: 0,
+      paymentMethodsSummary: { CASH: 0, CARD: 0, QRIS: 0, TRANSFER: 0, OTHER: 0 },
       cashMovements: [],
       ordersCount: 0,
       isClosed: false,
@@ -177,14 +178,10 @@ export async function openShift(req, res) {
 export async function closeShift(req, res) {
   try {
     const userId = req.user.id;
+    const userRole = req.user.role;
     const { closingCash, notes, shiftId } = req.body;
 
-    const eligibility = await checkStaffShiftEligibility(userId, req.user.role);
-    if (!eligibility.eligible) {
-      return errorResponse(res, eligibility.message, 403);
-    }
-
-    const result = await shiftService.close(userId, closingCash, notes, shiftId);
+    const result = await shiftService.close(userId, closingCash, notes, shiftId, userRole);
 
     const formattedResult = {
       id: result.shift.id,
@@ -228,7 +225,8 @@ export async function closeShift(req, res) {
 
     return successResponse(res, formattedResult, 'Sesi kasir berhasil ditutup dan direkonsiliasi');
   } catch (err) {
-    return errorResponse(res, err.message, 400);
+    const statusCode = err.statusCode || (err.message && err.message.includes('izin') ? 403 : 400);
+    return errorResponse(res, err.message, statusCode);
   }
 }
 
@@ -252,6 +250,7 @@ export async function createCashMovement(req, res) {
       amount,
       reason,
       shiftId: targetShiftId,
+      userRole: req.user.role,
     });
 
     const formatted = {
@@ -273,7 +272,8 @@ export async function createCashMovement(req, res) {
 
     return successResponse(res, formatted, 'Arus kas berhasil dicatat di database', 201);
   } catch (err) {
-    return errorResponse(res, err.message, 400);
+    const statusCode = err.statusCode || (err.message && (err.message.includes('izin') || err.message.includes('Akses ditolak')) ? 403 : 400);
+    return errorResponse(res, err.message, statusCode);
   }
 }
 

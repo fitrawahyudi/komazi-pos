@@ -1,612 +1,477 @@
-# IMPLEMENTATION.md — Database Backup & Recovery Komazi POS
+# implementation.md — Hak Akses dan Keamanan Riwayat Pesanan Komazi POS
+
+**Modul:** Riwayat Pesanan  
+**Prioritas:** Tinggi  
+**Status:** Spesifikasi implementasi  
+**Target:** Antigravity / Gemini Code Assistant
 
 ## 1. Tujuan
 
-Implementasikan sistem backup dan pemulihan database untuk Komazi POS dengan standar operasional production.
+Implementasikan sistem hak akses Riwayat Pesanan pada Komazi POS agar semua kasir dapat melihat riwayat transaksi, tetapi tidak dapat memanipulasi transaksi yang telah diselesaikan.
 
-**Stack yang diketahui:**
-- Frontend: React + Vite + Capacitor
-- Backend: Node.js + Express
-- ORM: Prisma
-- Database: MySQL (`komazi_pos`)
-- Backend dan database: Railway
-- Frontend web: Vercel
-- Android: Capacitor APK
+Stack aplikasi:
 
-Semua stack, struktur folder, konfigurasi deployment, model database, sistem autentikasi, dan mekanisme scheduler wajib diverifikasi dari source code aktual sebelum implementasi.
+- Frontend: React + Vite + Capacitor.
+- Backend: Node.js + Express.
+- ORM: Prisma.
+- Database: MySQL.
+- Deployment: Vercel untuk frontend dan Railway untuk backend serta database.
 
-### Target fitur
+**Instruksi utama:** audit source code aktual sebelum mengubah kode. Pertahankan seluruh fitur lama, struktur database, autentikasi, sistem role, transaksi pembayaran, sesi kasir, persediaan, KDS/BDS, dan laporan yang sudah berjalan.
 
-1. Backup otomatis terjadwal.
-2. Backup manual melalui dashboard.
-3. Penyimpanan backup di luar database utama.
-4. Riwayat backup dan status proses.
-5. Validasi integritas file backup.
-6. Kebijakan retensi otomatis.
-7. Pengujian pemulihan database.
-8. Pemulihan terkontrol dengan persetujuan Owner.
-9. Audit log untuk semua tindakan penting.
-10. Notifikasi jika backup gagal atau berhasil.
-11. Monitoring agar kegagalan backup tidak luput dari perhatian.
+Jangan mengasumsikan nama model, endpoint, status pesanan, atau struktur middleware tanpa memeriksa repository.
 
-## 2. Aturan utama: audit sebelum implementasi
+---
 
-Sebelum mengubah kode, lakukan audit source code aktual dan dokumentasikan hasilnya.
+## 2. Kebijakan hak akses
 
-Periksa:
+Terapkan aturan berikut sebagai target perilaku aplikasi.
 
-- Struktur direktori frontend dan backend.
-- `package.json` dan script yang tersedia.
-- Konfigurasi environment variable.
-- Prisma schema, migration, dan relasi model.
-- Mekanisme login, session, JWT, middleware, serta RBAC.
-- Role yang benar-benar digunakan saat ini.
-- Struktur audit log dan sistem logging.
-- Scheduler atau cron job yang sudah tersedia.
-- Integrasi Railway dan konfigurasi deployment.
-- Mekanisme penyimpanan file atau gambar yang digunakan aplikasi.
-- Pengujian yang tersedia.
-- Ukuran database dan kemungkinan keterbatasan resource saat backup.
-- Apakah sudah ada fitur backup, backup manual, atau backup dari provider.
+| Aksi | Kasir pemilik pesanan | Kasir lain | Owner/Admin berwenang |
+|---|---|---|---|
+| Melihat daftar riwayat | Ya | Ya | Ya |
+| Melihat detail pesanan | Ya | Ya | Ya |
+| Melihat total dan rincian item | Ya | Ya | Ya |
+| Melihat informasi pembayaran yang relevan | Ya | Ya | Ya |
+| Cetak ulang struk | Ya | Ya | Ya |
+| Edit pesanan yang belum dibayar | Ya, sesuai status | Tidak, kecuali pengalihan resmi | Sesuai izin |
+| Edit pesanan yang sudah dibayar | Tidak | Tidak | Tidak secara langsung |
+| Menghapus transaksi selesai | Tidak | Tidak | Tidak secara langsung |
+| Membatalkan transaksi | Sesuai kebijakan dan status | Sesuai kebijakan dan status | Sesuai izin |
+| Melakukan refund | Hanya jika diberi izin | Hanya jika diberi izin | Sesuai izin |
+| Melihat audit trail | Sesuai izin | Sesuai izin | Sesuai izin |
 
-Buat ringkasan temuan terlebih dahulu. Gunakan hasil audit sebagai dasar implementasi, bukan asumsi.
+Owner/Admin tidak otomatis boleh mengubah transaksi yang sudah dibayar secara langsung. Koreksi transaksi harus melalui prosedur yang dapat diaudit.
 
-**Jangan membuat sistem kedua jika fungsi yang setara sudah tersedia.** Integrasikan dengan mekanisme yang ada apabila aman dan sesuai.
+Role Admin harus mengikuti permission aktual aplikasi. Jangan memperluas hak akses Admin secara diam-diam.
 
-## 3. Arsitektur backup
+### Prinsip dasar
 
-Gunakan pendekatan berlapis.
+1. Semua kasir dapat melihat riwayat pesanan seluruh kasir.
+2. Kepemilikan pesanan tidak memberikan hak untuk memodifikasi transaksi yang sudah selesai.
+3. Pesanan yang belum dibayar hanya dapat diedit oleh kasir penanggung jawab, kecuali ada mekanisme pengalihan resmi.
+4. Transaksi yang sudah dibayar tidak dapat diedit atau dihapus oleh kasir.
+5. Refund dan pembatalan harus mengikuti aturan status transaksi dan otorisasi yang berlaku.
+6. Semua validasi wajib dilakukan di backend.
+7. Data transaksi historis tidak boleh dihapus hanya untuk memperbaiki kesalahan.
 
-### Lapisan A — Backup bawaan Railway
+---
 
-- Periksa ketersediaan backup native dan Point-in-Time Recovery (PITR) untuk layanan MySQL yang digunakan.
-- Verifikasi fitur yang tersedia pada konfigurasi layanan dan paket Railway saat ini.
-- Dokumentasikan jadwal, retensi, batasan, serta langkah restore dari dashboard Railway.
-- Jangan menganggap backup native tersedia, aktif, atau memiliki retensi tertentu sebelum diverifikasi.
-- Jangan menganggap backup native menggantikan backup eksternal.
+## 3. Audit source code sebelum implementasi
 
-### Lapisan B — Backup logis eksternal
+Periksa bagian berikut:
 
-Buat backup logis database MySQL secara berkala dan simpan pada object storage yang terpisah dari database produksi dan filesystem sementara container.
+- Model pesanan dan item pesanan di Prisma.
+- Relasi pesanan dengan pengguna atau kasir pembuat.
+- Status pesanan, pembayaran, pembatalan, dan refund.
+- Alur checkout dan konfirmasi pembayaran.
+- Sistem penggabungan bill jika tersedia.
+- Sistem sesi kasir dan identitas kasir yang sedang bertugas.
+- Endpoint riwayat pesanan dan detail pesanan.
+- Endpoint edit, hapus, cancel, refund, dan cetak struk.
+- Middleware autentikasi dan otorisasi.
+- Komponen React untuk riwayat pesanan dan detail transaksi.
+- Sistem persediaan, HPP, dan mutasi stok.
+- Integrasi KDS/BDS.
+- Sistem laporan dan audit log.
 
-Gunakan object storage yang kompatibel dengan S3 atau penyimpanan eksternal setara yang benar-benar tersedia dan dapat dikonfigurasi.
+Buat `implementation-audit.md` yang mencatat:
 
-Persyaratan:
+1. Model dan relasi yang sudah ada.
+2. Status pesanan dan transisi status yang sah.
+3. Endpoint serta komponen yang perlu disesuaikan.
+4. Risiko perubahan terhadap transaksi dan laporan.
+5. Migration yang diperlukan, jika ada.
+6. Daftar pengujian regresi.
 
-- File backup tidak hanya disimpan di direktori lokal Railway.
-- Penyimpanan backup menggunakan bucket atau lokasi khusus.
-- Akses storage memakai kredensial dengan hak minimum yang diperlukan.
-- Kredensial disimpan di environment variable atau secret manager.
-- Backup dapat dipulihkan meskipun database produksi tidak tersedia.
-- Jangan mengasumsikan file lokal akan tetap ada setelah redeploy atau restart container.
+Lanjutkan implementasi setelah audit selesai. Jangan berhenti hanya dengan menghasilkan laporan.
 
-### Lapisan C — Dashboard Komazi POS
+---
 
-Dashboard menjadi pusat untuk:
+## 4. Aturan berdasarkan status pesanan
 
-- Melihat status backup terakhir.
-- Melihat riwayat backup.
-- Menjalankan backup manual.
-- Melihat ukuran dan waktu pembuatan backup.
-- Mengetahui hasil verifikasi integritas.
-- Mengetahui kegagalan dan alasan yang aman untuk ditampilkan.
-- Melihat status pemeriksaan pemulihan.
-- Mengakses prosedur restore sesuai hak akses.
+Jangan membuat status baru jika status yang setara sudah tersedia. Petakan aturan berikut ke status aktual aplikasi.
 
-Dashboard tidak boleh menjadi satu-satunya tempat penyimpanan backup.
+### A. Pesanan terbuka atau belum dibayar
 
-## 4. Kebijakan jadwal backup
+- Kasir pemilik pesanan boleh melihat dan mengedit sesuai status.
+- Kasir lain hanya dapat melihat.
+- Pengeditan harus ditolak jika pembayaran sudah dimulai atau status sudah berubah sehingga pengeditan tidak lagi aman.
+- Jika pesanan perlu dialihkan ke kasir lain, gunakan mekanisme pengalihan yang tercatat.
+- Jangan mengizinkan penggantian pemilik pesanan hanya dengan mengubah ID kasir melalui request.
 
-Jadikan jadwal dapat dikonfigurasi tanpa mengubah source code.
+### B. Pesanan sudah dibayar atau selesai
 
-Konfigurasi awal yang direkomendasikan:
+- Semua kasir boleh melihat detail pesanan.
+- Semua kasir boleh mencetak ulang struk.
+- Kasir tidak boleh mengubah item, harga, diskon, pajak, total, metode pembayaran, atau waktu transaksi.
+- Kasir tidak boleh menghapus pesanan.
+- Kasir tidak boleh mengembalikan status pesanan ke status terbuka.
+- Perubahan administratif yang benar-benar diperlukan harus melalui prosedur koreksi resmi yang memiliki audit trail.
 
-| Jenis | Jadwal | Retensi awal |
-|---|---|---|
-| Harian | Setiap hari pukul 02.00 WIB | 14 hari |
-| Mingguan | Setiap Minggu pukul 03.00 WIB | 8 minggu |
-| Bulanan | Tanggal 1 pukul 04.00 WIB | 6 bulan |
-| Manual | Sesuai permintaan Owner | Mengikuti kebijakan retensi yang ditentukan |
+### C. Pesanan dibatalkan
 
-Angka tersebut adalah konfigurasi awal, bukan jaminan bahwa penyimpanan memiliki kapasitas tak terbatas. Evaluasi biaya, kapasitas, dan kebutuhan pemulihan sebelum mengaktifkannya.
+- Riwayat tetap tersedia.
+- Detail pembatalan dan alasan pembatalan ditampilkan sesuai permission.
+- Pesanan yang sudah dibatalkan tidak dapat diedit atau diaktifkan kembali secara langsung oleh kasir.
+- Jika pesanan perlu diproses kembali, gunakan alur resmi yang sesuai dengan sistem saat ini.
 
-### Zona waktu
+### D. Pesanan direfund
 
-Gunakan zona waktu `Asia/Jakarta` sebagai acuan operasional.
+- Transaksi asli tetap dipertahankan.
+- Refund dicatat sebagai transaksi atau peristiwa tersendiri sesuai arsitektur yang ada.
+- Nominal refund tidak boleh melebihi nominal yang dapat direfund.
+- Refund berulang tidak boleh menggandakan pengembalian dana.
+- Status refund harus konsisten dengan catatan pembayaran dan laporan.
+- Refund tidak boleh dilakukan hanya dengan mengubah status pesanan menjadi `REFUNDED` tanpa pencatatan dampak finansial.
 
-Jika memakai Railway Cron, verifikasi bahwa jadwal cron berjalan dalam UTC. Contoh, pukul 02.00 WIB sama dengan pukul 19.00 UTC pada hari sebelumnya, sehingga jadwal harian UTC-nya adalah:
+---
 
-`0 19 * * *`
+## 5. Implementasi frontend
 
-Pastikan jadwal mingguan dan bulanan juga dikonversi dengan benar. Beri label waktu pada dashboard secara konsisten agar tidak membingungkan pengguna.
+Sesuaikan halaman Riwayat Pesanan yang sudah ada. Jangan membuat halaman duplikat jika modulnya telah tersedia.
 
-### Pemilihan scheduler
+### A. Daftar riwayat
 
-- Audit scheduler yang sudah ada terlebih dahulu.
-- Gunakan scheduler yang sudah tersedia apabila cukup andal.
-- Jika belum ada, pilih Railway Cron Job atau mekanisme scheduler backend yang sesuai dengan arsitektur aktual.
-- Untuk Railway Cron Job, pastikan proses berakhir setelah tugas selesai.
-- Jangan menjalankan scheduler yang sama secara tidak sengaja pada banyak instance backend.
-- Cegah dua backup berjalan bersamaan menggunakan distributed lock atau mekanisme koordinasi yang sesuai.
-- Gunakan idempotency key atau identitas eksekusi untuk mencegah duplikasi.
+Semua kasir dapat melihat daftar pesanan dari seluruh kasir.
 
-## 5. Proses backup
+Informasi yang disarankan:
 
-Implementasikan alur berikut:
+- Nomor pesanan.
+- Tanggal dan waktu.
+- Nama kasir penanggung jawab.
+- Nama atau nomor meja jika tersedia.
+- Jenis pesanan.
+- Jumlah item.
+- Total pembayaran.
+- Status pesanan.
+- Status pembayaran.
+- Tombol detail.
+- Tombol cetak ulang struk.
 
-1. Scheduler atau Owner meminta backup.
-2. Backend memvalidasi hak akses dan parameter.
-3. Sistem memeriksa apakah backup lain sedang berjalan.
-4. Sistem membuat catatan eksekusi dengan ID unik.
-5. Sistem memvalidasi koneksi database dan storage.
-6. Sistem menjalankan proses dump MySQL dengan metode yang sesuai.
-7. Sistem memeriksa exit code proses dump.
-8. Sistem mengompresi hasil dump bila diperlukan.
-9. Sistem mengenkripsi file backup sebelum atau selama proses penyimpanan sesuai desain yang dipilih.
-10. Sistem menghitung checksum, misalnya SHA-256.
-11. Sistem mengunggah file ke storage eksternal.
-12. Sistem memverifikasi ukuran dan checksum file yang disimpan.
-13. Sistem mencatat metadata dan hasil verifikasi.
-14. Sistem menandai backup sebagai `SUCCESS` hanya jika seluruh langkah wajib berhasil.
-15. Sistem mengirim notifikasi sesuai konfigurasi.
-16. Sistem membersihkan file sementara dengan aman.
+Gunakan pagination dan filter periode untuk mencegah pemuatan seluruh data sekaligus.
 
-Jika salah satu langkah kritis gagal, jangan menandai backup sebagai berhasil.
+### B. Filter
 
-### Metode dump
+Sediakan filter yang relevan:
 
-Pilih metode yang cocok dengan versi MySQL dan fasilitas yang tersedia di deployment.
+- Nomor pesanan.
+- Rentang tanggal.
+- Kasir.
+- Status pesanan.
+- Status pembayaran.
+- Jenis pesanan.
 
-- Gunakan utilitas dump MySQL yang kompatibel, atau pendekatan lain yang sudah diuji.
-- Jangan mengasumsikan `mysqldump` tersedia di container Railway.
-- Verifikasi dependensi dan lingkungan runtime sebelum memilih implementasi.
-- Hindari memuat seluruh isi database ke RAM.
-- Untuk database yang mendukung consistent snapshot, gunakan metode yang menjaga konsistensi data.
-- Pertimbangkan transaksi aktif, foreign key, trigger, view, procedure, event, dan hak akses sesuai kebutuhan aplikasi.
-- Dokumentasikan objek database yang termasuk dan tidak termasuk backup.
+Filter kasir digunakan untuk pencarian, bukan untuk membatasi kasir hanya pada transaksi miliknya.
 
-Jangan mencetak password ke log atau memasukkan secret ke command line yang dapat terlihat oleh proses lain. Gunakan mekanisme penyediaan kredensial yang aman dan didukung oleh tool yang dipilih.
+### C. Halaman detail
 
-### Penamaan file
+Semua kasir dapat melihat:
 
-Gunakan nama yang unik, mudah ditelusuri, dan tidak mengandung rahasia.
+- Item dan kuantitas.
+- Harga dan diskon.
+- Pajak atau biaya tambahan jika ada.
+- Total akhir.
+- Informasi pembayaran yang relevan.
+- Kasir penanggung jawab.
+- Waktu transaksi.
+- Status pesanan.
+- Riwayat pembatalan atau refund sesuai permission.
+
+Jangan tampilkan data sensitif yang tidak diperlukan, seperti credential, token, atau data pembayaran rahasia.
+
+### D. Tombol tindakan
+
+Tampilkan tombol berdasarkan status dan permission.
 
 Contoh:
 
-`komazi-pos/daily/komazi_pos_2026-10-17_020000_<execution-id>.sql.gz.enc`
+**Pesanan selesai**
+- Detail.
+- Cetak ulang struk.
 
-Sesuaikan format berdasarkan metode kompresi, enkripsi, dan penamaan aktual. Jangan menimpa backup lama secara default.
+**Pesanan belum dibayar milik kasir aktif**
+- Detail.
+- Edit, jika status masih memungkinkan.
 
-## 6. Keamanan backup
+**Pesanan belum dibayar milik kasir lain**
+- Detail saja.
 
-Implementasikan kontrol berikut.
+**Pesanan yang memerlukan refund atau pembatalan**
+- Tampilkan tindakan hanya jika role dan status mengizinkan.
 
-### Enkripsi
+Menyembunyikan tombol hanya untuk UX. Backend tetap harus menolak request yang tidak sah.
 
-- Gunakan enkripsi saat transit dan saat penyimpanan.
-- Pilih algoritma enkripsi modern yang didukung pustaka tepercaya.
-- Kunci enkripsi harus terpisah dari file backup.
-- Jangan menyimpan kunci dekripsi dalam database yang sedang dicadangkan.
-- Jangan menyimpan kunci dalam repository Git.
-- Dokumentasikan proses rotasi dan pemulihan kunci.
-- Pastikan backup lama tetap dapat dipulihkan setelah rotasi kunci, sesuai kebijakan yang ditetapkan.
+### E. Pesan error
 
-Kehilangan kunci enkripsi dapat membuat backup tidak dapat dipulihkan. Prosedur penyimpanan dan pemulihan kunci merupakan bagian wajib dari dokumentasi operasional.
+Jika kasir mencoba melakukan tindakan yang tidak diizinkan, tampilkan pesan yang jelas, misalnya:
 
-### Hak akses
+- "Pesanan milik kasir lain hanya dapat dilihat."
+- "Pesanan yang sudah dibayar tidak dapat diedit."
+- "Transaksi tidak dapat dihapus. Gunakan prosedur pembatalan atau koreksi yang tersedia."
+- "Anda tidak memiliki izin untuk melakukan refund."
 
-- Backup otomatis dijalankan dengan kredensial khusus berhak minimum.
-- Kredensial backup tidak boleh memiliki hak administrasi penuh jika tidak diperlukan.
-- Kredensial storage dibatasi pada bucket atau prefix khusus.
-- Pengguna aplikasi tidak boleh mengakses file backup melalui URL publik permanen.
-- Jangan pernah mengirim secret melalui respons API, notifikasi, atau frontend.
-
-### Perlindungan file
-
-- Jangan menaruh file backup di direktori publik frontend.
-- Jangan mengizinkan pengguna menentukan path arbitrer untuk backup atau restore.
-- Jangan menerima URL arbitrer untuk diunduh dan dipulihkan oleh backend.
-- Jangan mengeksekusi isi file backup sebagai kode aplikasi.
-- Jangan menghapus backup yang sedang dipakai untuk restore atau pemeriksaan.
-
-## 7. Metadata dan riwayat backup
-
-Audit model yang ada sebelum menambah tabel baru. Jika belum tersedia model yang memadai, buat model Prisma sesuai konvensi proyek.
-
-Metadata yang disarankan:
-
-- ID eksekusi.
-- Jenis backup: `SCHEDULED`, `MANUAL`, atau jenis lain yang diperlukan.
-- Status: `QUEUED`, `RUNNING`, `SUCCESS`, `FAILED`, `VERIFYING`, atau status relevan lainnya.
-- Waktu mulai dan selesai.
-- Zona waktu atau informasi waktu yang jelas.
-- Ukuran file.
-- Nama atau key objek pada storage.
-- Algoritma checksum dan nilai checksum.
-- Status verifikasi integritas.
-- Jenis database dan versi tool backup.
-- Durasi proses.
-- Jumlah percobaan.
-- Kode error yang aman.
-- Pemicu backup: scheduler atau pengguna yang terautentikasi.
-- Metadata audit yang diperlukan.
-
-Jangan simpan password database, token storage, kunci enkripsi, atau isi backup di tabel metadata.
-
-Gunakan migration yang kompatibel dengan struktur database aktual. Jangan menghapus atau mengubah data transaksi yang sudah ada untuk menambahkan fitur ini.
-
-## 8. Dashboard UI/UX
-
-Tambahkan menu Backup & Recovery pada lokasi navigasi yang sesuai dengan pola aplikasi.
-
-### Ringkasan status
-
-Tampilkan:
-
-- Backup terakhir.
-- Waktu backup terakhir.
-- Status verifikasi.
-- Ukuran backup terakhir.
-- Status backup terjadwal.
-- Status backup yang sedang berjalan.
-- Status pemulihan terakhir, jika ada.
-- Informasi error yang sudah disanitasi.
-
-### Riwayat
-
-Sediakan tabel dengan kolom:
-
-- Waktu.
-- Jenis.
-- Status.
-- Durasi.
-- Ukuran.
-- Verifikasi integritas.
-- Pemicu.
-- Aksi sesuai permission.
-
-Tambahkan pagination, filter status, dan rentang tanggal jika sesuai pola UI aplikasi.
-
-### Tombol aksi
-
-- `Backup Sekarang`
-- `Lihat Detail`
-- `Verifikasi`
-- `Unduh Backup` jika diizinkan
-- `Uji Restore` jika lingkungan staging tersedia
-- `Pulihkan Database` hanya untuk alur restore yang dilindungi secara ketat
-
-Tombol yang sedang diproses harus memiliki loading state dan tidak bisa diklik berulang kali. Berikan pesan hasil yang jelas tanpa menampilkan secret atau stack trace.
-
-Tindakan penting harus meminta konfirmasi dan menjelaskan dampaknya.
-
-## 9. Otorisasi Owner dan keamanan API
-
-Audit nama role serta mekanisme RBAC yang benar-benar ada. Terapkan permission pada backend, bukan hanya menyembunyikan tombol di frontend.
-
-Rekomendasi permission:
-
-- `backup.view`
-- `backup.create`
-- `backup.verify`
-- `backup.download`
-- `backup.manageRetention`
-- `backup.restore`
-- `backup.manageSettings`
-
-Secara default, fitur backup dan restore dikelola oleh Owner atau permission khusus yang telah disetujui. Role lain tidak otomatis memperoleh akses.
-
-Persyaratan:
-
-- Setiap endpoint wajib memvalidasi autentikasi dan permission.
-- Backend harus memverifikasi identitas pengguna dari session atau token yang sah.
-- Jangan mempercayai role atau user ID yang dikirim bebas dari frontend.
-- Terapkan validasi input, rate limit, serta perlindungan dari permintaan duplikat.
-- Batasi pengunduhan file dengan otorisasi dan signed URL berumur pendek bila metode tersebut didukung storage.
-- Jangan menyediakan endpoint yang memungkinkan pengunduhan seluruh bucket.
-- Jangan mengekspos endpoint internal tanpa autentikasi.
-
-Gunakan nama endpoint dan pola routing yang konsisten dengan proyek. Jangan menyalin contoh endpoint secara mentah tanpa audit arsitektur aktual.
-
-## 10. Kebijakan retensi dan penghapusan
-
-Implementasikan retensi otomatis yang aman.
-
-- Retensi harus dapat dikonfigurasi.
-- Hapus hanya backup yang benar-benar sudah melewati masa retensi.
-- Jangan menghapus backup gagal yang masih dibutuhkan untuk diagnosis tanpa kebijakan yang jelas.
-- Pertahankan backup terbaru yang telah terverifikasi.
-- Pertahankan sejumlah backup terakhir yang diketahui baik.
-- Jangan menghapus satu-satunya backup yang dapat dipulihkan.
-- Jangan menghapus backup yang sedang digunakan dalam proses restore.
-- Catat penghapusan otomatis dan manual pada audit log.
-- Terapkan pembatasan permission untuk mengubah retensi.
-- Gunakan soft-delete metadata bila diperlukan untuk jejak audit, tetapi jangan mengklaim file fisik masih ada setelah dihapus.
-
-Jika storage mendukung versioning atau object lock, evaluasi manfaat dan biaya sebelum mengaktifkannya.
-
-## 11. Restore dan disaster recovery
-
-Restore adalah operasi berisiko tinggi karena dapat mengganti data yang sedang berjalan. Implementasikan secara terpisah dari backup biasa.
-
-### Tahap A — Validasi backup
-
-Sebelum restore:
-
-1. Pastikan file backup ditemukan.
-2. Verifikasi checksum.
-3. Verifikasi kunci dekripsi tersedia.
-4. Dekripsi dan ekstrak ke lingkungan sementara yang aman.
-5. Pastikan file tidak kosong dan formatnya valid.
-6. Periksa kompatibilitas versi MySQL.
-7. Pastikan backup sesuai dengan database target.
-8. Catat hasil pemeriksaan.
-
-File yang checksum-nya tidak sesuai atau tidak bisa didekripsi harus ditolak.
-
-### Tahap B — Uji restore di staging
-
-- Gunakan database staging yang terpisah dari produksi.
-- Jangan memakai kredensial produksi jika tidak diperlukan.
-- Restore backup ke staging.
-- Jalankan pemeriksaan skema, tabel, foreign key, serta data penting.
-- Jalankan smoke test dan tes aplikasi yang relevan.
-- Pastikan aplikasi bisa membaca data hasil restore.
-- Catat waktu restore dan hasil pemeriksaan.
-
-Jangan menganggap proses import selesai berarti database sudah valid.
-
-### Tahap C — Restore produksi
-
-Restore ke produksi harus memerlukan persetujuan eksplisit dari pihak berwenang. Jangan menjalankan restore produksi secara otomatis berdasarkan jadwal.
-
-Sebelum eksekusi:
-
-- Tampilkan target database dan waktu backup yang dipilih.
-- Tampilkan waktu data terakhir yang tersedia pada backup.
-- Jelaskan bahwa data yang lebih baru mungkin hilang atau perlu direkonsiliasi.
-- Buat backup pengaman dari kondisi produksi saat ini jika memungkinkan.
-- Verifikasi hasil backup pengaman.
-- Pastikan tersedia rencana rollback yang realistis.
-- Pastikan pengguna memahami konsekuensi pemulihan.
-
-Lakukan restore dengan prosedur pemeliharaan yang terdokumentasi, pembatasan akses, dan verifikasi sesudahnya.
-
-**Larangan:** jangan menghapus, mengosongkan, atau menimpa database produksi secara otomatis tanpa persetujuan eksplisit. Jangan menjalankan restore produksi dalam pengujian.
-
-### Tahap D — Verifikasi setelah restore
-
-- Pastikan koneksi database normal.
-- Pastikan skema Prisma dan struktur database sesuai.
-- Jalankan pemeriksaan integritas data.
-- Uji autentikasi.
-- Uji pembacaan produk, transaksi, stok, dan data penting lain yang benar-benar ada di sistem.
-- Pastikan relasi dan foreign key tetap valid.
-- Periksa log backend.
-- Pastikan antrean atau proses background tidak memproses transaksi lama secara duplikat.
-- Catat hasil akhir dan waktu pemulihan.
-
-Dokumentasikan RPO (target kehilangan data maksimum) dan RTO (target waktu pemulihan) berdasarkan kebutuhan bisnis yang disetujui. Jangan mengklaim target tersebut terpenuhi sebelum diuji.
-
-## 12. Backup file selain database
-
-Audit apakah Komazi POS menyimpan file di luar MySQL, misalnya gambar produk, foto, lampiran, atau dokumen.
-
-Jika ada:
-
-- Identifikasi lokasi penyimpanan aktual.
-- Tentukan apakah file tersebut diperlukan agar hasil restore database tetap berfungsi.
-- Backup file dengan strategi yang sesuai.
-- Catat hubungan antara snapshot file dan backup database.
-- Jangan menganggap file yang berada di storage terpisah ikut tercakup dalam dump SQL.
-- Dokumentasikan pemulihan database dan file agar konsisten.
-
-Jika semua file hanya berupa URL eksternal, dokumentasikan ketergantungan tersebut dan jangan mengklaim aset eksternal telah dicadangkan.
-
-## 13. Retry, timeout, dan pencegahan duplikasi
-
-Implementasikan:
-
-- Timeout yang sesuai dengan ukuran database.
-- Jumlah retry terbatas.
-- Exponential backoff untuk kegagalan sementara.
-- ID eksekusi unik.
-- Pencegahan eksekusi bersamaan.
-- Idempotensi pada pencatatan status.
-- Cleanup file sementara saat proses gagal.
-- Batas penggunaan disk dan memori.
-- Penanganan proses yang terhenti di tengah jalan.
-- Status akhir yang jelas untuk setiap eksekusi.
-
-Jangan melakukan retry tanpa batas. Bedakan kegagalan sementara, kegagalan konfigurasi, kesalahan autentikasi, dan kegagalan integritas.
-
-## 14. Monitoring, log, dan notifikasi
-
-Integrasikan dengan mekanisme logging dan notifikasi yang sudah ada jika sesuai.
-
-Catat:
-
-- Backup dimulai.
-- Backup selesai.
-- Backup gagal.
-- Verifikasi berhasil atau gagal.
-- Retensi menghapus backup.
-- Permintaan download.
-- Restore staging.
-- Permintaan dan persetujuan restore produksi.
-- Restore selesai atau gagal.
-- Perubahan konfigurasi backup.
-
-Log harus memuat ID eksekusi, durasi, status, dan kode error yang aman. Jangan mencatat kredensial, token, kunci enkripsi, atau konten database.
-
-Notifikasi dapat menggunakan mekanisme yang sudah ada, misalnya Telegram, jika integrasinya memang tersedia dan disetujui.
-
-Notifikasi minimal mencakup:
-
-- Backup gagal.
-- Backup selesai.
-- Verifikasi integritas gagal.
-- Backup terjadwal terlewat.
-- Penyimpanan hampir penuh atau mendekati kuota.
-- Restore selesai atau gagal.
-
-Hindari mengirim file backup secara langsung ke chat. Notifikasi harus memberikan status dan informasi aman, bukan membocorkan data sensitif.
-
-## 15. Konfigurasi environment
-
-Identifikasi variabel yang benar-benar diperlukan dan dokumentasikan dalam `.env.example` tanpa secret sungguhan.
-
-Nama berikut hanya contoh yang boleh disesuaikan setelah audit:
-
-- `BACKUP_ENABLED`
-- `BACKUP_SCHEDULE`
-- `BACKUP_TIMEZONE`
-- `BACKUP_STORAGE_PROVIDER`
-- `BACKUP_BUCKET`
-- `BACKUP_STORAGE_REGION`
-- `BACKUP_STORAGE_ENDPOINT`
-- `BACKUP_STORAGE_ACCESS_KEY`
-- `BACKUP_STORAGE_SECRET_KEY`
-- `BACKUP_ENCRYPTION_KEY_REFERENCE`
-- `BACKUP_RETENTION_DAILY`
-- `BACKUP_RETENTION_WEEKLY`
-- `BACKUP_RETENTION_MONTHLY`
-- `BACKUP_TIMEOUT_MS`
-- `BACKUP_MAX_RETRIES`
-
-Gunakan mekanisme penyimpanan secret yang sesuai dengan platform. Jangan menaruh secret asli pada `.env.example`, dokumentasi yang dikomit, log, atau frontend.
-
-Validasi konfigurasi saat aplikasi atau worker dijalankan. Jika konfigurasi wajib tidak tersedia, gagalkan proses dengan pesan aman dan jelas; jangan melaporkan backup berhasil.
-
-## 16. Pengujian wajib
-
-Tambahkan atau sesuaikan pengujian berdasarkan test framework aktual.
-
-### Unit test
-
-- Validasi konfigurasi.
-- Pembuatan ID eksekusi.
-- Perhitungan retensi.
-- Validasi permission.
-- Validasi status backup.
-- Penanganan error dan retry.
-- Pemeriksaan checksum.
-- Penolakan backup tidak valid.
-
-### Integration test
-
-- Dump database uji.
-- Kompresi dan enkripsi.
-- Upload ke storage pengujian.
-- Verifikasi checksum setelah upload.
-- Download dan dekripsi.
-- Restore ke database staging.
-- Pemeriksaan skema dan data penting.
-- Pencatatan metadata.
-- Notifikasi kegagalan.
-- Pencegahan eksekusi bersamaan.
-
-### Security test
-
-- Pengguna tanpa login tidak bisa menjalankan backup.
-- Kasir tidak dapat melakukan restore jika tidak memiliki permission.
-- Pemalsuan role dari frontend ditolak.
-- Request duplikat tidak memulai backup berulang.
-- Path arbitrer ditolak.
-- Signed URL yang kedaluwarsa tidak dapat dipakai.
-- Secret tidak muncul pada log maupun respons API.
-- Backup rusak tidak dapat dipulihkan.
-- Restore produksi tidak bisa terjadi tanpa persetujuan yang diwajibkan.
-
-### Failure test
-
-Simulasikan:
-
-- Database tidak tersedia.
-- Storage tidak tersedia.
-- Upload terputus.
-- Disk sementara penuh.
-- Proses dump gagal.
-- Checksum tidak cocok.
-- Kunci dekripsi tidak tersedia.
-- Proses worker terhenti.
-- Backup lain sedang berjalan.
-- File backup tidak kompatibel dengan versi MySQL target.
-
-Tidak boleh ada pengujian destruktif pada database produksi.
-
-## 17. Deployment dan rollback
-
-Sebelum deployment:
-
-1. Tinjau semua perubahan.
-2. Jalankan lint dan test yang tersedia.
-3. Jalankan build frontend dan backend sesuai proyek.
-4. Validasi environment variable di staging.
-5. Uji backup serta restore staging.
-6. Tinjau migration Prisma jika ada.
-7. Siapkan prosedur rollback kode dan perubahan skema.
-8. Pastikan fitur dapat dinonaktifkan melalui konfigurasi jika diperlukan.
-9. Pastikan scheduler tidak aktif ganda.
-10. Dokumentasikan langkah deployment dan verifikasi pascadeployment.
-
-Jangan otomatis menjalankan migration produksi, mengaktifkan jadwal backup produksi, menghapus backup lama, atau memulihkan database produksi tanpa persetujuan eksplisit.
-
-Rollback kode tidak otomatis mengembalikan data database. Dokumentasikan perbedaan keduanya.
-
-## 18. Kriteria penerimaan
-
-Fitur dinyatakan siap setelah:
-
-- [x] Source code aktual telah diaudit.
-- [x] Backup manual berfungsi.
-- [x] Backup terjadwal berjalan pada waktu yang benar (02:00 WIB / 19:00 UTC).
-- [x] Backup disimpan di lokasi eksternal yang terpisah.
-- [x] File dienkripsi sesuai desain (AES-256-GCM).
-- [x] Checksum diverifikasi setelah upload (SHA-256).
-- [x] Riwayat backup tampil di dashboard.
-- [x] Status gagal ditampilkan dengan benar.
-- [x] Permission diperiksa di backend (Khusus role OWNER).
-- [x] Retensi tidak menghapus backup yang wajib dipertahankan (Proteksi minimum 2 backup terakhir).
-- [x] Backup berhasil dipulihkan ke staging / dry-run test mode.
-- [x] Data penting lolos verifikasi setelah restore.
-- [x] Pengujian kegagalan dan keamanan lulus.
-- [x] Log tidak membocorkan secret.
-- [x] Dokumentasi operasi dan pemulihan tersedia.
-- [x] Tidak ada regresi pada fitur POS yang sudah berjalan (30/30 backend tests & 7/7 frontend tests pass).
-
-## 19. Deliverables & Panduan Operasional
-
-### 19.1 Setup Storage & Scheduler
-- **Scheduler:** Terintegrasi pada worker backend di `backend/src/services/cron/handlers/backupHandler.js` dan model `ScheduledJob`.
-  - Cron ekspresi: `0 19 * * *` (Pukul 02:00 WIB setiap hari).
-  - Timezone: `Asia/Jakarta`.
-- **Storage:**
-  - Default: Direktori aman `./scratch/backups` (diabaikan dari Git).
-  - Production (Railway/S3): Pasang volume persistent pada Railway ke `./scratch/backups` atau atur environment variable `BACKUP_STORAGE_PATH`.
-
-### 19.2 Panduan Backup Manual
-1. Login sebagai akun **Owner** (`OWNER`).
-2. Masuk ke menu **Pengaturan Usaha** (`/settings`), pilih tab **Backup & Recovery** (atau buka `/backup`).
-3. Klik tombol **Backup Sekarang** di pojok kanan atas.
-4. Sistem akan otomatis melakukan logical dump database MySQL, kompresi Gzip, enkripsi AES-256-GCM, verifikasi integritas round-trip SHA-256, dan mencatatnya ke riwayat.
-5. Notifikasi ringkasan otomatis dikirimkan ke Telegram Owner.
-
-### 19.3 Panduan Uji Restore (Staging / Dry-Run)
-1. Pada tabel Riwayat Backup di dashboard, cari backup berstatus **Berhasil**.
-2. Klik tombol ikon **Play (Uji Simulasi Restore)**.
-3. Sistem akan mendekripsi dan mendekompresi berkas di memori, memeriksa validitas sintaks SQL, menghitung jumlah tabel dan kueri data tanpa mengubah database aktif.
-4. Tinjau modal hasil simulasi untuk memastikan 100% kueri lolos verifikasi.
-
-### 19.4 Runbook Pemulihan Produksi (Disaster Recovery)
-1. **Langkah 1:** Identifikasi titik pemulihan (snapshot) yang valid pada tabel riwayat.
-2. **Langkah 2:** Klik tombol **Pulihkan Database (ikon Rotate)** pada baris backup target.
-3. **Langkah 3:** Baca peringatan konsekuensi. Ketik persis frasa konfirmasi:
-   `RESTORE-DATABASE`
-4. **Langkah 4:** Klik tombol konfirmasi **Ya, Pulihkan Sekarang**.
-5. **Langkah 5 (Automated Safety Snapshot):** Backend secara otomatis membuat snapshot darurat dari kondisi database saat ini sebelum proses restore dimulai.
-6. **Langkah 6:** Backend mengeksekusi DDL & DML dengan foreign key checks dinonaktifkan sementara dan direaktifkan kembali setelah selesai.
-7. **Langkah 7:** Notifikasi audit darurat terkirim ke Telegram Owner dan seluruh data telah dipulihkan.
+Jangan menampilkan stack trace atau informasi internal backend.
 
 ---
-**Status Implementasi:** Selesai, Teruji, dan Siap Produksi.
+
+## 6. Implementasi backend
+
+Gunakan router, controller, service, validasi, dan middleware yang sudah ada.
+
+### A. Riwayat pesanan
+
+Pastikan endpoint daftar pesanan mengembalikan semua transaksi yang memang boleh dilihat kasir, bukan hanya pesanan yang dibuat oleh pengguna yang sedang login.
+
+Jangan menghilangkan filter keamanan yang diperlukan untuk tenant, cabang, atau outlet jika struktur tersebut ada di aplikasi.
+
+### B. Detail pesanan
+
+Semua kasir dapat membaca detail pesanan sesuai cakupan akses aplikasi.
+
+Backend wajib memvalidasi:
+
+- Token autentikasi.
+- Status akun.
+- Role dan permission.
+- Cakupan outlet jika berlaku.
+- Keberadaan pesanan.
+
+Jangan mengandalkan ID pesanan dari frontend sebagai bukti otorisasi.
+
+### C. Endpoint edit
+
+Untuk setiap endpoint edit pesanan:
+
+1. Ambil pengguna terautentikasi dari middleware.
+2. Ambil pesanan dari database.
+3. Validasi kepemilikan atau mekanisme pengalihan resmi.
+4. Periksa status pesanan dan pembayaran.
+5. Tolak perubahan jika pesanan telah dibayar atau selesai.
+6. Validasi perubahan terhadap seluruh aturan transaksi.
+7. Jalankan operasi secara atomik jika melibatkan beberapa tabel.
+
+Jika endpoint edit saat ini mengizinkan perubahan pesanan selesai, ubah perilakunya agar sesuai dengan kebijakan ini tanpa merusak edit pesanan terbuka yang masih sah.
+
+### D. Endpoint hapus
+
+Cari seluruh endpoint penghapusan pesanan.
+
+Untuk transaksi selesai:
+
+- Tolak penghapusan langsung.
+- Jangan menghapus item pesanan, pembayaran, atau histori secara cascading.
+- Jangan menggunakan soft delete sebagai cara untuk menyembunyikan transaksi finansial.
+- Gunakan prosedur pembatalan atau reversal yang sesuai jika transaksi memang harus dikoreksi.
+
+Jika terdapat fitur hapus untuk pesanan draft, pertahankan hanya jika statusnya memang aman dan tidak ada transaksi pembayaran atau mutasi stok yang sudah terikat.
+
+### E. Pembatalan dan refund
+
+Pertahankan alur pembatalan dan refund yang sudah ada jika aman.
+
+Jika alur tersebut belum tersedia, dokumentasikan kebutuhan dan implementasikan secara terpisah dengan:
+
+- Permission yang jelas.
+- Pemeriksaan status sebelum tindakan.
+- Validasi nominal.
+- Pencegahan permintaan ganda.
+- Pencatatan alasan.
+- Audit trail.
+- Penanganan pembayaran dan persediaan.
+- Integrasi dengan penyedia pembayaran jika transaksi memakai payment gateway.
+
+Jangan menganggap pengubahan status pesanan sebagai refund uang yang benar-benar berhasil.
+
+### F. Konsistensi transaksi
+
+Untuk perubahan yang memengaruhi beberapa tabel, gunakan transaksi database dan mekanisme concurrency control yang sesuai.
+
+Periksa kembali status pesanan di dalam operasi yang aman dari race condition. Jangan hanya melakukan pemeriksaan awal di frontend.
+
+Gunakan constraint database dan idempotency key jika sesuai dengan alur transaksi yang sudah ada.
+
+---
+
+## 7. Keamanan pengeditan dan penggabungan bill
+
+Jika Komazi POS memiliki fitur gabung bill:
+
+- Tentukan pesanan utama dan pesanan sumber secara eksplisit.
+- Validasi kepemilikan dan status setiap pesanan.
+- Jangan menggabungkan pesanan yang sudah dibayar melalui endpoint edit biasa.
+- Jangan menggabungkan transaksi yang sudah direfund atau dibatalkan.
+- Pastikan item, pembayaran, dan referensi transaksi tidak terduplikasi.
+- Catat hubungan antara pesanan sebelum dan sesudah penggabungan.
+- Terapkan aturan yang sama pada web dan aplikasi Android.
+
+Jika fitur penggabungan bill sudah memiliki kebijakan sendiri, audit dan pertahankan perilaku yang sah. Jangan mengubahnya tanpa menguji dampak terhadap laporan dan persediaan.
+
+---
+
+## 8. Audit trail
+
+Catat tindakan penting berikut:
+
+- Perubahan pesanan yang masih terbuka.
+- Pengalihan tanggung jawab pesanan.
+- Permintaan edit yang ditolak jika sesuai dengan kebijakan logging.
+- Pembatalan.
+- Refund.
+- Koreksi administratif.
+- Perubahan yang berdampak pada persediaan.
+- Perubahan yang berdampak pada pembayaran atau laporan.
+
+Informasi audit minimal:
+
+- Waktu kejadian.
+- Pengguna yang melakukan tindakan.
+- ID pesanan.
+- Jenis tindakan.
+- Nilai sebelum dan sesudah jika terjadi perubahan.
+- Alasan tindakan.
+- Status hasil.
+- Referensi transaksi terkait.
+
+Gunakan audit log yang sudah ada. Jangan membuat sistem audit duplikat tanpa kebutuhan teknis.
+
+Jangan mencatat token, password, atau data sensitif lainnya.
+
+---
+
+## 9. Pengujian wajib
+
+Gunakan database lokal atau staging dan akun uji Kasir A, Kasir B, Owner, serta Admin sesuai konfigurasi aktual.
+
+### A. Pengujian visibilitas
+
+1. Kasir A dapat melihat pesanan milik Kasir A.
+2. Kasir A dapat melihat pesanan milik Kasir B.
+3. Kasir B dapat melihat pesanan milik Kasir A.
+4. Kasir B dapat membuka detail pesanan milik Kasir A.
+5. Filter kasir tidak menghilangkan data yang memang berhak dilihat.
+6. Pembatasan outlet tetap berjalan jika aplikasi mendukung multi-outlet.
+
+### B. Pengujian edit
+
+1. Kasir A dapat mengedit pesanan terbuka miliknya jika status mengizinkan.
+2. Kasir A tidak dapat mengedit pesanan terbuka milik Kasir B.
+3. Kasir B tidak dapat mengedit pesanan terbuka milik Kasir A.
+4. Kasir A tidak dapat mengedit pesanan yang sudah dibayar.
+5. Kasir B tidak dapat mengedit pesanan yang sudah dibayar milik Kasir A.
+6. Memanggil endpoint secara langsung tetap ditolak meskipun tombol frontend dimanipulasi.
+7. Pesanan yang statusnya berubah saat proses edit berlangsung tidak boleh mengalami perubahan yang tidak sah.
+
+### C. Pengujian hapus
+
+1. Kasir A tidak dapat menghapus transaksi selesai miliknya.
+2. Kasir A tidak dapat menghapus transaksi selesai milik Kasir B.
+3. Kasir B tidak dapat menghapus transaksi selesai milik Kasir A.
+4. Endpoint penghapusan tidak dapat digunakan untuk menghilangkan histori pembayaran.
+5. Pesanan draft yang boleh dihapus tetap dapat ditangani sesuai aturan yang berlaku.
+
+### D. Pengujian refund dan pembatalan
+
+1. Pengguna tanpa izin tidak dapat melakukan refund.
+2. Refund yang melebihi nominal yang dapat dikembalikan ditolak.
+3. Permintaan refund ganda tidak menggandakan pengembalian dana.
+4. Pembatalan tidak menghapus riwayat pesanan.
+5. Stok dan laporan diperbarui sesuai aturan transaksi.
+6. Status pesanan tetap konsisten dengan status pembayaran.
+
+### E. Pengujian regresi
+
+Pastikan fitur lama tetap berjalan:
+
+- Login dan logout.
+- Seluruh role yang ada.
+- Checkout dan pembayaran.
+- Sesi kasir.
+- Riwayat pesanan.
+- Penggabungan bill.
+- Persediaan dan bahan baku.
+- KDS/BDS.
+- Cetak struk.
+- Laporan penjualan dan HPP.
+- Presensi dan HRIS.
+- Notifikasi.
+- API yang digunakan aplikasi Android Capacitor.
+
+Jalankan unit test, integration test, lint, type check jika tersedia, dan build production menggunakan script yang ditemukan di `package.json`.
+
+Laporkan hasil sebenarnya. Jangan mengklaim tes berhasil jika belum dijalankan.
+
+---
+
+## 10. Migration dan deployment
+
+### Database
+
+- Jangan membuat ulang database.
+- Jangan menjalankan reset database.
+- Jangan menghapus transaksi historis.
+- Tambahkan kolom, relasi, atau indeks hanya jika diperlukan oleh hasil audit.
+- Jangan membuat migration untuk perubahan yang sebenarnya cukup ditangani oleh authorization di backend.
+- Uji migration di lokal atau staging sebelum production.
+
+### Deployment
+
+1. Backup database.
+2. Jalankan pengujian.
+3. Deploy backend.
+4. Verifikasi endpoint riwayat, edit, pembatalan, dan refund.
+5. Deploy frontend.
+6. Uji akun Kasir A dan Kasir B.
+7. Uji web dan APK Android.
+8. Periksa log backend.
+9. Verifikasi tidak ada perubahan tak terduga pada data transaksi.
+
+### Rollback
+
+Jika terjadi masalah:
+
+- Kembalikan versi kode sebelumnya bila diperlukan.
+- Jangan langsung menghapus migration yang sudah diterapkan.
+- Jangan memulihkan backup production tanpa menilai transaksi terbaru.
+- Buat migration korektif jika perubahan skema perlu diperbaiki.
+- Verifikasi kembali hak akses dan konsistensi data.
+
+---
+
+## 11. Kriteria penerimaan akhir
+
+Implementasi dianggap selesai jika:
+
+- [ ] Semua kasir dapat melihat seluruh riwayat pesanan yang berada dalam cakupan aksesnya.
+- [ ] Semua kasir dapat membuka detail pesanan kasir lain.
+- [ ] Kasir tidak dapat mengedit pesanan milik kasir lain.
+- [ ] Kasir tidak dapat mengedit transaksi yang sudah dibayar atau selesai.
+- [ ] Transaksi selesai tidak dapat dihapus secara langsung.
+- [ ] Pesanan terbuka tetap dapat diedit oleh pemiliknya sesuai status.
+- [ ] Pembatalan dan refund mengikuti permission serta status transaksi.
+- [ ] Backend memvalidasi seluruh tindakan sensitif.
+- [ ] Audit trail mencatat tindakan penting.
+- [ ] Riwayat transaksi tetap utuh.
+- [ ] Laporan dan persediaan tidak mengalami penghitungan ganda.
+- [ ] Web dan APK Android tetap berfungsi.
+- [ ] Pengujian regresi selesai dan hasilnya didokumentasikan.
+
+---
+
+## 12. Instruksi akhir untuk Antigravity/Gemini
+
+Baca repository Komazi POS secara menyeluruh, lalu implementasikan spesifikasi ini berdasarkan arsitektur dan aturan transaksi yang benar-benar ditemukan.
+
+Jangan berhenti pada analisis, mockup, atau dokumentasi saja. Lakukan perubahan source code, pengujian, dan perbaikan sesuai akses lingkungan yang tersedia.
+
+Setelah selesai, berikan laporan:
+
+1. File yang dibuat dan diubah.
+2. Perubahan authorization frontend dan backend.
+3. Endpoint yang disesuaikan.
+4. Migration yang dibuat, jika ada.
+5. Hasil pengujian dan build.
+6. Perilaku yang belum dapat diimplementasikan.
+7. Langkah deployment yang aman.
+
+**Hasil akhir:** Riwayat Pesanan Komazi POS transparan bagi kasir, terlindungi dari manipulasi, mempertahankan histori transaksi, dan tetap kompatibel dengan alur pembayaran, persediaan, laporan, serta aplikasi Android yang sudah berjalan.

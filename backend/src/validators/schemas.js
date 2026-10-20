@@ -105,15 +105,27 @@ export const openShiftSchema = z.object({
 export const closeShiftSchema = z.object({
   closingCash: z.number().nonnegative('Kas fisik aktual tidak boleh negatif'),
   notes: z.string().optional(),
+  shiftId: z.number().int().positive().optional(),
 });
 
 export const createCashMovementSchema = z.object({
-  type: z.enum(['CASH_IN', 'CASH_OUT', 'CASH_DROP'], {
-    errorMap: () => ({ message: 'Tipe kas harus CASH_IN, CASH_OUT, atau CASH_DROP' }),
-  }),
-  amount: z.number().positive('Nominal kas harus lebih dari Rp 0'),
+  type: z.preprocess(
+    (val) => {
+      if (typeof val === 'string') {
+        const u = val.toUpperCase().trim();
+        if (u === 'IN' || u === 'CASH_IN') return 'CASH_IN';
+        if (u === 'OUT' || u === 'CASH_OUT') return 'CASH_OUT';
+        if (u === 'DROP' || u === 'CASH_DROP') return 'CASH_DROP';
+      }
+      return val;
+    },
+    z.enum(['CASH_IN', 'CASH_OUT', 'CASH_DROP'], {
+      errorMap: () => ({ message: 'Tipe kas harus CASH_IN, CASH_OUT, atau CASH_DROP' }),
+    })
+  ),
+  amount: z.coerce.number().positive('Nominal kas harus lebih dari Rp 0'),
   reason: z.string().min(2, 'Keterangan / alasan wajib diisi'),
-  shiftId: z.number().int().optional(),
+  shiftId: z.coerce.number().int().optional(),
 });
                         
 export const workspaceCheckInSchema = z.object({

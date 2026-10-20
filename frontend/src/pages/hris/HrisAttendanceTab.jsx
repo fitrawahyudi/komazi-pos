@@ -1,28 +1,29 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Clock,
-  UserCheck,
   Calendar,
   Plus,
-  Pencil,
   Trash2,
   CheckCircle2,
   XCircle,
   AlertCircle,
   ClockAlert,
-  Search,
-  Check,
-  FileText,
   ShieldCheck,
   MapPin,
   Camera,
   Eye,
   X,
   ExternalLink,
+  Store,
+  AlertTriangle,
 } from 'lucide-react';
 import Pagination from '../../components/ui/Pagination';
 import AttendanceVerificationModal from '../../components/hris/AttendanceVerificationModal';
+import ShiftModal from '../../components/shift/ShiftModal';
 import { useHrisStore } from '../../store/hrisStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { toast } from '../../store/toastStore';
 import { formatDuration } from '../../utils/format';
 
 export default function HrisAttendanceTab({
@@ -44,6 +45,9 @@ export default function HrisAttendanceTab({
   const fetchTodayAttendance = useHrisStore((state) => state.fetchTodayAttendance);
   const myTodaySchedule = useHrisStore((state) => state.myTodaySchedule);
   const fetchMyTodaySchedule = useHrisStore((state) => state.fetchMyTodaySchedule);
+  const { settings, updateSettings } = useSettingsStore();
+
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
 
   const [subTab, setSubTab] = useState('logs'); // 'logs' or 'corrections'
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -53,6 +57,12 @@ export default function HrisAttendanceTab({
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const hasActiveShift = Boolean(myTodaySchedule?.hasActiveShift);
+  const activeShift = myTodaySchedule?.activeShift || null;
+  const shiftActionMessage = myTodaySchedule?.shiftActionMessage || '';
 
   // Modal states
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -123,6 +133,26 @@ export default function HrisAttendanceTab({
   const isOwner = currentUser?.role === 'OWNER';
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
 
+  // Auto trigger clockout if requested via searchParams (e.g. from CloseSessionReportModal)
+  useEffect(() => {
+    if (searchParams && searchParams.get('action') === 'clockout') {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('action');
+      setSearchParams(newParams, { replace: true });
+      if (myTodayAttendance && !myTodayAttendance.clockOut) {
+        if (hasActiveShift) {
+          toast.warning(
+            'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.'
+          );
+          setIsShiftModalOpen(true);
+        } else {
+          setVerifyModalMode('CLOCK_OUT');
+          setIsVerifyModalOpen(true);
+        }
+      }
+    }
+  }, [searchParams, myTodayAttendance, hasActiveShift, setSearchParams]);
+
   // Submit Handlers
   const handleClockInAction = () => {
     setVerifyModalMode('CLOCK_IN');
@@ -130,6 +160,13 @@ export default function HrisAttendanceTab({
   };
 
   const handleClockOutAction = () => {
+    if (hasActiveShift) {
+      toast.warning(
+        'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.'
+      );
+      setIsShiftModalOpen(true);
+      return;
+    }
     setVerifyModalMode('CLOCK_OUT');
     setIsVerifyModalOpen(true);
   };
@@ -172,6 +209,74 @@ export default function HrisAttendanceTab({
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {/* ─────────────────────────────────────────────────────────────
+          OWNER CONTROLS: ATURAN WAJIB PRESENSI UNTUK SEMUA STAF
+         ───────────────────────────────────────────────────────────── */}
+      {isOwner && (
+        <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all">
+          <div className="flex items-start sm:items-center gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
+                isAttendanceEnforced
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              }`}
+            >
+              {isAttendanceEnforced ? (
+                <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+              ) : (
+                <ClockAlert className="w-5 h-5 stroke-[2.2]" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm text-komazi-text">Aturan Wajib Presensi Staf</span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    isAttendanceEnforced
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                  }`}
+                >
+                  {isAttendanceEnforced ? 'WAJIB PRESENSI AKTIF' : 'PRESENSI FLEKSIBEL (OPSIONAL)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-komazi-muted mt-1 leading-relaxed">
+                {isAttendanceEnforced
+                  ? 'Staf wajib melakukan clock-in presensi terlebih dahulu sebelum dapat membuka sesi kasir atau memproses pesanan di POS.'
+                  : 'Presensi bersifat fleksibel / opsional. Staf dapat langsung membuka sesi kasir dan memproses pesanan di POS tanpa harus presensi terlebih dahulu.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-komazi-border/50">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <span className="text-xs font-semibold text-komazi-text">
+                {isAttendanceEnforced ? 'Wajibkan Presensi' : 'Presensi Bebas'}
+              </span>
+              <div className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(isAttendanceEnforced)}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    await updateSettings({ enforceAttendanceGuard: val });
+                    toast.success(
+                      val
+                        ? 'Aturan disimpan: Seluruh staf kini WAJIB presensi sebelum bertransaksi / buka kasir.'
+                        : 'Aturan disimpan: Presensi kini bersifat OPSIONAL (staf bebas bertransaksi tanpa presensi).'
+                    );
+                    fetchMyTodaySchedule?.();
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5.5 bg-komazi-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-500"></div>
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
+
       {/* Schedule Blocked Alert Banner */}
       {isScheduleBlocked && (
         <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-300 text-xs shadow-sm">
@@ -188,73 +293,124 @@ export default function HrisAttendanceTab({
       )}
 
       {/* 1. Quick Clock In / Clock Out Self-Service Widget */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-komazi-surface to-komazi-surface-2 border border-komazi-border shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-komazi-coral/15 text-komazi-coral flex items-center justify-center shrink-0 border border-komazi-coral/30">
-            <Clock className="w-7 h-7 stroke-[2.2]" />
-          </div>
-          <div>
-            <div className="text-2xl font-black text-komazi-text font-mono tracking-tight mt-0.5">
-              {currentTimeWib} <span className="text-xs text-komazi-coral font-bold font-sans">WIB</span>
+      <div className="p-5 rounded-2xl bg-gradient-to-r from-komazi-surface to-komazi-surface-2 border border-komazi-border shadow-md space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-komazi-coral/15 text-komazi-coral flex items-center justify-center shrink-0 border border-komazi-coral/30">
+              <Clock className="w-7 h-7 stroke-[2.2]" />
             </div>
-            <div className="text-xs text-komazi-muted mt-1 flex items-center gap-2">
-              <span>Status Hari Ini:</span>
-              {!myTodayAttendance ? (
-                <span className="font-bold text-amber-400">Belum Presensi</span>
-              ) : myTodayAttendance.clockOut ? (
-                <span className="font-bold text-neutral-400">Selesai Giliran Kerja ({formatDuration(myTodayAttendance.workMinutes)})</span>
-              ) : (
-                <span className="font-bold text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span>Sedang Bekerja (Masuk: {new Date(myTodayAttendance.clockIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-komazi-text">{currentUser?.name || 'Karyawan'}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-komazi-surface-2 border border-komazi-border text-komazi-muted uppercase font-mono">
+                  {currentUser?.role || 'STAF'}
                 </span>
-              )}
+              </div>
+              <div className="text-2xl font-black text-komazi-text font-mono tracking-tight mt-0.5">
+                {currentTimeWib} <span className="text-xs text-komazi-coral font-bold font-sans">WIB</span>
+              </div>
+              <div className="text-xs text-komazi-muted mt-1 flex flex-wrap items-center gap-2">
+                <span>Status Presensi:</span>
+                {!myTodayAttendance ? (
+                  <span className="font-bold text-amber-400">Belum Presensi</span>
+                ) : myTodayAttendance.clockOut ? (
+                  <span className="font-bold text-neutral-400">
+                    Selesai Giliran Kerja (Masuk: {new Date(myTodayAttendance.clockIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} • Pulang: {new Date(myTodayAttendance.clockOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}) — {formatDuration(myTodayAttendance.workMinutes)}
+                  </span>
+                ) : (
+                  <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>Sedang Bekerja (Masuk: {new Date(myTodayAttendance.clockIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})</span>
+                  </span>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            {!myTodayAttendance ? (
+              <button
+                type="button"
+                disabled={isScheduleBlocked}
+                onClick={handleClockInAction}
+                title={isScheduleBlocked ? 'Jadwal kerja Anda belum diatur' : 'Presensi'}
+                className={`px-6 py-3 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 ${
+                  isScheduleBlocked
+                    ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
+                    : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20 active:scale-95'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{isScheduleBlocked ? 'Jadwal Belum Diatur' : 'Presensi'}</span>
+              </button>
+            ) : !myTodayAttendance.clockOut ? (
+              <button
+                type="button"
+                onClick={handleClockOutAction}
+                className="px-6 py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/20 transition-all active:scale-95 flex items-center gap-2"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>Presensi Pulang</span>
+              </button>
+            ) : (
+              <div className="px-4 py-2 rounded-xl bg-neutral-900 border border-komazi-border text-xs text-komazi-muted font-semibold">
+                ✓ Presensi
+              </div>
+            )}
+
+            {/* Tombol Ajukan Koreksi */}
+            <button
+              type="button"
+              onClick={() => setIsCorrectionModalOpen(true)}
+              className="px-4 py-3 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted hover:text-white border border-komazi-border text-xs font-bold transition-all flex items-center gap-1.5"
+              title="Ajukan permohonan koreksi jika lupa presensi masuk atau pulang"
+            >
+              <ClockAlert className="w-4 h-4 text-komazi-coral" />
+              <span>Koreksi Presensi</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {!myTodayAttendance ? (
-            <button
-              type="button"
-              disabled={isScheduleBlocked}
-              onClick={handleClockInAction}
-              title={isScheduleBlocked ? 'Jadwal kerja Anda belum diatur' : 'Presensi'}
-              className={`px-6 py-3 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 ${
-                isScheduleBlocked
-                  ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
-                  : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20 active:scale-95'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isScheduleBlocked ? 'Jadwal Belum Diatur' : 'Presensi'}</span>
-            </button>
-          ) : !myTodayAttendance.clockOut ? (
-            <button
-              type="button"
-              onClick={handleClockOutAction}
-              className="px-6 py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/20 transition-all active:scale-95 flex items-center gap-2"
-            >
-              <XCircle className="w-4 h-4" />
-              <span>Presensi Pulang</span>
-            </button>
-          ) : (
-            <div className="px-4 py-2 rounded-xl bg-neutral-900 border border-komazi-border text-xs text-komazi-muted font-semibold">
-              ✓ Presensi
-            </div>
-          )}
-
-          {/* Tombol Ajukan Koreksi */}
-          <button
-            type="button"
-            onClick={() => setIsCorrectionModalOpen(true)}
-            className="px-4 py-3 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted hover:text-white border border-komazi-border text-xs font-bold transition-all flex items-center gap-1.5"
-            title="Ajukan permohonan koreksi jika lupa presensi masuk atau pulang"
-          >
-            <ClockAlert className="w-4 h-4 text-komazi-coral" />
-            <span>Koreksi Presensi</span>
-          </button>
-        </div>
+        {/* Status Sesi Kasir & Pesan Tindakan */}
+        {myTodayAttendance && !myTodayAttendance.clockOut && (
+          <div className="pt-3 border-t border-komazi-border/70">
+            {hasActiveShift ? (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-start gap-2.5 text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-amber-200">
+                      Sesi Kasir Aktif: {activeShift?.registerName || 'Kasir Utama'}
+                    </div>
+                    <p className="text-amber-300/90 leading-relaxed text-[11px]">
+                      {shiftActionMessage || 'Anda masih memiliki sesi kasir aktif. Tutup sesi atau selesaikan serah terima sebelum presensi pulang.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsShiftModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95"
+                >
+                  <Store className="w-3.5 h-3.5" />
+                  <span>Tutup Sesi Kasir</span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-[11px] leading-relaxed">
+                    {shiftActionMessage || 'Anda dapat melakukan presensi pulang. Sesi kasir milik karyawan lain tidak terpengaruh.'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-emerald-400/80 shrink-0 px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30">
+                  Sesi Kasir Bebas
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 2. Sub-tab switcher: Log Presensi vs Pengajuan Koreksi */}
@@ -915,12 +1071,33 @@ export default function HrisAttendanceTab({
         </div>
       )}
 
+      {/* Modal Shift / Tutup Sesi Kasir */}
+      {isShiftModalOpen && (
+        <ShiftModal
+          onClose={() => {
+            setIsShiftModalOpen(false);
+            fetchMyTodaySchedule?.();
+            if (currentUser?.id) fetchTodayAttendance?.(currentUser.id);
+          }}
+          onProceedToClockOut={() => {
+            setIsShiftModalOpen(false);
+            fetchMyTodaySchedule?.();
+            if (currentUser?.id) fetchTodayAttendance?.(currentUser.id);
+            setVerifyModalMode('CLOCK_OUT');
+            setIsVerifyModalOpen(true);
+          }}
+        />
+      )}
+
       {/* Attendance Verification Modal (GPS & Selfie Proof) */}
       <AttendanceVerificationModal
         isOpen={isVerifyModalOpen}
         mode={verifyModalMode}
+        onOpenCloseSessionModal={() => setIsShiftModalOpen(true)}
         onClose={() => setIsVerifyModalOpen(false)}
         onSuccess={() => {
+          fetchMyTodaySchedule?.();
+          if (currentUser?.id) fetchTodayAttendance?.(currentUser.id);
           if (onFetchAttendance) {
             onFetchAttendance({
               date: selectedDate || undefined,

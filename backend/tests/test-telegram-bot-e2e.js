@@ -1,5 +1,5 @@
 import prisma from '../src/config/db.js';
-import { withLoadingAnimation } from '../src/bot/utils/loading.js';
+import { withLoadingAnimation, generateLoadingBarFrames } from '../src/bot/utils/loading.js';
 import { buildPaginatedNumericKeyboard, formatPaginatedList } from '../src/bot/keyboards/pagination.js';
 import { ROLE_COMMANDS } from '../src/bot/commands.js';
 import { stockService } from '../src/services/stock.service.js';
@@ -65,6 +65,31 @@ async function testTelegramBotE2E() {
     assert(fakeChatActions.includes('typing'), 'Chat action "typing" dispatched');
     assert(fakeMessages.length === 1 && fakeMessages[0].text.includes('Frame 1'), 'Initial loading frame sent to user');
     assert(fakeDeletes.length === 1 && fakeDeletes[0].msgId === 999, 'Loading placeholder message deleted after completion');
+
+    // 1b. Uji generateLoadingBarFrames & withLoadingAnimation default loading bar
+    console.log('1️⃣b Testing generateLoadingBarFrames & default loading bar behavior...');
+    const defaultBars = generateLoadingBarFrames();
+    assert(Array.isArray(defaultBars) && defaultBars.length === 6, 'generateLoadingBarFrames produces 6 progression steps');
+    assert(defaultBars[0].includes('<code>[██░░░░░░░░] 15%</code>'), 'Initial bar step is 15% monospaced bar');
+    assert(defaultBars[defaultBars.length - 1].includes('<code>[██████████] 100%</code>'), 'Final bar step is 100% full bar');
+
+    const barMessages = [];
+    const mockBarCtx = {
+      replyWithChatAction: async () => {},
+      reply: async (text) => {
+        const msg = { chat: { id: 12345 }, message_id: 888, text };
+        barMessages.push(msg);
+        return msg;
+      },
+      api: {
+        editMessageText: async () => {},
+        deleteMessage: async () => {},
+      },
+    };
+    await withLoadingAnimation(mockBarCtx, { chatAction: 'upload_photo' }, async () => {
+      return 'done';
+    });
+    assert(barMessages.length === 1 && barMessages[0].text.includes('<code>['), 'Default withLoadingAnimation displays clean loading bar frame');
 
     // 2. Uji buildPaginatedNumericKeyboard (10 item layout)
     console.log('2️⃣  Testing buildPaginatedNumericKeyboard (10 items on page)...');
@@ -183,7 +208,7 @@ async function testTelegramBotE2E() {
 
     // 12. Uji OpenClaw Config & Safe Masking
     console.log('1️⃣2️⃣ Testing OpenClaw AI: Config & Safe Masking...');
-    const { getOpenclawConfig, getSafeOpenclawConfig, isOpenClawAvailable } = await import('./src/bot/ai/openclawConfig.js');
+    const { getOpenclawConfig, getSafeOpenclawConfig, isOpenClawAvailable } = await import('../src/bot/ai/openclawConfig.js');
     const initialConfig = getOpenclawConfig();
     assert(typeof initialConfig.enabled === 'boolean', 'Config enabled is boolean');
     assert(Array.isArray(initialConfig.allowedRoles), 'Config allowedRoles is array');
@@ -193,7 +218,7 @@ async function testTelegramBotE2E() {
 
     // 13. Uji In-Memory Session Manager
     console.log('1️⃣3️⃣ Testing OpenClaw AI: In-Memory Multi-Turn Session Manager...');
-    const { appendTurn, getHistory, clearSession, getSessionStats } = await import('./src/bot/ai/aiSessionManager.js');
+    const { appendTurn, getHistory, clearSession, getSessionStats } = await import('../src/bot/ai/aiSessionManager.js');
     const testUserId = 999888;
     clearSession(testUserId);
     assert(getHistory(testUserId).length === 0, 'New session history is empty');
@@ -212,7 +237,7 @@ async function testTelegramBotE2E() {
 
     // 14. Uji Business Context Aggregator
     console.log('1️⃣4️⃣ Testing OpenClaw AI: Business Context Aggregator...');
-    const { getTodaySalesSummary, getCriticalStockOverview, buildAiSystemContext } = await import('./src/bot/ai/aiContextService.js');
+    const { getTodaySalesSummary, getCriticalStockOverview, buildAiSystemContext } = await import('../src/bot/ai/aiContextService.js');
     const salesSummary = await getTodaySalesSummary();
     assert(typeof salesSummary.totalOrders === 'number', 'Sales summary returns totalOrders count');
     assert(typeof salesSummary.totalRevenue === 'number', 'Sales summary returns totalRevenue');
@@ -226,7 +251,7 @@ async function testTelegramBotE2E() {
 
     // 15. Uji Middleware aiLimiter (RBAC & Concurrency Lock)
     console.log('1️⃣5️⃣ Testing OpenClaw AI: aiLimiter Middleware RBAC & Locks...');
-    const { aiLimiter, resetLimiterState } = await import('./src/bot/middlewares/aiLimiter.js');
+    const { aiLimiter, resetLimiterState } = await import('../src/bot/middlewares/aiLimiter.js');
     resetLimiterState();
 
     // Skenario A: Unauthenticated user
@@ -268,7 +293,7 @@ async function testTelegramBotE2E() {
 
     // 16. Uji OpenClaw Client: Disabled & Offline Resilience
     console.log('1️⃣6️⃣ Testing OpenClaw AI: Client offline resilience & error handling...');
-    const { sendOpenClawChat, OpenClawError } = await import('./src/bot/ai/openclawClient.js');
+    const { sendOpenClawChat, OpenClawError } = await import('../src/bot/ai/openclawClient.js');
 
     // Uji saat AI_ENABLED=false
     const prevAiEnabled = process.env.AI_ENABLED;
@@ -286,7 +311,7 @@ async function testTelegramBotE2E() {
     // 17. Uji Handler /ai: Full Interaction Flow & Mock Gateway
     console.log('1️⃣7️⃣ Testing OpenClaw AI: Full Handler Flow with Mock Gateway...');
     const http = await import('http');
-    const { registerAiHandler } = await import('./src/bot/handlers/ai.js');
+    const { registerAiHandler } = await import('../src/bot/handlers/ai.js');
 
     // Buat mock bot untuk merekam registrasi command 'ai'
     let registeredAiCallback = null;
@@ -369,7 +394,7 @@ async function testTelegramBotE2E() {
       replyWithChatAction: async () => {},
       reply: async (t) => {
         // Simpan pesan terakhir yang bukan loading frame
-        if (!t.includes('Menghubungi') && !t.includes('Menganalisis')) {
+        if (!t.includes('Menghubungi') && !t.includes('Menganalisis') && !t.includes('<code>[')) {
           successAiReply = t;
         }
         return { message_id: 111, chat: { id: 701 } };
@@ -396,8 +421,8 @@ async function testTelegramBotE2E() {
 
     // 18. Uji Toggle Direct Chat Mode (Chat tanpa prefix /ai)
     console.log('1️⃣8️⃣ Testing OpenClaw AI: Direct Chat Mode Toggle (/ai on & /ai off)...');
-    const { isAiDirectChatMode, setAiDirectChatMode, toggleAiDirectChatMode } = await import('./src/bot/ai/aiSessionManager.js');
-    const { buildAiControlKeyboard } = await import('./src/bot/handlers/ai.js');
+    const { isAiDirectChatMode, setAiDirectChatMode, toggleAiDirectChatMode } = await import('../src/bot/ai/aiSessionManager.js');
+    const { buildAiControlKeyboard } = await import('../src/bot/handlers/ai.js');
 
     assert(ROLE_COMMANDS.OWNER.some((c) => c.command === 'ai_mode'), 'OWNER has /ai_mode command');
     assert(ROLE_COMMANDS.MANAGER.some((c) => c.command === 'ai_mode'), 'MANAGER has /ai_mode command');
@@ -443,6 +468,45 @@ async function testTelegramBotE2E() {
     // Verifikasi keyboard kontrol toggle
     const controlKb = buildAiControlKeyboard(testToggleUser);
     assert(controlKb && typeof controlKb.text === 'function', 'buildAiControlKeyboard generates valid InlineKeyboard');
+
+    // 19. Uji Dedicated Staff Persistent Reply Keyboard (Tombol Bawah Layar) & Penghapusan Katalog/Member
+    console.log('1️⃣9️⃣ Testing Dedicated Staff Reply Keyboard & Removal of Customer Catalog/Member...');
+    const replyKbModule = await import('../src/bot/keyboards/replyKeyboard.js');
+    assert(replyKbModule.buildCustomerReplyKeyboard === undefined, 'buildCustomerReplyKeyboard is completely removed');
+    const { buildStaffReplyKeyboard } = replyKbModule;
+
+    // Uji keyboard operasional staf untuk OWNER
+    const ownerKb = buildStaffReplyKeyboard('OWNER');
+    assert(ownerKb.is_persistent === true && ownerKb.resize_keyboard === true, 'Owner keyboard configured with resize and persistent');
+    assert(ownerKb.keyboard.some(r => r.some(b => b.text === '📊 Ringkasan Omzet')), 'Owner staff keyboard has Ringkasan Omzet');
+    assert(ownerKb.keyboard.some(r => r.some(b => b.text === '✅ Approval')), 'Owner staff keyboard has Approval');
+    assert(!ownerKb.keyboard.some(r => r.some(b => b.text.includes('Katalog') || b.text.includes('Member'))), 'Owner staff keyboard has NO catalog or member toggle button');
+
+    // Uji keyboard operasional staf untuk MANAGER
+    const managerKb = buildStaffReplyKeyboard('MANAGER');
+    assert(managerKb.keyboard.some(r => r.some(b => b.text === '📊 Laporan Hari Ini')), 'Manager staff keyboard has Laporan Hari Ini');
+    assert(managerKb.keyboard.some(r => r.some(b => b.text === '🚫 Menu Habis')), 'Manager staff keyboard has Menu Habis');
+
+    // Uji keyboard operasional staf untuk CASHIER
+    const cashierKb = buildStaffReplyKeyboard('CASHIER');
+    assert(cashierKb.keyboard.some(r => r.some(b => b.text === '🧾 Pesanan Baru')), 'Cashier staff keyboard has Pesanan Baru');
+    assert(cashierKb.keyboard.some(r => r.some(b => b.text === '⏱ Shift Kasir')), 'Cashier staff keyboard has Shift Kasir');
+
+    // Uji keyboard operasional staf untuk BARISTA & KITCHEN
+    const baristaKb = buildStaffReplyKeyboard('BARISTA');
+    assert(baristaKb.keyboard.some(r => r.some(b => b.text === '☕ Antrean Barista')), 'Barista staff keyboard has Antrean Barista');
+    const kitchenKb = buildStaffReplyKeyboard('KITCHEN');
+    assert(kitchenKb.keyboard.some(r => r.some(b => b.text === '🍳 Antrean Dapur')), 'Kitchen staff keyboard has Antrean Dapur');
+
+    // Uji registrasi handler staff menu operasional
+    const { registerStaffMenu } = await import('../src/bot/handlers/staffMenu.js');
+    const mockHearsList = [];
+    const testBotMock = {
+      hears: (pattern) => mockHearsList.push(pattern),
+      callbackQuery: () => {},
+    };
+    registerStaffMenu(testBotMock);
+    assert(mockHearsList.length >= 12, 'Staff operational menu registers all staff button listener triggers');
 
     console.log('======================================================');
     console.log(`🎉 ALL ${passed}/${total} TELEGRAM BOT ASSISTANT E2E TESTS PASSED 100%!`);

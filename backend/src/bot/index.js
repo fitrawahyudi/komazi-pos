@@ -55,6 +55,7 @@ import { registerManager } from './handlers/manager.js';
 import { registerOwner } from './handlers/owner.js';
 import { registerAiHandler, executeAiQuery } from './handlers/ai.js';
 import { registerJobHandlers } from './handlers/jobs.js';
+import { registerStaffMenu } from './handlers/staffMenu.js';
 import { isAiDirectChatMode, setAiDirectChatMode } from './ai/aiSessionManager.js';
 
 import { openShift } from './conversations/openShift.js';
@@ -125,6 +126,7 @@ registerManager(bot);
 registerOwner(bot);
 registerAiHandler(bot);
 registerJobHandlers(bot);
+registerStaffMenu(bot);
 
 // 6) Fallback untuk pesan/perintah yang tidak terdaftar atau unauthorized
 bot.on('message', async (ctx) => {

@@ -11,6 +11,7 @@ import { toast } from '../store/toastStore';
 import { api } from '../services/api';
 import { exportOrdersToExcel, exportOrdersToCsv } from '../utils/excel';
 import ExportOrdersModal from '../components/orders/ExportOrdersModal';
+import OrderDetailModal from '../components/orders/OrderDetailModal';
 import { usePersistentState } from '../hooks/usePersistentState';
 import {
   Receipt,
@@ -103,6 +104,7 @@ export default function OrdersPage() {
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
@@ -174,7 +176,7 @@ export default function OrdersPage() {
       }
 
       // 2. Cashier filter
-      if (isManagerOrOwner && cashierFilter !== 'ALL') {
+      if (cashierFilter !== 'ALL') {
         const orderCashier = order.cashierName || order.cashier?.name || order.shift?.cashier?.name;
         if (orderCashier !== cashierFilter) return false;
       }
@@ -820,50 +822,48 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {/* Filter Khusus Supervisor (Hanya Owner & Manager) */}
-        {isManagerOrOwner && (
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-komazi-border/50 text-xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-1">
-              Opsi:
-            </span>
+        {/* Filter Opsi Shift & Kasir */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-komazi-border/50 text-xs">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-1">
+            Opsi:
+          </span>
 
-            {/* Filter Shift */}
-            <div className="relative">
-              <select
-                value={shiftFilter}
-                onChange={(e) => setShiftFilter(e.target.value)}
-                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan shift"
-              >
-                <option value="ALL">Semua Shift</option>
-                {shiftList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
-            </div>
-
-            {/* Filter Kasir */}
-            <div className="relative">
-              <select
-                value={cashierFilter}
-                onChange={(e) => setCashierFilter(e.target.value)}
-                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan kasir"
-              >
-                <option value="ALL">Semua Kasir</option>
-                {distinctCashiers.map((name) => (
-                  <option key={name} value={name}>
-                    Kasir: {name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
-            </div>
+          {/* Filter Shift */}
+          <div className="relative">
+            <select
+              value={shiftFilter}
+              onChange={(e) => setShiftFilter(e.target.value)}
+              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+              title="Filter berdasarkan shift"
+            >
+              <option value="ALL">Semua Shift</option>
+              {shiftList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
           </div>
-        )}
+
+          {/* Filter Kasir */}
+          <div className="relative">
+            <select
+              value={cashierFilter}
+              onChange={(e) => setCashierFilter(e.target.value)}
+              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+              title="Filter berdasarkan kasir"
+            >
+              <option value="ALL">Semua Kasir</option>
+              {distinctCashiers.map((name) => (
+                <option key={name} value={name}>
+                  Kasir: {name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+          </div>
+        </div>
       </div>
 
       {/* 4. ORDERS TABLE */}
@@ -874,7 +874,7 @@ export default function OrdersPage() {
                 <tr>
                   <th className="py-3 px-4">No. Invoice</th>
                   <th className="py-3 px-4">Waktu Transaksi</th>
-                  {isManagerOrOwner && <th className="py-3 px-4">Kasir</th>}
+                  <th className="py-3 px-4">Kasir</th>
                   <th className="py-3 px-4">Pelanggan / Meja</th>
                   <th className="py-3 px-4">Item Pesanan</th>
                   <th className="py-3 px-4">Metode Bayar</th>
@@ -886,26 +886,22 @@ export default function OrdersPage() {
               <tbody className="divide-y divide-komazi-border">
                 {isLoading && orders.length === 0 ? (
                   <tr>
-                    <td colSpan={isManagerOrOwner ? 9 : 8} className="p-4 sm:p-6 bg-komazi-black/40">
+                    <td colSpan={9} className="p-4 sm:p-6 bg-komazi-black/40">
                       <OrdersTableSkeleton rows={5} />
                     </td>
                   </tr>
                 ) : filteredOrders.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={isManagerOrOwner ? 9 : 8}
+                      colSpan={9}
                       className="py-16 text-center text-komazi-muted space-y-2"
                     >
                       <Receipt className="w-10 h-10 mx-auto text-komazi-muted/40" />
                       <p className="font-semibold text-sm text-komazi-text">
-                        {isCashier
-                          ? 'Belum ada transaksi pada shift ini.'
-                          : 'Tidak ada transaksi yang sesuai kriteria filter.'}
+                        Tidak ada transaksi yang sesuai kriteria filter.
                       </p>
                       <p className="text-xs text-komazi-muted">
-                        {isCashier
-                          ? 'Transaksi baru dari meja kasir akan langsung muncul di sini secara real-time.'
-                          : 'Coba ubah filter kasir, shift, atau rentang waktu di atas.'}
+                        Coba sesuaikan kata kunci pencarian, filter kasir, shift, atau rentang waktu di atas.
                       </p>
                     </td>
                   </tr>
@@ -919,7 +915,14 @@ export default function OrdersPage() {
                       >
                         {/* 1. Invoice No */}
                         <td className="py-3.5 px-4 font-mono font-bold text-komazi-coral">
-                          {order.invoiceNo}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrderDetail(order)}
+                            className="hover:underline hover:text-white transition-colors cursor-pointer text-left font-mono font-bold text-komazi-coral"
+                            title="Klik untuk melihat rincian detail pesanan"
+                          >
+                            {order.invoiceNo}
+                          </button>
                         </td>
 
                         {/* 2. Date Time */}
@@ -927,14 +930,12 @@ export default function OrdersPage() {
                           {formatDateTime(order.createdAt)}
                         </td>
 
-                        {/* 3. Kasir & Shift (Special for Manager / Owner Oversight) */}
-                        {isManagerOrOwner && (
-                          <td className="py-3.5 px-4">
-                            <div className="font-bold text-komazi-text">
-                              {order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir'}
-                            </div>
-                          </td>
-                        )}
+                        {/* 3. Kasir & Shift (Visible to all cashiers & managers) */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-komazi-text">
+                            {order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir'}
+                          </div>
+                        </td>
 
                         {/* 4. Customer / Table */}
                         <td className="py-3.5 px-4">
@@ -1003,14 +1004,34 @@ export default function OrdersPage() {
                         {/* 9. Action Buttons */}
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Reprint Struk */}
+                            {/* Lihat Detail Pesanan */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderDetail(order)}
+                              title="Lihat Rincian Detail Pesanan"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-teal-light hover:text-white text-komazi-muted transition-colors cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Reprint Struk Pelanggan */}
                             <button
                               type="button"
                               onClick={() => setSelectedReceipt(order)}
-                              title="Cetak Ulang Struk Thermal"
-                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-coral hover:text-white text-komazi-muted transition-colors"
+                              title="Cetak Ulang Struk Pelanggan"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-coral hover:text-white text-komazi-muted transition-colors cursor-pointer"
                             >
                               <Printer className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Cetak Struk Pertinggal (Salinan Kasir) */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReceipt({ ...order, initialReceiptType: 'merchant' })}
+                              title="Cetak Struk Pertinggal (Salinan Kasir / Arsip Toko)"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-amber-500 hover:text-white text-komazi-muted transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
                             </button>
 
                             {/* Void Button (only if PAID) */}
@@ -1069,6 +1090,23 @@ export default function OrdersPage() {
             itemLabel="transaksi"
           />
         </div>
+
+      {/* Modal: Dedicated Order Detail View */}
+      {selectedOrderDetail && (
+        <OrderDetailModal
+          isOpen={Boolean(selectedOrderDetail)}
+          order={selectedOrderDetail}
+          onClose={() => setSelectedOrderDetail(null)}
+          onPrintCustomerReceipt={(ord) => {
+            setSelectedOrderDetail(null);
+            setSelectedReceipt(ord);
+          }}
+          onPrintMerchantReceipt={(ord) => {
+            setSelectedOrderDetail(null);
+            setSelectedReceipt({ ...ord, initialReceiptType: 'merchant' });
+          }}
+        />
+      )}
 
       {/* Modal: Receipt Preview */}
       {selectedReceipt && (

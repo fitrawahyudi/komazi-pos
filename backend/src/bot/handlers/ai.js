@@ -145,17 +145,10 @@ export async function executeAiQuery(ctx, rawQuery, options = { fromDirectChat: 
     queryNotice = '\n<i>[Pertanyaan disesuaikan dengan batas 500 karakter]</i>';
   }
 
-  // 4. Eksekusi dengan Animasi Loading Interaktif
+  // 4. Eksekusi dengan Animasi Loading Bar
   return withLoadingAnimation(
     ctx,
-    {
-      chatAction: 'typing',
-      frames: [
-        '🧠 <b>Menghubungi Komazi AI...</b>',
-        '📊 <b>Menganalisis data operasional outlet...</b>',
-        '✍️ <b>Menyusun rekomendasi asisten...</b>',
-      ],
-    },
+    { chatAction: 'typing' },
     async () => {
       try {
         const [systemPrompt, history] = await Promise.all([
@@ -206,8 +199,12 @@ export async function executeAiQuery(ctx, rawQuery, options = { fromDirectChat: 
             .text('❌ Batal', 'job_action:cancel');
         }
 
+        if (!finalCaption.includes('@komazi-assistant')) {
+          finalCaption += '\n\n🤖 <i>@komazi-assistant</i>';
+        }
+
         if (finalCaption.length > 4000) {
-          finalCaption = finalCaption.slice(0, 3950) + '\n\n<i>[Pesan dipotong]</i>';
+          finalCaption = finalCaption.slice(0, 3950) + '\n\n<i>[Pesan dipotong]</i>\n\n🤖 <i>@komazi-assistant</i>';
         }
 
         return ctx.reply(finalCaption, replyOptions);
@@ -322,7 +319,8 @@ export function registerAiHandler(bot) {
         `• <code>/ai on</code> — Aktifkan mode chat bebas\n` +
         `• <code>/ai off</code> — Matikan mode chat bebas\n` +
         `• <code>/ai reset</code> — Bersihkan memori percakapan\n` +
-        `━━━━━━━━━━━━━━━━━━`,
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🤖 <i>@komazi-assistant</i>`,
         {
           parse_mode: 'HTML',
           reply_markup: buildAiControlKeyboard(ctx.user.id),

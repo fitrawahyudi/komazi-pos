@@ -180,4 +180,103 @@ export const stockService = {
     }
     return lowItems;
   },
+
+  async getMovements({
+    ingredientId,
+    type,
+    search,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 20,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+  } = {}) {
+    const where = {};
+
+    if (ingredientId) {
+      const parsedId = parseInt(ingredientId, 10);
+      if (!isNaN(parsedId)) {
+        where.ingredientId = parsedId;
+      }
+    }
+
+    if (type && type !== 'ALL') {
+      const upperType = String(type).toUpperCase();
+      const validTypes = ['PURCHASE', 'WASTE', 'SALE', 'ADJUSTMENT'];
+      if (validTypes.includes(upperType)) {
+        where.type = upperType;
+      }
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          start.setHours(0, 0, 0, 0);
+          where.createdAt.gte = start;
+        }
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
+      }
+    }
+
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
+      where.OR = [
+        { note: { contains: q } },
+        { recordedBy: { contains: q } },
+        { ingredient: { name: { contains: q } } },
+      ];
+    }
+
+    const currentPage = Math.max(1, parseInt(page, 10) || 1);
+    const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (currentPage - 1) * take;
+
+    const validSortFields = ['createdAt', 'qty', 'totalCost'];
+    const resolvedSortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const resolvedSortOrder = String(sortOrder).toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const [total, items] = await Promise.all([
+      prisma.stockMovement.count({ where }),
+      prisma.stockMovement.findMany({
+        where,
+        include: {
+          ingredient: {
+            select: {
+              id: true,
+              name: true,
+              unit: true,
+              costPerUnit: true,
+            },
+          },
+        },
+        orderBy: {
+          [resolvedSortField]: resolvedSortOrder,
+        },
+        skip,
+        take,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / take) || 1;
+
+    return {
+      items,
+      meta: {
+        page: currentPage,
+        limit: take,
+        total,
+        totalPages,
+      },
+    };
+  },
 };
+

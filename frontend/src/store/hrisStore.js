@@ -86,17 +86,23 @@ export const useHrisStore = create((set, get) => ({
     try {
       const res = await api.hris.deleteStaff(id);
       if (res && res.success) {
-        toast.success('Akun staf berhasil dinonaktifkan');
-        set((state) => ({
-          staffList: state.staffList.map((s) => (s.id === id ? { ...s, isActive: false } : s)),
-        }));
+        toast.success(res.message || 'Akun staf berhasil dihapus');
+        if (res.data?.isHardDeleted) {
+          set((state) => ({
+            staffList: state.staffList.filter((s) => s.id !== id),
+          }));
+        } else {
+          set((state) => ({
+            staffList: state.staffList.map((s) => (s.id === id ? { ...s, isActive: false } : s)),
+          }));
+        }
         get().fetchOverview();
         return true;
       } else {
-        toast.error(res?.message || 'Gagal menonaktifkan staf');
+        toast.error(res?.message || 'Gagal menghapus staf');
       }
     } catch (err) {
-      toast.error(err.message || 'Gagal menonaktifkan staf');
+      toast.error(err.message || 'Gagal menghapus staf');
     }
     return false;
   },
@@ -148,12 +154,19 @@ export const useHrisStore = create((set, get) => ({
         get().fetchMyTodaySchedule?.();
         return res.data;
       } else {
-        toast.error(res?.message || 'Gagal Clock-In');
+        const errorMsg = res?.message || 'Gagal Clock-In';
+        toast.error(errorMsg);
+        const err = new Error(errorMsg);
+        err.errors = res?.errors;
+        err.status = res?.status;
+        throw err;
       }
     } catch (err) {
-      toast.error(err.message || 'Gagal Clock-In');
+      if (!err.errors && !err.status) {
+        toast.error(err.message || 'Gagal Clock-In');
+      }
+      throw err;
     }
-    return null;
   },
 
   clockOut: async (data = {}) => {
@@ -164,14 +177,23 @@ export const useHrisStore = create((set, get) => ({
         set({ myTodayAttendance: res.data });
         get().fetchStaff();
         get().fetchOverview();
+        get().fetchMyTodaySchedule?.();
         return res.data;
       } else {
-        toast.error(res?.message || 'Gagal Clock-Out');
+        const errorMsg = res?.message || 'Gagal Clock-Out';
+        toast.error(errorMsg);
+        const err = new Error(errorMsg);
+        err.errors = res?.errors;
+        err.code = res?.errors?.code;
+        err.status = res?.status;
+        throw err;
       }
     } catch (err) {
-      toast.error(err.message || 'Gagal Clock-Out');
+      if (!err.errors && !err.status) {
+        toast.error(err.message || 'Gagal Clock-Out');
+      }
+      throw err;
     }
-    return null;
   },
 
   createManualAttendance: async (data) => {

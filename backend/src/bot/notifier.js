@@ -317,7 +317,7 @@ Kas yang Diharapkan: ${rupiah(expectedCash)}
 Kas Fisik Aktual: <b>${rupiah(countedCash)}</b>
 Status Rekonsiliasi: <b>${diffText}</b>
 ${notes ? `Catatan: <i>${esc(notes)}</i>\n` : ''}━━━━━━━━━━━━━━━━━━
-<i>POS Komazi Z-Report Settlement</i>
+🤖 <i>@komazi-assistant</i>
     `.trim();
 
     const imagePromise = generateBotImage('shift_closed', {

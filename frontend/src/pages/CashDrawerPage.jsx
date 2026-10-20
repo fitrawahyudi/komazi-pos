@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  Receipt,
   Coins,
   History,
   Lock,
@@ -30,6 +29,7 @@ import { formatRupiah, formatDateTime } from '../utils/format';
 import { toast } from '../store/toastStore';
 import Pagination from '../components/ui/Pagination';
 import ShiftModal from '../components/shift/ShiftModal';
+import PaymentMethodBreakdownCard from '../components/shift/PaymentMethodBreakdownCard';
 
 export default function CashDrawerPage() {
   const { activeShift, fetchActiveShift, addCashMovement } = useShiftStore();
@@ -126,6 +126,17 @@ export default function CashDrawerPage() {
       return;
     }
 
+    if ((movementType === 'OUT' || movementType === 'DROP') && Number(movementAmount) > currentCashInDrawer) {
+      if (movementType === 'DROP') {
+        toast.error(`Setor brankas (${formatRupiah(movementAmount)}) melebihi saldo kas di laci (${formatRupiah(currentCashInDrawer)}).`);
+        return;
+      }
+      const confirmed = window.confirm(
+        `Perhatian: Pengeluaran kas (${formatRupiah(movementAmount)}) melebihi saldo kas fisik di laci saat ini (${formatRupiah(currentCashInDrawer)}).\n\nTetap lanjutkan pencatatan pengeluaran kas?`
+      );
+      if (!confirmed) return;
+    }
+
     try {
       setIsSubmitting(true);
       await addCashMovement({
@@ -214,6 +225,7 @@ export default function CashDrawerPage() {
           <button
             type="button"
             onClick={() => handleOpenMovementModal('DROP')}
+            title="Setor uang tunai dari laci kasir ke brankas utama"
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all active:scale-95 shadow-sm"
           >
             <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
@@ -223,7 +235,7 @@ export default function CashDrawerPage() {
       </div>
 
       {/* 2. Metrics & Cash Breakdown Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Main: Saldo Fisik di Laci */}
         <div className="p-5 rounded-2xl bg-gradient-to-br from-komazi-surface-2 to-komazi-surface border border-komazi-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -264,26 +276,6 @@ export default function CashDrawerPage() {
           </div>
         </div>
 
-        {/* Total Penjualan Tunai */}
-        <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted">
-              Penjualan Tunai Sesi Ini
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-komazi-coral/15 text-komazi-coral flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3 className="font-mono font-bold text-xl text-komazi-coral">
-              +{formatRupiah(totalCashSales)}
-            </h3>
-            <p className="text-[10px] text-komazi-muted mt-1">
-              Omzet tunai yang diterima dari pembeli
-            </p>
-          </div>
-        </div>
-
         {/* Arus Kas Operasional (Net In - Out) */}
         <div className="p-5 rounded-2xl bg-komazi-surface border border-komazi-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -315,7 +307,13 @@ export default function CashDrawerPage() {
         </div>
       </div>
 
-      {/* 3. Filter & Table Card */}
+      {/* 3. Rincian Per Metode Bayar */}
+      <PaymentMethodBreakdownCard
+        shift={activeShift}
+        totalCashSales={totalCashSales}
+      />
+
+      {/* 4. Filter & Table Card */}
       <div className="bg-komazi-surface rounded-2xl border border-komazi-border overflow-hidden shadow-sm">
         {/* Table Filter Header */}
         <div className="p-4 sm:p-5 border-b border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -485,33 +483,81 @@ export default function CashDrawerPage() {
                   className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
                     movementType === 'IN'
                       ? 'bg-emerald-500/15 text-emerald-400'
+                      : movementType === 'DROP'
+                      ? 'bg-purple-500/15 text-purple-300'
                       : 'bg-danger/15 text-danger'
                   }`}
                 >
                   {movementType === 'IN' ? (
                     <ArrowDownLeft className="w-5 h-5" />
+                  ) : movementType === 'DROP' ? (
+                    <ShieldCheck className="w-5 h-5" />
                   ) : (
                     <ArrowUpRight className="w-5 h-5" />
                   )}
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-komazi-text">
-                    {movementType === 'IN' ? 'Catat Kas Masuk (Tambahan Kas)' : 'Catat Kas Keluar (Pengeluaran Operasional)'}
+                    {movementType === 'IN'
+                      ? 'Kas Masuk'
+                      : movementType === 'DROP'
+                      ? 'Setor Brankas'
+                      : 'Kas Keluar'}
                   </h3>
                   <p className="text-[11px] text-komazi-muted">
                     {movementType === 'IN'
-                      ? 'Menambah jumlah uang tunai di laci kasir'
+                      ? 'Menambah modal/uang tunai fisik di laci kasir'
+                      : movementType === 'DROP'
+                      ? 'Setor aman sebagian uang tunai laci ke brankas utama'
                       : 'Biaya operasional kasir (es batu, gas, galon, belanja darurat)'}
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Quick Type Switcher Tabs */}
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setShowMovementModal(false)}
-                className="p-1.5 rounded-lg text-komazi-muted hover:text-komazi-text hover:bg-komazi-surface-2 transition-colors"
+                onClick={() => setMovementType('OUT')}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                  movementType === 'OUT'
+                    ? 'bg-danger/20 border-danger text-danger'
+                    : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-komazi-text'
+                }`}
               >
-                <X className="w-4 h-4" />
+                Kas Keluar
               </button>
+              <button
+                type="button"
+                onClick={() => setMovementType('IN')}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                  movementType === 'IN'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                    : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-komazi-text'
+                }`}
+              >
+                Kas Masuk
+              </button>
+              <button
+                type="button"
+                onClick={() => setMovementType('DROP')}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                  movementType === 'DROP'
+                    ? 'bg-purple-500/20 border-purple-500 text-purple-300'
+                    : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-komazi-text'
+                }`}
+              >
+                Setor Brankas
+              </button>
+            </div>
+
+            {/* Current Drawer Balance Indicator */}
+            <div className="p-3 rounded-xl bg-komazi-surface-2/70 border border-komazi-border/80 flex items-center justify-between text-xs">
+              <span className="text-komazi-muted">Saldo Kas di Laci Saat Ini:</span>
+              <span className="font-mono font-bold text-emerald-400">
+                {formatRupiah(currentCashInDrawer)}
+              </span>
             </div>
 
             <form onSubmit={handleSaveMovement} className="space-y-4">
@@ -560,6 +606,8 @@ export default function CashDrawerPage() {
                   placeholder={
                     movementType === 'IN'
                       ? 'contoh: Tambahan uang kembalian pecahan Rp 2.000'
+                      : movementType === 'DROP'
+                      ? 'contoh: Setor uang tunai tengah hari ke brankas supervisor'
                       : 'contoh: Beli es batu kristal 2 kantong (habis mendadak)'
                   }
                   value={movementReason}
@@ -582,11 +630,15 @@ export default function CashDrawerPage() {
                   className={`flex-1 py-2.5 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-md disabled:opacity-50 ${
                     movementType === 'IN'
                       ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : movementType === 'DROP'
+                      ? 'bg-purple-600 hover:bg-purple-500'
                       : 'bg-danger hover:bg-danger/80'
                   }`}
                 >
                   {movementType === 'IN' ? (
                     <ArrowDownLeft className="w-4 h-4" />
+                  ) : movementType === 'DROP' ? (
+                    <ShieldCheck className="w-4 h-4" />
                   ) : (
                     <ArrowUpRight className="w-4 h-4" />
                   )}

@@ -23,6 +23,7 @@ import { Search, Sparkles, X, ShoppingBag, ArrowRight, RefreshCw, UtensilsCrosse
 import { useShiftStore } from '../store/shiftStore';
 import { useAuthStore } from '../store/authStore';
 import { useHrisStore } from '../store/hrisStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { toast } from '../store/toastStore';
 
 export default function PosPage() {
@@ -42,11 +43,13 @@ export default function PosPage() {
   const { user } = useAuthStore();
   const { myTodaySchedule, fetchMyTodaySchedule, myTodayAttendance, fetchTodayAttendance } = useHrisStore();
 
+  const { settings } = useSettingsStore();
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
   const hasActiveShift = Boolean(activeShift && !activeShift.isClosed);
   const isOwner = user?.role === 'OWNER';
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
-  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
-  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
+  const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
 
   const [activeModalProduct, setActiveModalProduct] = useState(null);
   const [activeDynamicProduct, setActiveDynamicProduct] = useState(null);
@@ -60,6 +63,11 @@ export default function PosPage() {
   const [isAttendanceGateDismissed, setIsAttendanceGateDismissed] = useState(false);
 
   useEffect(() => {
+    // Auto-close sidebar navigasi dan mobile cart saat pindah ke tab Transaksi POS
+    useUiStore.getState().setSidebarCollapsed(true);
+    useUiStore.getState().setMobileSidebarOpen(false);
+    useUiStore.getState().setMobileCartOpen(false);
+
     let lastSync = Date.now();
     // Sinkronisasi pesanan tertahan dengan backend MySQL
     const sync = async () => {
@@ -233,26 +241,6 @@ export default function PosPage() {
               </button>
             )}
           </div>
-
-          {/* Active Register & Sesi Kasir Status Badge */}
-          {hasActiveShift && (
-            <button
-              type="button"
-              onClick={() => setIsShiftModalOpen(true)}
-              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border hover:border-komazi-coral text-xs transition-colors shrink-0 shadow-sm"
-              title="Kelola laci kas & sesi register"
-            >
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
-              <div className="text-left font-sans">
-                <span className="text-[10px] text-komazi-muted uppercase font-bold block leading-none">
-                  {activeShift.registerName || 'Kasir Utama'}
-                </span>
-                <span className="font-bold text-komazi-text text-[11px] block leading-tight mt-0.5">
-                  {activeShift.cashierName || 'Kasir'}
-                </span>
-              </div>
-            </button>
-          )}
 
           {/* Quick Cart button for mobile header */}
           {/* <button

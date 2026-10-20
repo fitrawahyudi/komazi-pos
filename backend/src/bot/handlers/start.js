@@ -1,6 +1,6 @@
 import { telegramLinkService } from '../../services/telegramLinkService.js';
 import { setCommandsForUser } from '../commands.js';
-import { mainMenu } from '../keyboards/index.js';
+import { mainMenu, buildStaffReplyKeyboard } from '../keyboards/index.js';
 import { esc } from '../utils/format.js';
 import { generateBotImage } from '../../services/botImage/index.js';
 import { replyWithPhotoFallback } from '../utils/sendVisual.js';
@@ -16,11 +16,12 @@ export function formatBotInfoCaption(data, callerName, callerRole, telegramId) {
   return `
 🤖 <b>STATUS & PERFORMA ASISTEN KOMAZI</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 <b>Status:</b> ONLINE • ⏱ <b>Uptime:</b> <b>${esc(data.bot.uptime)}</b>
-⚡ <b>Mode:</b> ${esc(data.bot.mode)} • <b>Node:</b> ${esc(data.bot.nodeVersion)}
+🟢 <b>Status:</b> ONLINE
+⏱ <b>Uptime:</b> <b>${esc(data.bot.uptime)}</b>
+⚡ <b>Mode:</b> ${esc(data.bot.mode)}
 🧠 <b>RAM:</b> ${esc(data.bot.memory.heapUsed)} / RSS ${esc(data.bot.memory.rss)}
 
-🗄️ <b>Database MySQL & Prisma</b>
+🗄️ <b>Database</b>
 • Status: <b>${data.database.status === 'CONNECTED' ? '🟢 Terhubung' : '🔴 Gangguan'}</b> (${esc(data.database.latency)})
 • Model Entitas: <b>${data.database.modelsCount} Model</b>
 
@@ -28,17 +29,19 @@ export function formatBotInfoCaption(data, callerName, callerRole, telegramId) {
 • Tertaut: <b>${data.staff.linked} dari ${data.staff.total} Staf</b>
 • Peran: Owner (${data.staff.roles.OWNER.linked}/${data.staff.roles.OWNER.total}) • Mgr (${data.staff.roles.MANAGER.linked}/${data.staff.roles.MANAGER.total}) • Kasir (${data.staff.roles.CASHIER.linked}/${data.staff.roles.CASHIER.total}) • Barista (${data.staff.roles.BARISTA.linked}/${data.staff.roles.BARISTA.total}) • Dapur (${data.staff.roles.KITCHEN.linked}/${data.staff.roles.KITCHEN.total})
 
-☕ <b>Operasional Outlet</b>
-• Shift Kasir: <b>${data.operations.openShifts} Sesi</b> • Pesanan: <b>${data.operations.orders}</b>
-• Menu: <b>${data.operations.products}</b> • Bahan: <b>${data.operations.ingredients}</b> (Kritis: <b>${data.operations.lowStock}</b>)
-• Coworking: <b>${data.operations.activeWorkspaces} Sesi Aktif</b>
+☕ <b>Operasional Komazi</b>
+• Shift Kasir: <b>${data.operations.openShifts} Sesi</b> 
+• Pesanan: <b>${data.operations.orders}</b>
+• Menu: <b>${data.operations.products}</b> 
+• Bahan: <b>${data.operations.ingredients}</b> (Kritis: <b>${data.operations.lowStock}</b>)
 
-🔔 <b>Otomasi & Scheduler</b>
-• Notif Transaksi: ${data.notifications.transaction ? 'Aktif ✅' : 'Nonaktif ❌'} • Stok Menipis: ${data.notifications.lowStock ? 'Aktif ✅' : 'Nonaktif ❌'}
+🔔 <b>Otomasi & Notifikasi</b>
+• Notif Transaksi: ${data.notifications.transaction ? 'Aktif ✅' : 'Nonaktif ❌'} 
+• Stok Menipis: ${data.notifications.lowStock ? 'Aktif ✅' : 'Nonaktif ❌'}
 • Tutup Buku (22:00 WIB): ${data.notifications.dailySummary ? 'Aktif ✅' : 'Nonaktif ❌'}
 • AI Scheduler: Morning & Evening Brief ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 <i>Diakses oleh: <b>${esc(callerName)}</b> (${esc(callerRole)}) • ID: <code>${telegramId}</code></i>
+🤖 <i>@komazi-assistant</i>
   `.trim();
 }
 
@@ -62,15 +65,7 @@ export function botInfoKeyboard(role) {
 async function handleBotInfo(ctx) {
   return withLoadingAnimation(
     ctx,
-    {
-      chatAction: 'upload_photo',
-      frames: [
-        '⏳ <b>Memeriksa status operasional bot Komazi...</b>',
-        '🔍 <b>Menguji konektivitas & latensi database MySQL...</b>',
-        '📊 <b>Mengkalkulasi metrik staf, memori, dan antrean...</b>',
-        '🎨 <b>Merender kartu status performa sistem...</b>',
-      ],
-    },
+    { chatAction: 'upload_photo' },
     async () => {
       const data = await getBotStatusData();
       const callerName = ctx.user ? ctx.user.name : (ctx.from?.first_name || 'Tamu');
@@ -98,10 +93,13 @@ export function registerStart(bot) {
     if (ctx.user && !code) {
       await setCommandsForUser(bot, ctx.from.id, ctx.user.role);
       const caption = `Halo, <b>${esc(ctx.user.name)}</b>! ☕\nPeran aktif Anda: <b>${ctx.user.role}</b>\n\nPilih menu operasional di bawah ini:`;
-      return replyWithPhotoFallback(ctx, {
+      await replyWithPhotoFallback(ctx, {
         imageBufferPromise: generateBotImage('welcome', { user: ctx.user, telegramId: ctx.from.id }),
         captionHtml: caption,
         replyMarkup: mainMenu(ctx.user.role),
+      });
+      return ctx.reply('👇 Menu operasional POS tersedia pada tombol di bawah layar:', {
+        reply_markup: buildStaffReplyKeyboard(ctx.user.role),
       });
     }
 
@@ -111,6 +109,7 @@ export function registerStart(bot) {
       return replyWithPhotoFallback(ctx, {
         imageBufferPromise: generateBotImage('welcome', { user: null, telegramId: ctx.from.id }),
         captionHtml: caption,
+        replyMarkup: buildStaffReplyKeyboard(null),
       });
     }
 
@@ -127,10 +126,13 @@ export function registerStart(bot) {
     await setCommandsForUser(bot, ctx.from.id, linkedUser.role);
 
     const successCaption = `🎉 <b>Penautikan Berhasil!</b>\nAkun Anda telah terhubung sebagai <b>${esc(linkedUser.name)}</b> (${linkedUser.role}).\n\nDaftar menu dan perintah cepat telah disesuaikan dengan peran Anda.`;
-    return replyWithPhotoFallback(ctx, {
+    await replyWithPhotoFallback(ctx, {
       imageBufferPromise: generateBotImage('welcome', { user: linkedUser, telegramId: ctx.from.id }),
       captionHtml: successCaption,
       replyMarkup: mainMenu(linkedUser.role),
+    });
+    return ctx.reply('👇 Menu operasional POS tersedia pada tombol di bawah layar:', {
+      reply_markup: buildStaffReplyKeyboard(linkedUser.role),
     });
   });
 
@@ -147,15 +149,18 @@ export function registerStart(bot) {
   });
 
   // Menu Utama (/menu)
-  bot.command('menu', (ctx) => {
+  bot.command('menu', async (ctx) => {
     if (!ctx.user) {
       return ctx.reply('Akun belum tertaut. Silakan tautkan akun terlebih dahulu dengan <code>/start KODE</code>', { parse_mode: 'HTML' });
     }
     const caption = `📋 <b>Menu Utama Komazi POS (${ctx.user.role}):</b>\nPilih fitur operasional outlet melalui tombol navigasi di bawah ini:`;
-    return replyWithPhotoFallback(ctx, {
+    await replyWithPhotoFallback(ctx, {
       imageBufferPromise: generateBotImage('menu', { role: ctx.user.role }),
       captionHtml: caption,
       replyMarkup: mainMenu(ctx.user.role),
+    });
+    return ctx.reply('👇 Menu operasional POS di bawah layar aktif:', {
+      reply_markup: buildStaffReplyKeyboard(ctx.user.role),
     });
   });
 

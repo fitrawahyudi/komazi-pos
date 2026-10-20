@@ -9,6 +9,7 @@ import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 import DenominationCounter from './DenominationCounter';
 import CloseSessionReportModal from './CloseSessionReportModal';
 import AttendanceVerificationModal from '../hris/AttendanceVerificationModal';
+import PaymentMethodBreakdownCard from './PaymentMethodBreakdownCard';
 import {
   X,
   CircleDot,
@@ -31,8 +32,9 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
+import { useSettingsStore } from '../../store/settingsStore';
 
-export default function ShiftModal({ onClose }) {
+export default function ShiftModal({ onClose, onProceedToClockOut }) {
   const {
     activeShift,
     registers,
@@ -61,10 +63,12 @@ export default function ShiftModal({ onClose }) {
     if (user?.id) fetchTodayAttendance?.(user.id);
   }, [fetchMyTodaySchedule, fetchTodayAttendance, user?.id]);
 
+  const { settings } = useSettingsStore();
+  const isAttendanceEnforced = settings?.enforceAttendanceGuard !== false && settings?.enforceAttendanceGuard !== 'false';
   const isOwner = user?.role === 'OWNER';
-  const hasClockedIn = isOwner || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
+  const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
   const isScheduleBlocked = !isOwner && myTodaySchedule !== null && !myTodaySchedule?.isScheduled;
-  const isAttendanceBlocked = !isOwner && !isScheduleBlocked && !hasClockedIn;
+  const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && !hasClockedIn;
   const isBlocked = isScheduleBlocked || isAttendanceBlocked;
 
   const handleAttendanceSuccess = async () => {
@@ -186,6 +190,17 @@ export default function ShiftModal({ onClose }) {
       return;
     }
 
+    if ((movementType === 'OUT' || movementType === 'DROP') && Number(movementAmount) > expectedCash) {
+      if (movementType === 'DROP') {
+        toast.error(`Setor brankas (${formatRupiah(movementAmount)}) melebihi saldo kas di laci (${formatRupiah(expectedCash)}).`);
+        return;
+      }
+      const confirmed = window.confirm(
+        `Perhatian: Pengeluaran (${formatRupiah(movementAmount)}) melebihi saldo kas fisik di laci (${formatRupiah(expectedCash)}).\n\nTetap lanjutkan pencatatan?`
+      );
+      if (!confirmed) return;
+    }
+
     try {
       setIsSubmitting(true);
       await addCashMovement({
@@ -213,6 +228,14 @@ export default function ShiftModal({ onClose }) {
           setClosedSessionReport(null);
           onClose();
         }}
+        onProceedToClockOut={
+          onProceedToClockOut
+            ? () => {
+                setClosedSessionReport(null);
+                onProceedToClockOut();
+              }
+            : undefined
+        }
       />
     );
   }
@@ -314,9 +337,6 @@ export default function ShiftModal({ onClose }) {
                     <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
                     <div>
                       <strong className="block text-amber-200 font-bold">Presensi Wajib Dilakukan</strong>
-                      <span className="leading-relaxed text-[11px] block mt-0.5 text-amber-300/90">
-                        Anda belum melakukan presensi hari ini. Silakan lakukan kehadiran terlebih dahulu sebelum membuka sesi kasir dan bertransaksi.
-                      </span>
                     </div>
                   </div>
                   <button
@@ -447,6 +467,12 @@ export default function ShiftModal({ onClose }) {
                 </div>
               </div>
 
+              {/* Rincian Per Metode Bayar */}
+              <PaymentMethodBreakdownCard
+                shift={activeShift}
+                totalCashSales={totalCashSales}
+              />
+
               {/* Close Shift Form */}
               <form onSubmit={handleCloseShift} className="space-y-4 pt-2 border-t border-komazi-border">
                 <div className="flex items-center justify-between">
@@ -553,9 +579,14 @@ export default function ShiftModal({ onClose }) {
             /* ================= CASH MOVEMENT TAB ================= */
             <div className="space-y-5">
               <form onSubmit={handleAddMovement} className="p-4 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
-                <h4 className="font-bold text-xs text-komazi-text uppercase tracking-wider">
-                  Catat Arus Kas Fisik Laci
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-komazi-text uppercase tracking-wider">
+                    Catat Arus Kas Fisik Laci
+                  </h4>
+                  <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                    Saldo Laci: {formatRupiah(expectedCash)}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <button
@@ -563,22 +594,22 @@ export default function ShiftModal({ onClose }) {
                     onClick={() => setMovementType('OUT')}
                     className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                       movementType === 'OUT'
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                        ? 'bg-danger/20 border-danger text-danger'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-komazi-text'
                     }`}
                   >
-                    Kas Keluar (Out)
+                    Kas Keluar
                   </button>
                   <button
                     type="button"
                     onClick={() => setMovementType('IN')}
                     className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                       movementType === 'IN'
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-300'
-                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-komazi-text'
                     }`}
                   >
-                    Kas Masuk (In)
+                    Kas Masuk
                   </button>
                   <button
                     type="button"
@@ -586,10 +617,10 @@ export default function ShiftModal({ onClose }) {
                     className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                       movementType === 'DROP'
                         ? 'bg-purple-500/20 border-purple-500 text-purple-300'
-                        : 'bg-komazi-surface border-komazi-border text-komazi-muted'
+                        : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-komazi-text'
                     }`}
                   >
-                    Setor Brankas (Drop)
+                    Setor Brankas
                   </button>
                 </div>
 
@@ -598,12 +629,26 @@ export default function ShiftModal({ onClose }) {
                   <input
                     type="number"
                     min="1000"
-                    step="5000"
+                    step="500"
                     required
                     value={movementAmount}
                     onChange={(e) => setMovementAmount(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border font-mono font-bold text-sm text-komazi-text focus:border-komazi-coral outline-none"
                   />
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[10000, 20000, 50000, 100000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setMovementAmount(preset)}
+                      className="px-2 py-0.5 rounded-lg bg-komazi-surface hover:bg-komazi-border text-[10px] font-mono font-bold text-komazi-muted hover:text-white transition-colors"
+                    >
+                      +{formatRupiah(preset)}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="space-y-1">
@@ -613,7 +658,13 @@ export default function ShiftModal({ onClose }) {
                     required
                     value={movementReason}
                     onChange={(e) => setMovementReason(e.target.value)}
-                    placeholder="Contoh: Beli es batu darurat, setor aman ke brankas"
+                    placeholder={
+                      movementType === 'IN'
+                        ? 'Contoh: Tambahan uang kembalian'
+                        : movementType === 'DROP'
+                        ? 'Contoh: Setor uang ke brankas supervisor'
+                        : 'Contoh: Beli es batu darurat, gas elpiji'
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
                   />
                 </div>
@@ -623,7 +674,13 @@ export default function ShiftModal({ onClose }) {
                   isLoading={isSubmitting}
                   loadingText="Menyimpan Arus Kas..."
                   variant="primary"
-                  className="w-full py-2.5 rounded-xl font-bold text-xs"
+                  className={`w-full py-2.5 rounded-xl font-bold text-xs ${
+                    movementType === 'IN'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : movementType === 'DROP'
+                      ? 'bg-purple-600 hover:bg-purple-500'
+                      : ''
+                  }`}
                 >
                   Simpan Arus Kas
                 </LoadingButton>
@@ -636,31 +693,38 @@ export default function ShiftModal({ onClose }) {
                   <p className="text-center py-6 text-komazi-muted italic">Belum ada catatan arus kas pada sesi ini.</p>
                 ) : (
                   <div className="space-y-2">
-                    {paginatedMovements.map((m) => (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            m.type === 'IN' || m.type === 'CASH_IN'
-                              ? 'bg-blue-500/20 text-blue-400'
-                              : m.type === 'DROP' || m.type === 'CASH_DROP'
-                              ? 'bg-purple-500/20 text-purple-400'
-                              : 'bg-amber-500/20 text-amber-400'
-                          }`}>
-                            {m.type}
-                          </span>
-                          <div>
-                            <span className="font-bold text-komazi-text block">{m.reason}</span>
-                            <span className="text-[10px] text-komazi-muted">{formatDateTime(m.createdAt)} • oleh {m.userName || 'Kasir'}</span>
+                    {paginatedMovements.map((m) => {
+                      const isIncoming = m.type === 'IN' || m.type === 'CASH_IN';
+                      const isDrop = m.type === 'DROP' || m.type === 'CASH_DROP';
+                      const typeLabel = isIncoming ? 'Kas Masuk' : isDrop ? 'Setor Brankas' : 'Kas Keluar';
+                      return (
+                        <div
+                          key={m.id}
+                          className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              isIncoming
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : isDrop
+                                ? 'bg-purple-500/20 text-purple-400'
+                                : 'bg-danger/20 text-danger'
+                            }`}>
+                              {typeLabel}
+                            </span>
+                            <div>
+                              <span className="font-bold text-komazi-text block">{m.reason}</span>
+                              <span className="text-[10px] text-komazi-muted">{formatDateTime(m.createdAt)} • oleh {m.userName || 'Kasir'}</span>
+                            </div>
                           </div>
+                          <span className={`font-mono font-bold text-sm ${
+                            isIncoming ? 'text-emerald-400' : isDrop ? 'text-purple-300' : 'text-danger'
+                          }`}>
+                            {isIncoming ? '+' : '-'}{formatRupiah(m.amount)}
+                          </span>
                         </div>
-                        <span className="font-mono font-bold text-sm text-komazi-text">
-                          {formatRupiah(m.amount)}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <Pagination
                       currentPage={movementPage}

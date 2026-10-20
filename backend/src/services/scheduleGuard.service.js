@@ -107,8 +107,16 @@ export async function checkStaffAttendanceToday(userId, userRole) {
       isOwner: true,
       attendance: null,
       isClockedOut: false,
+      isEnforced: false,
     };
   }
+
+  // Ambil konfigurasi enforceAttendanceGuard dari in-memory cache settings
+  const settingsMap = await getSettingsMap().catch(() => ({}));
+  const isEnforced =
+    settingsMap['enforceAttendanceGuard'] === undefined
+      ? true // default wajib presensi
+      : settingsMap['enforceAttendanceGuard'] === 'true' || settingsMap['enforceAttendanceGuard'] === true;
 
   const todayDates = getTodayDateStrings();
   const attendance = await prisma.staffAttendance.findFirst({
@@ -119,12 +127,24 @@ export async function checkStaffAttendanceToday(userId, userRole) {
     orderBy: { id: 'desc' },
   });
 
+  // Jika Owner menonaktifkan aturan wajib presensi, staf bebas membuka kasir & bertransaksi
+  if (!isEnforced) {
+    return {
+      hasClockedIn: true,
+      isOwner: false,
+      attendance: attendance || null,
+      isClockedOut: false,
+      isEnforced: false,
+    };
+  }
+
   if (!attendance || !attendance.clockIn) {
     return {
       hasClockedIn: false,
       isOwner: false,
       attendance: null,
       isClockedOut: false,
+      isEnforced: true,
     };
   }
 
@@ -135,6 +155,7 @@ export async function checkStaffAttendanceToday(userId, userRole) {
     isOwner: false,
     attendance,
     isClockedOut,
+    isEnforced: true,
   };
 }
 

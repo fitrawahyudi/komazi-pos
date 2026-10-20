@@ -7,7 +7,47 @@ export const useStockStore = create(
     (set, get) => ({
       ingredients: [],
       movements: [],
+      movementsMeta: { page: 1, limit: 10, total: 0, totalPages: 1 },
       isLoading: false,
+      isMovementsLoading: false,
+
+      fetchMovements: async (params = {}) => {
+        try {
+          set({ isMovementsLoading: true });
+          const res = await api.stock.getMovements(params);
+          if (res && res.success && Array.isArray(res.data)) {
+            const formatted = res.data.map((m) => ({
+              id: m.id,
+              ingredientId: m.ingredientId,
+              ingredientName: m.ingredientName || m.ingredient?.name || `Bahan #${m.ingredientId}`,
+              unit: m.unit || m.ingredient?.unit || '',
+              type: m.type,
+              qty: Number(m.qty) || 0,
+              unitCost: m.unitCost !== null && m.unitCost !== undefined ? Number(m.unitCost) : null,
+              totalCost: m.totalCost !== null && m.totalCost !== undefined ? Number(m.totalCost) : null,
+              note: m.note || '',
+              recordedBy: m.recordedBy || 'Sistem',
+              createdAt: m.createdAt || new Date().toISOString(),
+            }));
+            set({
+              movements: formatted,
+              movementsMeta: res.meta || {
+                page: 1,
+                limit: formatted.length,
+                total: formatted.length,
+                totalPages: 1,
+              },
+              isMovementsLoading: false,
+            });
+            return { data: formatted, meta: res.meta };
+          }
+        } catch (err) {
+          console.error('[StockStore] Error fetching movements:', err);
+        } finally {
+          set({ isMovementsLoading: false });
+        }
+        return { data: get().movements, meta: get().movementsMeta };
+      },
 
       fetchIngredients: async () => {
         try {
@@ -201,6 +241,7 @@ export const useStockStore = create(
           });
           if (res && res.success) {
             get().fetchIngredients();
+            get().fetchMovements();
             return res.data;
           }
         } catch (err) {
@@ -220,6 +261,7 @@ export const useStockStore = create(
           });
           if (res && res.success) {
             get().fetchIngredients();
+            get().fetchMovements();
             return res.data;
           }
         } catch (err) {
@@ -243,6 +285,7 @@ export const useStockStore = create(
         }
 
         get().fetchIngredients();
+        get().fetchMovements();
       },
 
       bulkAdjustStock: async (adjustments = []) => {
@@ -270,6 +313,7 @@ export const useStockStore = create(
         }
 
         get().fetchIngredients();
+        get().fetchMovements();
       },
 
       // Potong stok otomatis berdasarkan komposisi item pesanan

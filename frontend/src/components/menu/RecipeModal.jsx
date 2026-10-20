@@ -233,14 +233,11 @@ export default function RecipeModal({ isOpen, onClose, product }) {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-komazi-text font-display">
-                  Resep & Kalkulasi HPP (BOM)
+                  Resep & Kalkulasi HPP
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-komazi-surface border border-komazi-border text-komazi-muted">
-                  {product.sku || 'SKU'}
-                </span>
               </div>
               <p className="text-xs text-komazi-muted mt-0.5">
-                Kelola komposisi bahan baku untuk menu <strong className="text-white">{product.name}</strong>
+                <p>{product.name}</p>
               </p>
             </div>
           </div>
@@ -509,7 +506,7 @@ export default function RecipeModal({ isOpen, onClose, product }) {
               className="px-5 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{saving ? 'Menyimpan...' : 'Simpan Resep & HPP'}</span>
+              <span>{saving ? 'Menyimpan...' : 'Simpan'}</span>
             </button>
           </div>
         </div>

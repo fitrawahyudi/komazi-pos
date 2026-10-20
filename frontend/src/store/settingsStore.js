@@ -5,31 +5,31 @@ import { api } from '../services/api';
 export const DEFAULT_SETTINGS = {
   storeName: 'Komazi Coffee',
   storeTagline: 'Coffee & Workspace',
-  address: 'Jl. Diponegoro No. 42, Medan Petisah, Kota Medan',
+  address: 'Jl. Komplek TVRI',
   phone: '0812-6899-7721',
   headerText: '',
   receiptHeader: '',
-  wifiName: 'KOMAZI_HIGH_SPEED',
-  wifiPass: 'kopikomazi2026',
+  wifiName: 'KOMAZI',
+  wifiPass: 'americanodingin',
   receiptShowWifi: true,
   wifiNetworks: [
     {
       id: 'wifi-1',
-      name: 'KOMAZI_HIGH_SPEED',
-      password: 'kopikomazi2026',
+      name: 'KOMAZI',
+      password: 'americanodingin',
       location: 'Area Utama & Kasir',
       isDefaultOnReceipt: true,
     },
     {
       id: 'wifi-2',
       name: 'KOMAZI_WORKSPACE_VIP',
-      password: 'kopikomazi2026',
+      password: 'americanodingin',
       location: 'Lantai 2 Co-Working Space',
       isDefaultOnReceipt: false,
     },
   ],
-  receiptFooter: 'Terima kasih atas kunjungan Anda!\nFollow IG: @komazi.coffee',
-  footerText: 'Terima kasih atas kunjungan Anda!\nFollow IG: @komazi.coffee',
+  receiptFooter: 'Terima kasih atas kunjungan Anda!',
+  footerText: 'Terima kasih atas kunjungan Anda!',
   // Receipt Element Visibility Flags
   receiptShowStoreName: true,
   receiptShowTagline: true,
@@ -53,13 +53,13 @@ export const DEFAULT_SETTINGS = {
   bankTransferEnabled: true,
   bankName: 'BCA',
   bankAccountNumber: '8291002931',
-  bankAccountName: 'PT KOMAZI KREATIF BERSAMA',
+  bankAccountName: 'KOMAZI COFFEE',
   bankAccounts: [
     {
       id: 'bank-1',
       bankName: 'BCA',
       accountNumber: '8291002931',
-      accountName: 'PT KOMAZI KREATIF BERSAMA',
+      accountName: 'KOMAZI COFFEE',
       isDefault: true,
     },
   ],
@@ -92,6 +92,8 @@ export const DEFAULT_SETTINGS = {
   kdsApiKey: 'komazi_kds_live_secure_token_key_2026',
   // HRIS Schedule Guard Enforcement (false = staf bebas presensi & transaksi tanpa jadwal terdaftar)
   enforceScheduleGuard: false,
+  // HRIS Attendance Enforcement (true = seluruh staf wajib presensi sebelum buka kasir & bertransaksi; false = opsional/bebas)
+  enforceAttendanceGuard: true,
   // Anti-Fraud Presensi Kehadiran Staf
   attendanceGeofenceEnabled: true,
   outletLatitude: '3.598804',
@@ -151,7 +153,7 @@ export const useSettingsStore = create(
                   id: 'bank-1',
                   bankName: serverData.bankName || 'BCA',
                   accountNumber: serverData.bankAccountNumber,
-                  accountName: serverData.bankAccountName || 'PT KOMAZI KREATIF BERSAMA',
+                  accountName: serverData.bankAccountName || 'KOMAZI COFFEE',
                   isDefault: true,
                 },
               ];

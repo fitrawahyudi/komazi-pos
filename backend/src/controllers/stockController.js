@@ -340,11 +340,12 @@ export async function bulkCreateIngredients(req, res) {
           await tx.stockMovement.create({
             data: {
               ingredientId: ing.id,
-              type: 'IN',
-              amount: stock,
-              unitCost: costPerUnit,
-              totalCost: stock * costPerUnit,
-              reason: 'Stok Awal Import Excel',
+              type: 'PURCHASE',
+              qty: stock,
+              unitCost: costPerUnit > 0 ? costPerUnit : null,
+              totalCost: costPerUnit > 0 ? stock * costPerUnit : null,
+              note: 'Stok Awal Import Excel',
+              recordedBy: req.user?.name || 'Import Excel',
             },
           });
         }
@@ -441,5 +442,45 @@ export async function getWhatsAppRestockUrl(req, res) {
   }
 }
 
+export async function getStockMovements(req, res) {
+  try {
+    const { ingredientId, type, search, startDate, endDate, page, limit, sortBy, sortOrder } = req.query;
+    const canCost = canViewCost(req.user?.role);
 
+    const result = await stockService.getMovements({
+      ingredientId: ingredientId || req.params?.id,
+      type,
+      search,
+      startDate,
+      endDate,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    });
 
+    const formatted = result.items.map((m) => ({
+      id: m.id,
+      ingredientId: m.ingredientId,
+      ingredientName: m.ingredient?.name || `Bahan #${m.ingredientId}`,
+      unit: m.ingredient?.unit || '',
+      type: m.type,
+      qty: parseFloat(m.qty),
+      unitCost: canCost && m.unitCost !== null && m.unitCost !== undefined ? parseFloat(m.unitCost) : null,
+      totalCost: canCost && m.totalCost !== null && m.totalCost !== undefined ? parseFloat(m.totalCost) : null,
+      note: m.note || null,
+      recordedBy: m.recordedBy || 'Sistem',
+      createdAt: m.createdAt,
+    }));
+
+    return successResponse(
+      res,
+      formatted,
+      'Riwayat pergerakan stok berhasil diambil',
+      200,
+      result.meta
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}

@@ -309,6 +309,13 @@ export async function createOrder(req, res) {
     }
     if (!activeShift) {
       activeShift = await prisma.shift.findFirst({
+        where: { cashierId: req.user.id, closedAt: null },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
+    }
+    if (!activeShift) {
+      activeShift = await prisma.shift.findFirst({
         where: { closedAt: null },
         orderBy: { openedAt: 'desc' },
         select: { id: true },
@@ -596,6 +603,12 @@ export async function updateOrder(req, res) {
       return errorResponse(res, 'Hanya pesanan yang belum dibayar (OPEN/HOLD) yang dapat diperbarui', 400);
     }
 
+    // Role & Ownership check: Cashier can only edit their own OPEN order
+    const isOwnerOrManager = ['OWNER', 'MANAGER'].includes(req.user.role);
+    if (!isOwnerOrManager && existingOrder.cashierId && existingOrder.cashierId !== req.user.id) {
+      return errorResponse(res, 'Pesanan milik kasir lain hanya dapat dilihat.', 403);
+    }
+
     const settingsMap = await getSettingsMap();
 
     const taxEnabled = settingsMap['taxEnabled'] === 'true' || settingsMap['taxEnabled'] === true;
@@ -628,6 +641,12 @@ export async function updateOrder(req, res) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Re-verify order status inside transaction to prevent race conditions
+      const lockedOrder = await tx.order.findUnique({ where: { id } });
+      if (!lockedOrder || lockedOrder.status !== 'OPEN') {
+        throw new Error('Pesanan yang sudah dibayar tidak dapat diedit');
+      }
+
       // 1. Eksekusi mutasi delta inventori bahan baku (BOM)
       await deltaInventoryService.processOrderDelta(
         tx,
@@ -686,7 +705,7 @@ export async function updateOrder(req, res) {
       }
 
       // 3. Update data header Order
-      return await tx.order.update({
+      const updatedOrderHeader = await tx.order.update({
         where: { id },
         data: {
           type: type || existingOrder.type,
@@ -718,6 +737,23 @@ export async function updateOrder(req, res) {
           cashier: { select: { id: true, name: true, username: true } },
         },
       });
+
+      // Catat jejak audit trail perubahan pesanan terbuka
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'UPDATE_OPEN_ORDER',
+          detail: {
+            orderId: id,
+            invoiceNo: existingOrder.invoiceNo,
+            previousTotal: existingOrder.total,
+            newTotal: total,
+            itemCount: orderItemsData.length,
+          },
+        },
+      });
+
+      return updatedOrderHeader;
     });
 
     const canView = canViewCostData(req.user?.role);
@@ -760,6 +796,9 @@ export async function payOrder(req, res) {
     });
     if (!order) return errorResponse(res, 'Pesanan tidak ditemukan', 404);
     if (order.status === 'PAID') return errorResponse(res, 'Pesanan sudah dibayar', 400);
+    if (order.status === 'VOIDED' || order.status === 'REFUNDED') {
+      return errorResponse(res, 'Pesanan yang telah dibatalkan atau di-refund tidak dapat dibayar', 400);
+    }
 
     // Jika items dikirimkan saat bayar dan ada perubahan item
     let updatedTotals = null;
@@ -803,6 +842,12 @@ export async function payOrder(req, res) {
     let updatedCustForPayEmit = null;
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Validasi status pesanan di dalam transaksi untuk mencegah race condition
+      const lockedOrder = await tx.order.findUnique({ where: { id } });
+      if (!lockedOrder || lockedOrder.status !== 'OPEN') {
+        throw new Error('Pesanan sudah dibayar atau tidak lagi terbuka');
+      }
+
       // 1. Jika ada perubahan items saat pembayaran kasir, jalankan delta in-place update
       if (orderItemsData && items && items.length > 0) {
         await deltaInventoryService.processOrderDelta(
@@ -867,11 +912,16 @@ export async function payOrder(req, res) {
 
       let resolvedShiftId = order.shiftId;
       if (!resolvedShiftId) {
-        const activeShift = await tx.shift.findFirst({
-          where: { closedAt: null },
+        const myActiveShift = await tx.shift.findFirst({
+          where: { cashierId: req.user.id, closedAt: null },
           orderBy: { openedAt: 'desc' },
           select: { id: true },
         });
+        const activeShift = myActiveShift || (await tx.shift.findFirst({
+          where: { closedAt: null },
+          orderBy: { openedAt: 'desc' },
+          select: { id: true },
+        }));
         if (activeShift) {
           resolvedShiftId = activeShift.id;
         } else {
@@ -1034,6 +1084,7 @@ export async function voidOrder(req, res) {
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return errorResponse(res, 'Pesanan tidak ditemukan', 404);
     if (order.status === 'VOIDED') return errorResponse(res, 'Pesanan sudah dibatalkan', 400);
+    if (order.status === 'REFUNDED') return errorResponse(res, 'Pesanan sudah di-refund dan tidak dapat dibatalkan (void)', 400);
 
     // PRD FR-28: Pembatalan pesanan yang sudah dibayar (PAID) memerlukan role MANAGER atau OWNER, atau PIN Otorisasi Supervisor
     if (order.status === 'PAID' && !['MANAGER', 'OWNER'].includes(req.user.role)) {
@@ -1056,6 +1107,12 @@ export async function voidOrder(req, res) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Re-verify status dalam transaksi untuk mencegah race condition
+      const lockedOrder = await tx.order.findUnique({ where: { id } });
+      if (!lockedOrder || lockedOrder.status === 'VOIDED' || lockedOrder.status === 'REFUNDED') {
+        throw new Error('Pesanan sudah dibatalkan atau di-refund');
+      }
+
       // 1. Kembalikan seluruh stok bahan baku dari item aktif sebelum ditandai CANCELLED
       await deltaInventoryService.restoreOrderStock(tx, order.id, reason);
 
@@ -1154,13 +1211,35 @@ export async function refundOrder(req, res) {
       include: { payments: true },
     });
     if (!order) return errorResponse(res, 'Pesanan tidak ditemukan', 404);
+    if (order.status === 'REFUNDED') return errorResponse(res, 'Pesanan sudah di-refund sebelumnya', 400);
+    if (order.status === 'VOIDED') return errorResponse(res, 'Pesanan sudah dibatalkan (void) dan tidak dapat di-refund', 400);
     if (order.status !== 'PAID') return errorResponse(res, 'Hanya pesanan yang sudah dibayar (PAID) yang dapat di-refund', 400);
 
-    const amount = Number(refundAmount) || Number(order.total);
+    const amount = refundAmount !== undefined ? Number(refundAmount) : Number(order.total);
+    if (isNaN(amount) || amount <= 0 || amount > Number(order.total)) {
+      return errorResponse(res, 'Nominal refund tidak valid atau melebihi total tagihan pesanan', 400);
+    }
+
+    // Cegah duplikasi pengajuan refund yang masih PENDING ke Owner
+    const existingPending = await prisma.approvalRequest.findFirst({
+      where: { orderId: order.id, type: 'REFUND', status: 'PENDING' },
+    });
+    if (existingPending) {
+      return errorResponse(
+        res,
+        'Permintaan refund untuk pesanan ini sudah diajukan dan sedang menunggu persetujuan Owner',
+        400
+      );
+    }
 
     // 1. Jika pengguna adalah OWNER: proses langsung disetujui seketika
     if (userRole === 'OWNER') {
       const updated = await prisma.$transaction(async (tx) => {
+        const lockedOrder = await tx.order.findUnique({ where: { id } });
+        if (!lockedOrder || lockedOrder.status !== 'PAID') {
+          throw new Error('Pesanan sudah tidak berstatus PAID atau telah di-refund');
+        }
+
         const rOrder = await tx.order.update({
           where: { id },
           data: {
@@ -1362,6 +1441,11 @@ export async function updateKitchenStatus(req, res) {
         context: { cashierId: outputOrder.cashierId },
       }).catch(() => {});
     }
+
+    // Broadcast realtime event ke semua stasiun KDS & monitor POS
+    emitToStation('KITCHEN_MAIN', 'order:updated', outputOrder);
+    emitToStation('BAR_MAIN', 'order:updated', outputOrder);
+    emitOrderEvent('order:updated', outputOrder);
 
     return successResponse(res, outputOrder, 'Status dapur/bar berhasil diperbarui');
   } catch (err) {

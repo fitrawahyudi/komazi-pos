@@ -40,6 +40,7 @@ export default function PrinterPage({ isEmbedded = false }) {
     connectionType,
     paperWidth,
     autoPrintOnCheckout,
+    autoPrintMerchantCopy,
     printCopies,
     kickCashDrawer,
     isConnected,
@@ -49,6 +50,7 @@ export default function PrinterPage({ isEmbedded = false }) {
     setPaperWidth,
     setConnectionType,
     setAutoPrintOnCheckout,
+    setAutoPrintMerchantCopy,
     setPrintCopies,
     setKickCashDrawer,
     connectBluetooth,
@@ -508,6 +510,19 @@ export default function PrinterPage({ isEmbedded = false }) {
 
             <label className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border cursor-pointer hover:bg-neutral-800/60 transition-colors">
               <div>
+                <span className="text-xs font-bold text-komazi-text block">Cetak Struk Pertinggal Otomatis</span>
+                <span className="text-[10px] text-komazi-muted">Otomatis mencetak 1 lembar struk pertinggal (salinan kasir/arsip) tiap pembayaran selesai</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoPrintMerchantCopy}
+                onChange={(e) => setAutoPrintMerchantCopy(e.target.checked)}
+                className="w-4 h-4 rounded text-komazi-coral focus:ring-komazi-coral"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border cursor-pointer hover:bg-neutral-800/60 transition-colors">
+              <div>
                 <span className="text-xs font-bold text-komazi-text block">Buka Laci Kasir (Cash Drawer)</span>
                 <span className="text-[10px] text-komazi-muted">Kirim sinyal pulsa RJ11 laci saat struk dicetak</span>
               </div>
@@ -915,30 +930,6 @@ export default function PrinterPage({ isEmbedded = false }) {
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-komazi-coral" />
                 <h3 className="font-bold text-xs text-komazi-text">Pratinjau</h3>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setPaperWidth('58mm')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
-                    paperWidth === '58mm'
-                      ? 'bg-komazi-coral text-white border-komazi-coral'
-                      : 'bg-komazi-surface-2 text-komazi-muted border-komazi-border hover:text-white'
-                  }`}
-                >
-                  58mm
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaperWidth('80mm')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
-                    paperWidth === '80mm'
-                      ? 'bg-komazi-coral text-white border-komazi-coral'
-                      : 'bg-komazi-surface-2 text-komazi-muted border-komazi-border hover:text-white'
-                  }`}
-                >
-                  80mm
-                </button>
               </div>
             </div>
 

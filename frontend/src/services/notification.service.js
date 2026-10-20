@@ -363,6 +363,32 @@ export const NotificationService = {
   },
 
   /**
+   * Mengirim notifikasi pesanan masuk khusus Android & KDS / BDS
+   */
+  async notifyNewKdsOrder(order, stationLabel = 'Dapur / Bar') {
+    const settings = this.getSettings();
+    if (!settings.enabled || !settings.orderAlerts) return;
+
+    const items = order.items || [];
+    const itemCount = items.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0);
+    const invoice = order.invoiceNo || 'Pesanan';
+    const customer = order.customerName ? `${order.customerName} • ` : '';
+    const typeLabel = order.type === 'TAKE_AWAY' ? 'Bungkus (Take Away)' : order.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
+
+    return this.scheduleNotification({
+      id: Math.abs(String(invoice).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title: `🔔 [${stationLabel}] Pesanan #${invoice}`,
+      body: `${customer}${typeLabel} • ${itemCount} Menu Masuk`,
+      channelId: 'komazi_orders',
+      extra: {
+        url: '/kds-screen',
+        orderId: order.id,
+        invoiceNo: order.invoiceNo,
+      },
+    });
+  },
+
+  /**
    * Uji coba notifikasi di perangkat Android
    */
   async testNotification() {

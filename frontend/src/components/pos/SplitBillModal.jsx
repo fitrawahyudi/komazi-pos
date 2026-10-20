@@ -123,15 +123,8 @@ export default function SplitBillModal({ onClose, onProceedPayment }) {
           <div className="flex items-center justify-between p-4 border-b border-komazi-border shrink-0 bg-komazi-surface">
             <div className="flex items-center gap-2">
               <Split className="w-5 h-5 text-komazi-coral" />
-              <h3 className="font-bold text-base text-komazi-text">Pisah Tagihan (Split Bill)</h3>
+              <h3 className="font-bold text-base text-komazi-text">Pisah Tagihan</h3>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-xl bg-komazi-surface-2 text-komazi-muted hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
 
           {/* Mode Selector */}

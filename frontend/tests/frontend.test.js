@@ -251,3 +251,218 @@ test('7. UI Store Persistence: validates that isSidebarCollapsed and featurePref
   useUiStore.getState().setFeaturePreference('orders', 'itemsPerPage', 25);
   assert.equal(useUiStore.getState().getFeaturePreference('orders', 'itemsPerPage', 10), 25);
 });
+
+test('8. Custom Table Report Export: formats headers, rows, and generates valid CSV/Excel download', async () => {
+  if (typeof document === 'undefined') {
+    globalThis.document = {
+      createElement: () => ({ setAttribute: () => {}, click: () => {} }),
+      body: { appendChild: () => {}, removeChild: () => {} },
+    };
+    if (!globalThis.URL.createObjectURL) {
+      globalThis.URL.createObjectURL = () => 'blob:mock-url';
+      globalThis.URL.revokeObjectURL = () => {};
+    }
+  }
+  const { exportCustomTableToCsv, exportCustomTableToExcel } = await import('../src/utils/exportReport.js');
+
+  const headers = ['No', 'Nama Produk', 'Qty', 'Total'];
+  const rows = [
+    [1, 'Americano', 10, 250000],
+    [2, 'Latte', 5, 150000],
+  ];
+
+  const csvRes = exportCustomTableToCsv({
+    title: 'Penjualan Produk',
+    dateRangeLabel: 'Hari Ini',
+    headers,
+    rows,
+    filenamePrefix: 'Test_Produk',
+  });
+  assert.equal(csvRes.success, true);
+  assert.equal(csvRes.count, 2);
+  assert.ok(csvRes.filename.includes('Test_Produk'));
+
+  const excelRes = exportCustomTableToExcel({
+    title: 'Penjualan Produk',
+    dateRangeLabel: 'Hari Ini',
+    headers,
+    rows,
+    filenamePrefix: 'Test_Produk',
+  });
+  assert.equal(excelRes.success, true);
+  assert.equal(excelRes.count, 2);
+  assert.ok(excelRes.filename.includes('Test_Produk'));
+});
+
+test('9. Report Pagination: verifies item slicing and page count logic for datasets > 10 items', () => {
+  const items = Array.from({ length: 25 }, (_, i) => ({ id: i + 1, name: `Item ${i + 1}` }));
+  const pageSize = 10;
+  
+  // Page 1
+  let page = 1;
+  let slice = items.slice((page - 1) * pageSize, page * pageSize);
+  assert.equal(slice.length, 10);
+  assert.equal(slice[0].id, 1);
+  assert.equal(slice[9].id, 10);
+
+  // Page 2
+  page = 2;
+  slice = items.slice((page - 1) * pageSize, page * pageSize);
+  assert.equal(slice.length, 10);
+  assert.equal(slice[0].id, 11);
+  assert.equal(slice[9].id, 20);
+
+  // Page 3 (partial)
+  page = 3;
+  slice = items.slice((page - 1) * pageSize, page * pageSize);
+  assert.equal(slice.length, 5);
+  assert.equal(slice[0].id, 21);
+  assert.equal(slice[4].id, 25);
+
+  const totalPages = Math.ceil(items.length / pageSize);
+  assert.equal(totalPages, 3);
+});
+
+test('10. KDS Order History & Date Filter: validates isToday helper and 10-item pagination for served orders', async () => {
+  const { isToday } = await import('../src/utils/format.js');
+
+  const now = new Date();
+  assert.equal(isToday(now), true, 'Current date should return true for isToday');
+  assert.equal(isToday(now.toISOString()), true, 'ISO string of current date should return true');
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  assert.equal(isToday(yesterday), false, 'Yesterday should return false for isToday');
+
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  assert.equal(isToday(tomorrow), false, 'Tomorrow should return false for isToday');
+  assert.equal(isToday(null), false, 'Null input should return false');
+  assert.equal(isToday('invalid-date'), false, 'Invalid string should return false');
+
+  // Verify KDS history pagination logic (10 items per page)
+  const servedOrders = Array.from({ length: 27 }, (_, i) => ({
+    id: i + 1,
+    invoiceNo: `KMZ-20261020-${String(i + 1).padStart(4, '0')}`,
+    createdAt: now.toISOString(),
+    kitchenStatus: 'SERVED',
+    barStatus: 'SERVED',
+  }));
+
+  const perPage = 10;
+  const page1 = servedOrders.slice(0, perPage);
+  const page2 = servedOrders.slice(10, 20);
+  const page3 = servedOrders.slice(20, 30);
+
+  assert.equal(page1.length, 10);
+  assert.equal(page2.length, 10);
+  assert.equal(page3.length, 7);
+  assert.equal(Math.ceil(servedOrders.length / perPage), 3);
+});
+
+test('11. KDS ESC/POS Kitchen Ticket & Receipt Payload: generates valid Uint8Array commands for 58mm & 80mm', async () => {
+  const { buildKitchenTicketEscPos, buildOrderReceiptEscPos } = await import('../src/utils/escpos.js');
+
+  const mockOrder = {
+    id: 99,
+    invoiceNo: 'KMZ-20261020-0099',
+    createdAt: '2026-10-20T14:30:00Z',
+    orderType: 'DINE_IN',
+    tableNo: '07',
+    customerName: 'Budi Santoso',
+    cashierName: 'Barista Siti',
+    subtotal: 45000,
+    total: 45000,
+    items: [
+      {
+        qty: 2,
+        name: 'Kopi Susu Senja',
+        variantName: 'Ice Less Sugar',
+        modifiers: 'Oatmilk',
+        note: 'Jangan terlalu manis',
+      },
+      {
+        qty: 1,
+        name: 'Croissant Cokelat',
+        note: 'Hangatkan',
+      },
+    ],
+  };
+
+  // Test 58mm kitchen ticket
+  const ticket58 = buildKitchenTicketEscPos(mockOrder, {
+    paperWidth: '58mm',
+    stationName: 'BARISTA',
+  });
+  assert.ok(ticket58 instanceof Uint8Array, 'Ticket 58mm should be Uint8Array');
+  assert.ok(ticket58.length > 50, 'Ticket payload should contain non-trivial ESC/POS bytes');
+
+  // Test 80mm kitchen ticket
+  const ticket80 = buildKitchenTicketEscPos(mockOrder, {
+    paperWidth: '80mm',
+    stationName: 'KITCHEN',
+    isAdditional: true,
+  });
+  assert.ok(ticket80 instanceof Uint8Array, 'Ticket 80mm should be Uint8Array');
+  assert.ok(ticket80.length > 50, 'Ticket payload 80mm should contain non-trivial ESC/POS bytes');
+
+  // Test Customer receipt generation
+  const receipt = buildOrderReceiptEscPos(mockOrder, {
+    paperWidth: '58mm',
+    storeSettings: {
+      storeName: 'Komazi Coffee',
+      footerText: 'Terima kasih atas kunjungannya',
+    },
+  });
+  assert.ok(receipt instanceof Uint8Array, 'Receipt should be Uint8Array');
+  assert.ok(receipt.length > 50, 'Receipt payload should contain non-trivial ESC/POS bytes');
+});
+
+test('12. KDS Kitchen Auto-Print & Station Items Filtering: validates station items filtering and custom ticket payload', async () => {
+  const { buildKitchenTicketEscPos } = await import('../src/utils/escpos.js');
+  const { isDrinkItem } = await import('../src/utils/format.js');
+
+  const testItems = [
+    { qty: 2, name: 'Es Kopi Susu', station: { type: 'BAR' } },
+    { qty: 1, name: 'Matcha Latte', station: { type: 'BAR' } },
+    { qty: 1, name: 'Nasi Goreng Wagyu', station: { type: 'KITCHEN' } },
+    { qty: 1, name: 'Croissant Butter' }, // No station: classified as kitchen/food
+  ];
+
+  const barItems = testItems.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+  const kitchenItems = testItems.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+
+  assert.equal(barItems.length, 2, 'Bar station should filter 2 drink items');
+  assert.equal(kitchenItems.length, 2, 'Kitchen station should filter 2 food items');
+
+  const mockOrder = {
+    id: 101,
+    invoiceNo: 'KMZ-AUTO-0101',
+    createdAt: new Date().toISOString(),
+    orderType: 'DINE_IN',
+    tableNo: '08',
+    customerName: 'Ahmad Pelanggan',
+    items: testItems,
+  };
+
+  // Test building kitchen ticket specifically with filtered bar items
+  const barTicket = buildKitchenTicketEscPos(mockOrder, {
+    paperWidth: '58mm',
+    stationName: 'BARISTA',
+    items: barItems,
+  });
+  assert.ok(barTicket instanceof Uint8Array, 'Filtered bar ticket should be Uint8Array');
+  assert.ok(barTicket.length > 50, 'Bar ticket payload should be valid ESC/POS bytes');
+
+  // Test building kitchen ticket specifically with filtered kitchen items
+  const kitchenTicket = buildKitchenTicketEscPos(mockOrder, {
+    paperWidth: '80mm',
+    stationName: 'DAPUR',
+    items: kitchenItems,
+  });
+  assert.ok(kitchenTicket instanceof Uint8Array, 'Filtered kitchen ticket should be Uint8Array');
+  assert.ok(kitchenTicket.length > 50, 'Kitchen ticket payload should be valid ESC/POS bytes');
+});
+
+
+
+
+
