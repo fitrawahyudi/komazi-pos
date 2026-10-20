@@ -184,4 +184,38 @@ export const AndroidPrinter = {
   async testPrint() {
     return await WebPrinter.testPrint();
   },
+
+  async startBackgroundService() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        return await KomaziPrinter.startBackgroundService();
+      } catch (err) {
+        console.warn('[AndroidPrinter] startBackgroundService error:', err);
+      }
+    }
+    return { success: false };
+  },
+
+  async stopBackgroundService() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        return await KomaziPrinter.stopBackgroundService();
+      } catch (err) {
+        console.warn('[AndroidPrinter] stopBackgroundService error:', err);
+      }
+    }
+    return { success: false };
+  },
+
+  async isBackgroundServiceRunning() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const res = await KomaziPrinter.isBackgroundServiceRunning();
+        return !!res?.running;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  },
 };

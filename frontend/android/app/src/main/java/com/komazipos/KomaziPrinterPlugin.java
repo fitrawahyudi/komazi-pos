@@ -409,4 +409,35 @@ public class KomaziPrinterPlugin extends Plugin {
             }
         });
     }
+
+    @PluginMethod
+    public void startBackgroundService(PluginCall call) {
+        try {
+            KdsForegroundService.startService(getContext());
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Gagal memulai background service: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void stopBackgroundService(PluginCall call) {
+        try {
+            KdsForegroundService.stopService(getContext());
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Gagal menghentikan background service: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void isBackgroundServiceRunning(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("running", KdsForegroundService.isServiceRunning());
+        call.resolve(ret);
+    }
 }

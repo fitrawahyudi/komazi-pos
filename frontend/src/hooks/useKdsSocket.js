@@ -30,7 +30,18 @@ export function useKdsSocket({ stationCode, onOrderNew, onOrderItemUpdated, onOr
       setIsConnected(false);
     };
 
+    const recentEvents = new Map();
+
     const handleNewOrder = (data) => {
+      const orderKey = String(data?.id || data?.invoiceNo || '');
+      const now = Date.now();
+      if (orderKey) {
+        const lastTime = recentEvents.get(orderKey);
+        if (lastTime && now - lastTime < 5000) {
+          return; // Abaikan event ganda dalam 5 detik
+        }
+        recentEvents.set(orderKey, now);
+      }
       if (callbacksRef.current.onOrderNew) {
         callbacksRef.current.onOrderNew(data);
       }

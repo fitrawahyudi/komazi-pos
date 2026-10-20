@@ -31,6 +31,7 @@ let activeBluetoothDevice = null;
 let activeGattServer = null;
 let activeCharacteristic = null;
 let activeSerialPort = null;
+const recentKitchenPrints = new Map();
 
 /**
  * Sanitizes hardware and browser Web Bluetooth/Serial error messages
@@ -248,7 +249,12 @@ export const usePrinterStore = create(
       setPaperWidth: (paperWidth) => set({ paperWidth }),
       setConnectionType: (connectionType) => set({ connectionType }),
       setAutoPrintOnCheckout: (autoPrintOnCheckout) => set({ autoPrintOnCheckout }),
-      setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => set({ autoPrintKitchenOnCheckout }),
+      setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => {
+        set({ autoPrintKitchenOnCheckout });
+        if (autoPrintKitchenOnCheckout && (isAndroid || isNative)) {
+          AndroidPrinter.startBackgroundService().catch(() => {});
+        }
+      },
       setAutoPrintMerchantCopy: (autoPrintMerchantCopy) => set({ autoPrintMerchantCopy }),
       setPrintCopies: (printCopies) => set({ printCopies }),
       setKickCashDrawer: (kickCashDrawer) => set({ kickCashDrawer }),
@@ -568,6 +574,24 @@ export const usePrinterStore = create(
       // Print Kitchen Ticket For Completed Order
       printKitchenTicketForOrder: async (order, options = {}) => {
         if (!order) return { success: false, message: 'Data pesanan kosong' };
+
+        // Deduplikasi cetak tiket dapur: hindari cetak ganda jika event socket diterima berulang kali
+        const orderKey = String(order.id || order.invoiceNo || '');
+        const now = Date.now();
+        if (!options.force && orderKey) {
+          const lastTime = recentKitchenPrints.get(orderKey);
+          if (recentKitchenPrints.size > 200) {
+            for (const [k, t] of recentKitchenPrints.entries()) {
+              if (now - t > 300000) recentKitchenPrints.delete(k);
+            }
+          }
+          if (lastTime && now - lastTime < 30000) {
+            console.log(`[PrinterStore] Tiket dapur ${orderKey} sudah dicetak ${now - lastTime}ms yang lalu. Mengabaikan cetak duplikat.`);
+            return { success: true, duplicateIgnored: true };
+          }
+          recentKitchenPrints.set(orderKey, now);
+        }
+
         let { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob, autoConnectPrinter } = get();
 
         // Jika printer belum terhubung dan berada di lingkungan Android/Native, coba auto-connect

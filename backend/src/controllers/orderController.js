@@ -505,10 +505,8 @@ export async function createOrder(req, res) {
     const hasKitchen = (outputOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
     const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
 
-    // Realtime notification via Socket.IO
+    // Realtime notification via Socket.IO (Broadcast sekali ke seluruh terminal)
     try {
-      if (hasKitchen) emitToStation('KITCHEN_MAIN', 'order:new', outputOrder);
-      if (hasBar) emitToStation('BAR_MAIN', 'order:new', outputOrder);
       emitOrderEvent('order:new', outputOrder);
 
       if (updatedCustForEmit) {

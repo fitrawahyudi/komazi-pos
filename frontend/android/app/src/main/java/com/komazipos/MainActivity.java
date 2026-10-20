@@ -12,6 +12,9 @@ public class MainActivity extends BridgeActivity {
         SplashScreen.installSplashScreen(this);
         registerPlugin(KomaziPrinterPlugin.class);
         super.onCreate(savedInstanceState);
+
+        // Mulai Foreground Service agar koneksi Bluetooth printer dan Socket.IO tetap aktif di latar belakang
+        KdsForegroundService.startService(this);
     }
 
     @Override
@@ -25,5 +28,29 @@ public class MainActivity extends BridgeActivity {
             settings.setGeolocationEnabled(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
         }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Pertahankan timer JS dan WebSocket saat aplikasi diminimize atau layar mati
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().resumeTimers();
+        }
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().resumeTimers();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        // Jangan hancurkan Activity / koneksi saat pengguna menekan tombol Back di layar utama!
+        // Pindahkan task ke latar belakang agar pencetakan otomatis tetap berjalan
+        moveTaskToBack(true);
     }
 }
