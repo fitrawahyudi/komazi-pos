@@ -43,11 +43,11 @@ router.put(
   updateCustomer
 );
 
-// Delete / deactivate customer (Manager & Owner only)
+// Delete / deactivate customer (Cashier, Manager, Owner)
 router.delete(
   '/:id',
   authenticate,
-  requireRole(['MANAGER', 'OWNER']),
+  requireRole(['CASHIER', 'MANAGER', 'OWNER']),
   deleteCustomer
 );
 

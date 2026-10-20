@@ -184,8 +184,10 @@ export default function CustomersPage() {
 
 
   const tierCounts = useMemo(() => {
-    const cMap = { ALL: customers.length, SILVER: 0, GOLD: 0, PLATINUM: 0 };
+    const cMap = { ALL: 0, SILVER: 0, GOLD: 0, PLATINUM: 0 };
     customers.forEach((c) => {
+      if (c.isActive === false) return;
+      cMap.ALL++;
       const t = (c.tier || 'SILVER').toUpperCase();
       if (cMap[t] !== undefined) cMap[t]++;
     });
@@ -201,6 +203,9 @@ export default function CustomersPage() {
 
     return customers
       .filter((c) => {
+        // Abaikan pelanggan nonaktif / yang telah dihapus
+        if (c.isActive === false) return false;
+
         // 1. Filter Tier
         if (selectedTier !== 'ALL' && (c.tier || 'SILVER').toUpperCase() !== selectedTier) {
           return false;

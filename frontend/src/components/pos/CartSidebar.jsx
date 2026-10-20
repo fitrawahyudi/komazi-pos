@@ -127,8 +127,9 @@ export default function CartSidebar({
   // Filter customers based on search
   const filteredCustomers = customers.filter(
     (c) =>
-      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      (c.phone && c.phone.includes(customerSearch))
+      c.isActive !== false &&
+      (c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      (c.phone && c.phone.includes(customerSearch)))
   );
 
   const selectedCustomerObj = selectedCustomerId

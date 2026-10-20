@@ -1,0 +1,116 @@
+name: Build & Release Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (contoh: v1.0.1). Kosongkan jika hanya ingin build artifact pengujian.'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Komazi POS APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Web Assets (React + Vite)
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_URL: https://komazi-pos-production.up.railway.app/api
+
+      - name: Sync Capacitor Android
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant Execute Permission to Gradlew
+        working-directory: frontend/android
+        run: chmod +x gradlew
+
+      - name: Build Android APK (Debug / Self-Signed)
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK Asset & Compute Checksum
+        id: prep
+        run: |
+          mkdir -p dist-apk
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk dist-apk/komazi-pos.apk
+          SHA256=$(sha256sum dist-apk/komazi-pos.apk | awk '{print $1}')
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "Built APK with SHA256: $SHA256"
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: komazi-pos-apk
+          path: dist-apk/komazi-pos.apk
+          retention-days: 90
+
+      - name: Determine Release Tag
+        id: tag_check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to GitHub Releases
+        if: steps.tag_check.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_check.outputs.tag }}
+          name: Komazi POS Android ${{ steps.tag_check.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: dist-apk/komazi-pos.apk
+          body: |
+            ### 📱 Komazi POS Android Release (${{ steps.tag_check.outputs.tag }})
+            
+            Aplikasi tablet kasir Komazi POS (Coffee & Resto).
+            
+            - **Nama Berkas:** `komazi-pos.apk`
+            - **Package:** `com.komazipos`
+            - **Minimum Android:** Android 7.0+ (API 24+)
+            - **SHA-256 Checksum:** `${{ steps.prep.outputs.sha256 }}`
+            
+            #### 🛠 Cara Instalasi di Tablet:
+            1. Unduh berkas `komazi-pos.apk`.
+            2. Buka berkas dan aktifkan *"Izinkan dari sumber ini"* (Unknown Sources).
+            3. Beri izin Bluetooth untuk menghubungkan printer thermal kasir ESC/POS.

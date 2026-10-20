@@ -8,9 +8,13 @@ import { emitCustomerEvent } from '../config/socket.js';
  */
 export async function getAllCustomers(req, res) {
   try {
-    const { search, tier, page = 1, limit = 50, sortBy = 'recent' } = req.query;
+    const { search, tier, page = 1, limit = 50, sortBy = 'recent', includeInactive } = req.query;
 
     const where = {};
+    if (includeInactive !== 'true') {
+      where.isActive = true;
+    }
+
     if (tier && tier !== 'ALL') {
       where.tier = tier;
     }
@@ -52,16 +56,18 @@ export async function getAllCustomers(req, res) {
       }),
       prisma.customer.count({ where }),
       prisma.customer.aggregate({
+        where,
         _sum: { points: true, totalSpent: true },
         _count: { id: true },
       }),
     ]);
 
-    // Hitung perbandingan tier
+    // Hitung perbandingan tier secara konsisten dengan status aktif
+    const baseWhere = { ...(includeInactive !== 'true' ? { isActive: true } : {}) };
     const [silverCount, goldCount, platinumCount] = await Promise.all([
-      prisma.customer.count({ where: { tier: 'SILVER' } }),
-      prisma.customer.count({ where: { tier: 'GOLD' } }),
-      prisma.customer.count({ where: { tier: 'PLATINUM' } }),
+      prisma.customer.count({ where: { ...baseWhere, tier: 'SILVER' } }),
+      prisma.customer.count({ where: { ...baseWhere, tier: 'GOLD' } }),
+      prisma.customer.count({ where: { ...baseWhere, tier: 'PLATINUM' } }),
     ]);
 
     const stats = {
@@ -158,6 +164,30 @@ export async function createCustomer(req, res) {
     });
 
     if (existing) {
+      if (!existing.isActive) {
+        // Re-aktivasi customer yang sebelumnya dinonaktifkan
+        const reactivated = await prisma.customer.update({
+          where: { id: existing.id },
+          data: {
+            name: name.trim(),
+            email: email?.trim() || null,
+            notes: notes?.trim() || null,
+            isActive: true,
+          },
+        });
+        try {
+          emitCustomerEvent('customer:created', reactivated);
+          emitCustomerEvent('customers:changed', { action: 'CREATED', id: reactivated.id });
+        } catch (e) {
+          console.warn('[Socket.IO] Emit customer:created error:', e);
+        }
+        return successResponse(
+          res,
+          reactivated,
+          `Pelanggan "${reactivated.name}" berhasil diaktifkan kembali (+10 Poin Selamat Datang!)`,
+          201
+        );
+      }
       return errorResponse(
         res,
         `Nomor WhatsApp/HP ${cleanPhone} sudah terdaftar atas nama "${existing.name}"`,
@@ -275,26 +305,40 @@ export async function deleteCustomer(req, res) {
 
     if (!customer) return errorResponse(res, 'Pelanggan tidak ditemukan', 404);
 
-    // Jika memiliki riwayat pesanan/workspace, nonaktifkan alih-alih hard delete
-    if (customer._count.orders > 0 || customer._count.workspaceSessions > 0) {
+    const forceDelete = req.query.force === 'true';
+
+    // Jika memiliki riwayat pesanan/workspace dan bukan force, nonaktifkan alih-alih hard delete
+    if (!forceDelete && (customer._count.orders > 0 || customer._count.workspaceSessions > 0)) {
       const deactivated = await prisma.customer.update({
         where: { id },
         data: { isActive: false },
       });
       try {
-        emitCustomerEvent('customer:updated', deactivated);
+        emitCustomerEvent('customer:deleted', { id, name: customer.name });
         emitCustomerEvent('customers:changed', { action: 'DEACTIVATED', id });
       } catch (e) {
-        console.warn('[Socket.IO] Emit customer:updated error:', e);
+        console.warn('[Socket.IO] Emit customer:deleted error:', e);
       }
       return successResponse(
         res,
-        null,
+        { id, isDeactivated: true },
         `Member "${customer.name}" dinonaktifkan karena memiliki riwayat transaksi`
       );
     }
 
-    // Hard delete jika belum ada riwayat
+    // Hard delete: jika ada relasi transaksi, putuskan foreign key terlebih dahulu untuk mencegah FK constraint failure (P2003)
+    if (customer._count.orders > 0 || customer._count.workspaceSessions > 0) {
+      await prisma.order.updateMany({
+        where: { customerId: id },
+        data: { customerId: null },
+      });
+      await prisma.workspaceSession.updateMany({
+        where: { customerId: id },
+        data: { customerId: null },
+      });
+    }
+
+    // Hard delete jika belum ada riwayat atau dipaksa (force)
     await prisma.customer.delete({ where: { id } });
     try {
       emitCustomerEvent('customer:deleted', { id, name: customer.name });
@@ -302,7 +346,7 @@ export async function deleteCustomer(req, res) {
     } catch (e) {
       console.warn('[Socket.IO] Emit customer:deleted error:', e);
     }
-    return successResponse(res, null, `Member "${customer.name}" berhasil dihapus`);
+    return successResponse(res, { id, isDeleted: true }, `Member "${customer.name}" berhasil dihapus`);
   } catch (err) {
     return errorResponse(res, err.message, 500);
   }

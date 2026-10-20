@@ -1,6 +1,5 @@
 package com.komazipos;
 
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -8,12 +7,14 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * Android Foreground Service untuk menjaga koneksi Bluetooth printer dan Socket.IO
@@ -32,7 +33,7 @@ public class KdsForegroundService extends Service {
     }
 
     public static void startService(Context context) {
-        if (isRunning) return;
+        if (context == null || isRunning) return;
         try {
             Intent intent = new Intent(context, KdsForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -40,17 +41,17 @@ public class KdsForegroundService extends Service {
             } else {
                 context.startService(intent);
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Gagal memulai KdsForegroundService: " + e.getMessage());
         }
     }
 
     public static void stopService(Context context) {
-        if (!isRunning) return;
+        if (context == null || !isRunning) return;
         try {
             Intent intent = new Intent(context, KdsForegroundService.class);
             context.stopService(intent);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Gagal menghentikan KdsForegroundService: " + e.getMessage());
         }
     }
@@ -66,17 +67,27 @@ public class KdsForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            int serviceType = 0;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
-                serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE | ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+        try {
+            Notification notification = buildNotification();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+ (API 34+)
+                int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+                // Hanya sertakan FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE jika izin BLUETOOTH_CONNECT telah diberikan
+                if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                    serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+                }
+                startForeground(NOTIFICATION_ID, notification, serviceType);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             } else {
-                serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+                startForeground(NOTIFICATION_ID, notification);
             }
-            startForeground(NOTIFICATION_ID, notification, serviceType);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        } catch (Throwable t) {
+            Log.e(TAG, "Gagal menjalankan startForeground (SecurityException / Xiaomi restriction): " + t.getMessage(), t);
+            // Matikan service dengan aman agar tidak memicu ANR watchdog OS
+            try {
+                stopSelf();
+            } catch (Throwable ignored) {}
+            return START_NOT_STICKY;
         }
         return START_STICKY;
     }
@@ -91,11 +102,12 @@ public class KdsForegroundService extends Service {
                         "KomaziPOS:KdsForegroundWakeLock"
                     );
                     wakeLock.setReferenceCounted(false);
-                    wakeLock.acquire();
-                    Log.d(TAG, "WakeLock berhasil di-acquire untuk mencegah CPU sleep");
+                    // Gunakan timeout 15 menit agar aman dari watchdog baterai Xiaomi MIUI
+                    wakeLock.acquire(15 * 60 * 1000L);
+                    Log.d(TAG, "WakeLock berhasil di-acquire dengan timeout");
                 }
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.w(TAG, "Tidak dapat meng-acquire WakeLock: " + e.getMessage());
         }
     }
@@ -107,24 +119,28 @@ public class KdsForegroundService extends Service {
                 wakeLock = null;
                 Log.d(TAG, "WakeLock dilepas");
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.w(TAG, "Gagal melepas WakeLock: " + e.getMessage());
         }
     }
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "Layanan Cetak Latar Belakang Komazi",
-                NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription("Menjaga printer Bluetooth dan penerimaan pesanan tetap aktif saat aplikasi di-minimize");
-            channel.setShowBadge(false);
+            try {
+                NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Layanan Cetak Latar Belakang Komazi",
+                    NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Menjaga printer Bluetooth dan penerimaan pesanan tetap aktif saat aplikasi di-minimize");
+                channel.setShowBadge(false);
 
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.createNotificationChannel(channel);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Gagal membuat NotificationChannel: " + t.getMessage());
             }
         }
     }
@@ -152,22 +168,12 @@ public class KdsForegroundService extends Service {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         super.onTaskRemoved(rootIntent);
-        Log.w(TAG, "Aplikasi di-swipe dari recent apps. Mempertahankan KdsForegroundService...");
+        Log.w(TAG, "Aplikasi di-swipe dari recent apps. Melepas resource service...");
         try {
-            Intent restartServiceIntent = new Intent(getApplicationContext(), KdsForegroundService.class);
-            restartServiceIntent.setPackage(getPackageName());
-            PendingIntent restartPendingIntent = PendingIntent.getService(
-                this,
-                1,
-                restartServiceIntent,
-                PendingIntent.FLAG_ONE_SHOT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
-            );
-            AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-            if (alarmManager != null) {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, restartPendingIntent);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Gagal menjadwalkan restart service: " + e.getMessage());
+            releaseWakeLock();
+            stopSelf();
+        } catch (Throwable t) {
+            Log.e(TAG, "Error saat onTaskRemoved: " + t.getMessage());
         }
     }
 
@@ -184,3 +190,4 @@ public class KdsForegroundService extends Service {
         return null;
     }
 }
+

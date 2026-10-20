@@ -3,9 +3,16 @@
   "appName": "Komazi POS",
   "webDir": "dist",
   "server": {
-    "androidScheme": "http",
+    "url": "https://komazi-pos.vercel.app",
     "cleartext": true,
-    "allowNavigation": ["*"]
+    "androidScheme": "https",
+    "allowNavigation": [
+      "komazi-pos.vercel.app",
+      "komazi-pos-production.up.railway.app",
+      "*.vercel.app",
+      "*.railway.app",
+      "*"
+    ]
   },
   "plugins": {
     "SplashScreen": {

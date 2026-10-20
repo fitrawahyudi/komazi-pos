@@ -31,11 +31,12 @@ export function broadcastCustomersSync(eventDetail) {
 
 // Helper: Hitung statistik agregat secara dinamis dari array customers
 function computeDerivedStats(customers, serverStats) {
-  const totalCust = customers.length;
-  const totalPts = customers.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
-  const totalSp = customers.reduce((sum, c) => sum + (Number(c.totalSpent) || 0), 0);
+  const activeCustomers = (customers || []).filter((c) => c && c.isActive !== false);
+  const totalCust = activeCustomers.length;
+  const totalPts = activeCustomers.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
+  const totalSp = activeCustomers.reduce((sum, c) => sum + (Number(c.totalSpent) || 0), 0);
   let silver = 0, gold = 0, platinum = 0;
-  customers.forEach((c) => {
+  activeCustomers.forEach((c) => {
     const t = (c.tier || 'SILVER').toUpperCase();
     if (t === 'PLATINUM') platinum++;
     else if (t === 'GOLD') gold++;
@@ -77,11 +78,12 @@ export const useCustomerStore = create(
           const queryParams = { limit: 200, ...cleanParams };
           const res = await api.customers.getAll(queryParams);
           if (res && res.success && res.data) {
-            const list = Array.isArray(res.data.customers)
+            const rawList = Array.isArray(res.data.customers)
               ? res.data.customers
               : Array.isArray(res.data)
               ? res.data
               : [];
+            const list = rawList.filter((c) => c && c.isActive !== false);
             const newStats = computeDerivedStats(list, res.data.stats);
             set({
               customers: list,
@@ -296,9 +298,19 @@ export function initCustomersSocketSync() {
       useCustomerStore.getState().fetchCustomers({ silent: true }).catch(() => {});
     };
 
+    const handleCustomerDeleted = (data) => {
+      if (data?.id) {
+        const currentList = useCustomerStore.getState().customers;
+        const updatedList = currentList.filter((c) => c.id !== data.id);
+        const updatedStats = computeDerivedStats(updatedList);
+        useCustomerStore.setState({ customers: updatedList, stats: updatedStats });
+      }
+      handleCustomerChange();
+    };
+
     socket.on('customer:created', handleCustomerChange);
     socket.on('customer:updated', handleCustomerChange);
-    socket.on('customer:deleted', handleCustomerChange);
+    socket.on('customer:deleted', handleCustomerDeleted);
     socket.on('customer:points_redeemed', handleCustomerChange);
     socket.on('customer:points_adjusted', handleCustomerChange);
     socket.on('customers:changed', handleCustomerChange);
