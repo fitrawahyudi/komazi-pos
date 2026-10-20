@@ -50,6 +50,7 @@ import { usePrinterStore } from '../store/printerStore';
 import Pagination from '../components/ui/Pagination';
 import NotificationService from '../services/notification.service';
 import EditProfileModal from '../components/profile/EditProfileModal';
+import { isAndroid, isNative } from '../services/platform';
 
 // ─── Station Panel ────────────────────────────────────────────────────────────
 function StationPanel({
@@ -244,33 +245,47 @@ export default function KdsPage() {
         const stationTitle = isBarista ? 'Bar (BDS)' : isKitchen ? 'Dapur (KDS)' : 'KDS';
         NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => {});
 
-        // Otomatis cetak tiket dapur jika auto-print aktif & printer Bluetooth terhubung
+        // Otomatis cetak tiket dapur jika auto-print aktif
         const {
           autoPrintKitchenOnCheckout,
-          isConnected: isPrinterConnected,
           printKitchenTicketForOrder,
+          autoConnectPrinter,
         } = usePrinterStore.getState();
 
-        if (autoPrintKitchenOnCheckout && isPrinterConnected) {
-          let relevantItems = items;
-          if (isBarista || effectiveViewMode === 'BAR') {
-            relevantItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-          } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
-            relevantItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
-          }
+        if (autoPrintKitchenOnCheckout) {
+          const runAutoPrint = async () => {
+            let connected = usePrinterStore.getState().isConnected;
+            if (!connected && (isAndroid || isNative)) {
+              const res = await autoConnectPrinter(true);
+              connected = res?.success || usePrinterStore.getState().isConnected;
+            }
 
-          printKitchenTicketForOrder(newOrder, {
-            stationName: stationTitle,
-            items: relevantItems.length > 0 ? relevantItems : items,
-          })
-            .then((res) => {
+            if (!connected) {
+              console.warn('[KDS Page] Printer belum terhubung untuk auto-print');
+              return;
+            }
+
+            let relevantItems = items;
+            if (isBarista || effectiveViewMode === 'BAR') {
+              relevantItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+            } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
+              relevantItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+            }
+
+            try {
+              const res = await printKitchenTicketForOrder(newOrder, {
+                stationName: stationTitle,
+                items: relevantItems.length > 0 ? relevantItems : items,
+              });
               if (res?.success) {
                 toast.success(`🖨️ Tiket dapur otomatis dicetak: ${newOrder.invoiceNo}`);
               }
-            })
-            .catch((err) => {
+            } catch (err) {
               console.error('[KDS Page] Gagal cetak otomatis tiket:', err);
-            });
+            }
+          };
+
+          runAutoPrint();
         }
       }
 
@@ -298,6 +313,11 @@ export default function KdsPage() {
   useEffect(() => {
     fetchBackendOrders();
     NotificationService.init().catch(() => {});
+
+    if (isAndroid || isNative) {
+      usePrinterStore.getState().loadPairedDevices?.().catch(() => {});
+      usePrinterStore.getState().autoConnectPrinter?.(true).catch(() => {});
+    }
 
     const handleSync = () => {
       useOrdersStore.persist.rehydrate();

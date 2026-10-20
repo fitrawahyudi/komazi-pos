@@ -187,14 +187,6 @@ export default function KdsOrderDetailModal({
 
         {/* Footer Modal dengan Tombol Aksi */}
         <div className="p-4 border-t border-komazi-border bg-komazi-surface-2/80 flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-komazi-surface hover:bg-komazi-border text-komazi-text text-xs font-bold border border-komazi-border transition-colors cursor-pointer"
-          >
-            Tutup
-          </button>
-
           <div className="flex items-center gap-2 flex-wrap">
             {onPrint && (
               <button

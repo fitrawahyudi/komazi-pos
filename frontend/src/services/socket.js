@@ -7,6 +7,12 @@ let currentJoinedStation = null;
 export function getSocketUrl() {
   const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
+  // 0. Stored Custom Socket URL
+  const customSocket = typeof localStorage !== 'undefined' ? (localStorage.getItem('komazi_custom_socket_url') || '').trim() : '';
+  if (customSocket) {
+    return customSocket;
+  }
+
   // 1. Explicit VITE_SOCKET_URL
   const envSocketUrl = (import.meta.env.VITE_SOCKET_URL || '').trim();
   if (envSocketUrl) {

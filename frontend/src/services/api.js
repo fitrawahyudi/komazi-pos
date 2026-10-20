@@ -8,7 +8,8 @@ import { isNative } from './platform';
  * by proxying through window.location.origin.
  */
 export function resolveApiBaseUrl() {
-  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  const customUrl = typeof localStorage !== 'undefined' ? (localStorage.getItem('komazi_custom_api_url') || '').trim() : '';
+  const envUrl = (customUrl || import.meta.env.VITE_API_URL || '').trim();
   const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
   // In web browser loaded over HTTPS:

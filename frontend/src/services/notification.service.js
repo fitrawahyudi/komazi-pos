@@ -305,7 +305,7 @@ export const NotificationService = {
   },
 
   /**
-   * Mengirim notifikasi lokal secara langsung
+   * Mengirim notifikasi lokal secara langsung (Instant heads-up notification)
    */
   async scheduleNotification({
     id = Date.now() % 100000,
@@ -320,6 +320,17 @@ export const NotificationService = {
     // Jalur A: Native Android via Capacitor
     if (this.isNative) {
       try {
+        // Pastikan channel notifikasi Android dibuat jika belum
+        await this.createChannels();
+
+        // Cek izin (Android 13+)
+        const permStatus = await this.checkPermission();
+        if (permStatus === 'prompt' || permStatus === 'prompt-with-rationale') {
+          await this.requestPermission();
+        }
+
+        // Tampilkan notifikasi langsung tanpa schedule: { at: ... }
+        // Menghindari java.lang.SecurityException: SCHEDULE_EXACT_ALARM pada Android 12, 13, 14
         await LocalNotifications.schedule({
           notifications: [
             {
@@ -330,7 +341,6 @@ export const NotificationService = {
               smallIcon: 'ic_launcher',
               iconColor: '#FF5722',
               extra,
-              schedule: { at: new Date(Date.now() + 100) },
             },
           ],
         });
@@ -363,17 +373,44 @@ export const NotificationService = {
   },
 
   /**
-   * Mengirim notifikasi pesanan masuk khusus Android & KDS / BDS
+   * Mengirim notifikasi pesanan masuk umum (POS kasir & sistem)
+   */
+  async notifyNewOrder(order) {
+    const settings = this.getSettings();
+    if (!settings.enabled || !settings.orderAlerts) return;
+
+    const invoice = order?.invoiceNo || 'Pesanan';
+    const total = order?.total ? `Rp ${(Number(order.total) || 0).toLocaleString('id-ID')}` : '';
+    const items = order?.items || [];
+    const count = items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+    const customer = order?.customerName ? `${order.customerName} • ` : '';
+    const typeLabel = order?.type === 'TAKE_AWAY' ? 'Take Away' : order?.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
+
+    return this.scheduleNotification({
+      id: Math.abs(String(invoice).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title: `🔔 Pesanan Baru #${invoice}`,
+      body: `${customer}${typeLabel} • ${count} Item • ${total}`,
+      channelId: 'komazi_orders',
+      extra: {
+        url: '/pos',
+        orderId: order?.id,
+        invoiceNo: order?.invoiceNo,
+      },
+    });
+  },
+
+  /**
+   * Mengirim notifikasi pesanan masuk khusus Android & KDS / BDS dapur
    */
   async notifyNewKdsOrder(order, stationLabel = 'Dapur / Bar') {
     const settings = this.getSettings();
     if (!settings.enabled || !settings.orderAlerts) return;
 
-    const items = order.items || [];
+    const items = order?.items || [];
     const itemCount = items.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0);
-    const invoice = order.invoiceNo || 'Pesanan';
-    const customer = order.customerName ? `${order.customerName} • ` : '';
-    const typeLabel = order.type === 'TAKE_AWAY' ? 'Bungkus (Take Away)' : order.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
+    const invoice = order?.invoiceNo || 'Pesanan';
+    const customer = order?.customerName ? `${order.customerName} • ` : '';
+    const typeLabel = order?.type === 'TAKE_AWAY' ? 'Bungkus (Take Away)' : order?.tableNumber ? `Meja ${order.tableNumber}` : 'Dine In';
 
     return this.scheduleNotification({
       id: Math.abs(String(invoice).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
@@ -382,8 +419,74 @@ export const NotificationService = {
       channelId: 'komazi_orders',
       extra: {
         url: '/kds-screen',
-        orderId: order.id,
-        invoiceNo: order.invoiceNo,
+        orderId: order?.id,
+        invoiceNo: order?.invoiceNo,
+      },
+    });
+  },
+
+  /**
+   * Mengirim notifikasi bahwa pesanan siap saji (KDS -> Kasir/Pelayan)
+   */
+  async notifyOrderReady(order) {
+    const settings = this.getSettings();
+    if (!settings.enabled || !settings.orderAlerts) return;
+
+    const invoice = order?.invoiceNo || 'Pesanan';
+    const tableInfo = order?.tableNumber ? `Meja ${order.tableNumber}` : (order?.customerName || 'Pelanggan');
+
+    return this.scheduleNotification({
+      id: Math.abs(String(`READY-${invoice}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title: `🍽️ Pesanan Siap Saji #${invoice}`,
+      body: `${tableInfo} • Siap diantarkan ke meja`,
+      channelId: 'komazi_orders',
+      extra: {
+        url: '/pos',
+        orderId: order?.id,
+        invoiceNo: order?.invoiceNo,
+      },
+    });
+  },
+
+  /**
+   * Mengirim notifikasi permintaan otorisasi supervisor (Void / Refund)
+   */
+  async notifyApprovalRequired(approval) {
+    const settings = this.getSettings();
+    if (!settings.enabled || !settings.approvalAlerts) return;
+
+    const type = approval?.type === 'VOID' ? 'Void Pesanan' : approval?.type === 'REFUND' ? 'Refund Pesanan' : 'Otorisasi Transaksi';
+    const reason = approval?.reason ? ` (${approval.reason})` : '';
+
+    return this.scheduleNotification({
+      id: Math.abs(String(`APPR-${approval?.id || Date.now()}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title: `⚠️ Permintaan Otorisasi: ${type}`,
+      body: `Diperlukan persetujuan Supervisor${reason}`,
+      channelId: 'komazi_alerts',
+      extra: {
+        url: '/orders',
+        approvalId: approval?.id,
+      },
+    });
+  },
+
+  /**
+   * Mengirim notifikasi stok bahan menipis
+   */
+  async notifyStockAlert(item) {
+    const settings = this.getSettings();
+    if (!settings.enabled || !settings.stockAlerts) return;
+
+    const name = item?.name || item?.ingredientName || 'Bahan Baku';
+    const remaining = item?.stock !== undefined ? `${item.stock} ${item.unit || ''}` : 'Menipis';
+
+    return this.scheduleNotification({
+      id: Math.abs(String(`STK-${name}`).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 100000,
+      title: `📦 Stok Menipis: ${name}`,
+      body: `Sisa stok saat ini: ${remaining}. Segera lakukan restock.`,
+      channelId: 'komazi_alerts',
+      extra: {
+        url: '/inventory',
       },
     });
   },

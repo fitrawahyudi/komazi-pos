@@ -1210,7 +1210,7 @@ export function initOrdersSocketSync() {
     socket.on('order:new', (order) => {
       useOrdersStore.getState().fetchBackendOrders?.();
       if (order) {
-        NotificationService.notifyNewOrder(order);
+        NotificationService.notifyNewOrder?.(order)?.catch?.(() => {});
       }
     });
 
@@ -1218,7 +1218,7 @@ export function initOrdersSocketSync() {
       useOrdersStore.getState().fetchBackendOrders?.();
       useShiftStore.getState().fetchActiveShift?.();
       if (order) {
-        NotificationService.notifyNewOrder(order);
+        NotificationService.notifyNewOrder?.(order)?.catch?.(() => {});
       }
     });
 
@@ -1226,13 +1226,13 @@ export function initOrdersSocketSync() {
       useOrdersStore.getState().fetchBackendOrders?.();
       useShiftStore.getState().fetchActiveShift?.();
       if (order && (order.status === 'READY' || order.kitchenStatus === 'READY' || order.barStatus === 'READY')) {
-        NotificationService.notifyOrderReady(order);
+        NotificationService.notifyOrderReady?.(order)?.catch?.(() => {});
       }
     });
 
     socket.on('approval:requested', (approval) => {
       if (approval) {
-        NotificationService.notifyApprovalRequired(approval);
+        NotificationService.notifyApprovalRequired?.(approval)?.catch?.(() => {});
       }
     });
 

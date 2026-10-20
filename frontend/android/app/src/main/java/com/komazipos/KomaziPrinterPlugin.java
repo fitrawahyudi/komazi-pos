@@ -197,6 +197,24 @@ public class KomaziPrinterPlugin extends Plugin {
         }
     }
 
+    @PermissionCallback
+    private void connectPermissionCallback(PluginCall call) {
+        if (hasBluetoothPermission()) {
+            connect(call);
+        } else {
+            call.reject("Izin Bluetooth diperlukan untuk menghubungkan printer thermal.");
+        }
+    }
+
+    @PermissionCallback
+    private void autoConnectPermissionCallback(PluginCall call) {
+        if (hasBluetoothPermission()) {
+            autoConnect(call);
+        } else {
+            call.reject("Izin Bluetooth belum aktif");
+        }
+    }
+
     @PluginMethod
     public void connect(PluginCall call) {
         String address = call.getString("address");
@@ -211,7 +229,11 @@ public class KomaziPrinterPlugin extends Plugin {
         }
 
         if (!hasBluetoothPermission()) {
-            call.reject("Izin akses Bluetooth belum diberikan pada aplikasi.");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                requestPermissionForAlias("bluetoothConnect", call, "connectPermissionCallback");
+            } else {
+                requestPermissionForAlias("bluetooth", call, "connectPermissionCallback");
+            }
             return;
         }
 
@@ -243,7 +265,11 @@ public class KomaziPrinterPlugin extends Plugin {
         }
 
         if (!hasBluetoothPermission()) {
-            call.reject("Izin Bluetooth belum aktif");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                requestPermissionForAlias("bluetoothConnect", call, "autoConnectPermissionCallback");
+            } else {
+                requestPermissionForAlias("bluetooth", call, "autoConnectPermissionCallback");
+            }
             return;
         }
 

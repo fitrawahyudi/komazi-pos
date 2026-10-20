@@ -495,7 +495,15 @@ export const usePrinterStore = create(
       // Print Receipt For Completed Order
       printReceiptForOrder: async (order, options = {}) => {
         if (!order) return { success: false, message: 'Data pesanan kosong' };
-        const { isConnected, paperWidth, sendRawData, activeReceiptPrinter, receiptSettings, recordPrintJob } = get();
+        let { isConnected, paperWidth, sendRawData, activeReceiptPrinter, receiptSettings, recordPrintJob, autoConnectPrinter } = get();
+
+        // Jika printer belum terhubung dan berada di lingkungan Android/Native, coba auto-connect
+        if (!isConnected && (isAndroid || isNative)) {
+          const autoRes = await autoConnectPrinter(true);
+          if (autoRes?.success || get().isConnected) {
+            isConnected = true;
+          }
+        }
 
         const effectivePaperWidth = activeReceiptPrinter?.paperWidthMm
           ? `${activeReceiptPrinter.paperWidthMm}mm`
@@ -560,7 +568,15 @@ export const usePrinterStore = create(
       // Print Kitchen Ticket For Completed Order
       printKitchenTicketForOrder: async (order, options = {}) => {
         if (!order) return { success: false, message: 'Data pesanan kosong' };
-        const { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob } = get();
+        let { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob, autoConnectPrinter } = get();
+
+        // Jika printer belum terhubung dan berada di lingkungan Android/Native, coba auto-connect
+        if (!isConnected && (isAndroid || isNative)) {
+          const autoRes = await autoConnectPrinter(true);
+          if (autoRes?.success || get().isConnected) {
+            isConnected = true;
+          }
+        }
 
         const effectivePaperWidth =
           options.paperWidth ||
