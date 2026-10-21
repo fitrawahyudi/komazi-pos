@@ -259,7 +259,6 @@ export default function PosPage() {
 
           {/* Quick Counter (desktop) */}
           <div className="hidden xl:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-muted shrink-0">
-            <Sparkles className="w-3.5 h-3.5 text-komazi-coral" />
             <span>
               <strong className="text-komazi-text">{filteredProducts.length}</strong> Menu
             </span>

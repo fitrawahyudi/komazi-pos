@@ -895,7 +895,7 @@ export default function SettingsPage() {
                     }`}
                   >
                     {isSaved ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
-                    <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Pengaturan Bot Telegram'}</span>
+                    <span>{isSaved ? 'Berhasil Disimpan!' : 'Simpan Pengaturan'}</span>
                   </button>
                 </div>
               </div>

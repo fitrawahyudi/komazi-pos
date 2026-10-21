@@ -104,7 +104,7 @@ export function registerStart(bot) {
 
     // 2. Belum tertaut dan tanpa kode -> tampilkan kartu proteksi visual
     if (!code) {
-      const caption = `🔒 <b>AKSES TERBATAS — BOT INTERNAL KOMAZI POS</b>\n\nBot ini diproteksi ketat dan hanya dapat digunakan oleh staf outlet yang memiliki hak akses terdaftar.\n\n• ID Telegram Anda: <code>${ctx.from.id}</code>\n• Status: <b>Belum Ditautkan</b>\n\nSilakan minta <b>Kode Tautan</b> kepada Owner outlet (atau buka menu Pengaturan di web POS), lalu kirimkan:\n<code>/start KODE_TAUTAN</code>`;
+      const caption = `🔒 <b>AKSES TERBATAS</b>\n\nBot ini diproteksi ketat dan hanya dapat digunakan oleh staf Komazi Coffee yang memiliki hak akses terdaftar.\n\n• ID Telegram Anda: <code>${ctx.from.id}</code>\n• Status: <b>Belum Ditautkan</b>\n\nSilakan minta <b>Kode Tautan</b> kepada Owner Komazi Coffee (atau buka menu Pengaturan di web POS), lalu kirimkan:\n<code>/start KODE_TAUTAN</code>`;
       return replyWithPhotoFallback(ctx, {
         imageBufferPromise: generateBotImage('welcome', { user: null, telegramId: ctx.from.id }),
         captionHtml: caption,
@@ -124,7 +124,7 @@ export function registerStart(bot) {
     const linkedUser = linkRes.user;
     await setCommandsForUser(bot, ctx.from.id, linkedUser.role);
 
-    const successCaption = `🎉 <b>Penautikan Berhasil!</b>\nAkun Anda telah terhubung sebagai <b>${esc(linkedUser.name)}</b> (${linkedUser.role}).\n\nDaftar menu dan perintah cepat telah disesuaikan dengan peran Anda.`;
+    const successCaption = `🎉 <b>Berhasil Terkoneksi</b>\nAkun Anda telah terhubung sebagai <b>${esc(linkedUser.name)}</b> (${linkedUser.role}).\n\nDaftar menu dan perintah cepat telah disesuaikan dengan peran Anda.`;
     await replyWithPhotoFallback(ctx, {
       imageBufferPromise: generateBotImage('welcome', { user: linkedUser, telegramId: ctx.from.id }),
       captionHtml: successCaption,

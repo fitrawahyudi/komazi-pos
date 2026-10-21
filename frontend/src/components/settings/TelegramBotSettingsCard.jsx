@@ -233,17 +233,6 @@ export default function TelegramBotSettingsCard({
                 <h2 className="font-bold text-sm text-komazi-text flex items-center gap-2">
                   <span>Notifikasi Bot Telegram</span>
                 </h2>
-                {telegramStatus?.configured ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success/15 text-success border border-success/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                    Bot Terhubung
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Token Belum Diatur (.env)
-                  </span>
-                )}
               </div>
               <p className="text-[11px] text-komazi-muted mt-0.5">
                 Konfigurasikan notifikasi otomatis log transaksi, tutup shift, stok kritis, dan approval kasir ke Telegram Owner &amp; Manager.
@@ -359,7 +348,7 @@ export default function TelegramBotSettingsCard({
                 </div>
                 <div>
                   <h4 className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-                    <span>Log Transaksi Lunas (Paid)</span>
+                    <span>Log Transaksi Lunas</span>
                     <span className="text-[10px] font-normal text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded">
                       Real-time
                     </span>
@@ -405,7 +394,7 @@ export default function TelegramBotSettingsCard({
                     <span>Laporan Buka / Tutup Shift Kasir</span>
                   </h4>
                   <p className="text-[11px] text-komazi-muted mt-1 leading-relaxed">
-                    Kirim laporan kas saat kasir menutup shift: modal awal, kas aktual fisik, kalkulasi selisih laci kas (*surplus / defisit*), dan catatan shift.
+                    Kirim laporan kas saat kasir menutup shift: modal awal, kas aktual fisik, kalkulasi selisih laci kas, dan catatan shift.
                   </p>
                 </div>
               </div>
@@ -482,7 +471,7 @@ export default function TelegramBotSettingsCard({
                 </div>
                 <div>
                   <h4 className="font-bold text-xs text-komazi-text flex items-center gap-1.5">
-                    <span>Permintaan Persetujuan (Inline Approval)</span>
+                    <span>Permintaan Persetujuan</span>
                   </h4>
                   <p className="text-[11px] text-komazi-muted mt-1 leading-relaxed">
                     Kirim permohonan pembatalan/diskon dari kasir ke Telegram dengan tombol inline [Setujui] dan [Tolak] langsung tanpa buka web POS.
@@ -576,7 +565,7 @@ export default function TelegramBotSettingsCard({
       </div>
 
       {/* 4. Barista Group/Channel Routing */}
-      <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border space-y-3">
+      {/* <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border space-y-3">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-komazi-coral/15 flex items-center justify-center text-komazi-coral">
             <Coffee className="w-4 h-4" />
@@ -611,7 +600,7 @@ export default function TelegramBotSettingsCard({
             <span>Awali dengan tanda minus (-) untuk ID Grup Telegram.</span>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* 5. Link Code Modal */}
       {linkModalData && (
