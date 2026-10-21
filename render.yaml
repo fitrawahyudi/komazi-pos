@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: komazi-pos-backend
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Jakarta
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        value: fitrawahyudi/komazi-pos
+      - key: GITHUB_RELEASE_REPO
+        value: fitrawahyudi/komazi-pos-releases
+      - key: PUPPETEER_CACHE_DIR
+        value: /opt/render/.cache/puppeteer
