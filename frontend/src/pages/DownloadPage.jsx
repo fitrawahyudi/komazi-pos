@@ -150,7 +150,7 @@ export default function DownloadPage() {
 
   // Dynamic APK URLs (Mendukung Private Repo via Backend Proxy Railway & Public Releases Repo)
   const backendApiBase = (import.meta.env.VITE_API_URL || 'https://komazi-pos-production.up.railway.app/api').replace(/\/api\/?$/, '');
-  const backendDownloadUrl = `https://bit.ly/komazi`;
+  const backendDownloadUrl = `https://drive.google.com/file/d/1-1qQI-it-AqkM3ILQPB_eto2tjiXZQzt/view?usp=drive_link`;
   const mirrorApkUrl = '/download/komazi-pos.apk';
   const sha256Checksum = 'C060D39A88C9326F8C422099FD451C16D58E4EECCBEE7AD18AB86E97F967A174';
 
