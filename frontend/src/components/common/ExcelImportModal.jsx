@@ -298,7 +298,7 @@ export default function ExcelImportModal({
         description: String(row['Deskripsi'] || '').trim(),
         imageUrl,
         variants,
-        kitchenStation: String(row['Stasiun Dapur'] || '').trim() || 'BAR',
+        kitchenStation: String(row['Stasiun'] || row['Stasiun (KDS)'] || row['Stasiun Dapur'] || '').trim(),
         hpp: resolvedHpp,
         directHpp,
         recipeCost,
@@ -837,14 +837,6 @@ export default function ExcelImportModal({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="p-2 rounded-xl text-komazi-muted hover:text-white hover:bg-komazi-surface-3 transition-colors"
-            title="Tutup Modal"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Content Area */}

@@ -9,27 +9,11 @@ import { checkStaffShiftEligibility } from './scheduleGuard.service.js';
 import { getSettingsMap } from './settingsCache.service.js';
 
 async function resolveStationId(product) {
-  const isDrink = isDrinkItemHelper(product);
-
   if (product?.stationId) {
-    if (product.station?.type) {
-      if (isDrink && product.station.type === 'KITCHEN') {
-        // Redirection needed to BAR
-      } else {
-        return product.stationId;
-      }
-    } else {
-      const existingStation = await prisma.station.findUnique({ where: { id: product.stationId } });
-      if (existingStation) {
-        if (isDrink && existingStation.type === 'KITCHEN') {
-          // Redirection needed to BAR
-        } else {
-          return existingStation.id;
-        }
-      }
-    }
+    return product.stationId;
   }
 
+  const isDrink = isDrinkItemHelper(product);
   const targetCode = isDrink ? 'BAR_MAIN' : 'KITCHEN_MAIN';
   const targetType = isDrink ? 'BAR' : 'KITCHEN';
   const station = await prisma.station.findFirst({
@@ -324,19 +308,37 @@ export const orderService = {
     return scopedOrders;
   },
 
-  async getSummary(period = 'today') {
+  async getSummary(period = 'today', customRange = null) {
     const now = new Date();
     let startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    let periodLabel = 'Hari Ini';
+
+    // Mendukung pemanggilan getSummary({ startDate, endDate, label })
+    if (typeof period === 'object' && period !== null) {
+      customRange = period;
+      period = 'custom';
+    }
 
     if (period === 'yesterday') {
       startDate.setDate(startDate.getDate() - 1);
       endDate.setDate(endDate.getDate() - 1);
+      periodLabel = 'Kemarin';
     } else if (period === '7d') {
       startDate.setDate(startDate.getDate() - 7);
       startDate.setHours(0, 0, 0, 0);
+      periodLabel = '7 Hari Terakhir';
     } else if (period === 'month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      periodLabel = 'Bulan Ini';
+    } else if (period === 'custom' && customRange) {
+      if (customRange.startDate) {
+        startDate = customRange.startDate instanceof Date ? customRange.startDate : new Date(customRange.startDate);
+      }
+      if (customRange.endDate) {
+        endDate = customRange.endDate instanceof Date ? customRange.endDate : new Date(customRange.endDate);
+      }
+      periodLabel = customRange.label || customRange.periodLabel || 'Kustom';
     }
 
     const paidOrders = await prisma.order.findMany({
@@ -400,6 +402,9 @@ export const orderService = {
 
     return {
       period,
+      periodLabel,
+      startDate,
+      endDate,
       totalRevenue,
       totalTransactions,
       byMethod: {

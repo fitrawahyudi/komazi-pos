@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { formatRupiah, formatDateTime, formatOrderType } from '../../utils/format';
+import { formatRupiah, formatDateTime, formatOrderType, isDrinkItem, isKitchenItem, isBaristaItem } from '../../utils/format';
+import { usePosStore } from '../../store/posStore';
 import {
   Printer,
   X,
@@ -11,11 +12,13 @@ import {
   CheckCircle2,
   FileText,
   Copy,
+  Coffee,
+  ChefHat,
 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
 import { usePrinterStore, formatFriendlyPrinterError } from '../../store/printerStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { buildOrderReceiptEscPos } from '../../utils/escpos';
+import { buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../../utils/escpos';
 import { generateDynamicQrisForOrder, generateQrDataUrl, generateQrSvgString } from '../../utils/qris';
 import { useUiStore } from '../../store/uiStore';
 import { printQueue } from '../../services/printQueue.service';
@@ -88,6 +91,18 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
     setShowQrisOnReceipt(isQrisPayment || (isUnpaidBill && isQrisPayment) || order?.showQris === true);
   }, [isQrisPayment, isUnpaidBill, order?.showQris]);
 
+  // Station item filtering (Barista vs Dapur)
+  const { products = [], stations = [] } = usePosStore();
+  const orderItems = Array.isArray(order?.items) ? order.items : [];
+
+  const baristaItems = orderItems.filter((item) => isBaristaItem(item, { products, stations }));
+  const kitchenItems = orderItems.filter((item) => isKitchenItem(item, { products, stations }));
+
+  const isKitchenStationTicket = receiptType === 'barista' || receiptType === 'kitchen';
+  const isBaristaTicket = receiptType === 'barista';
+  const isKitchenTicket = receiptType === 'kitchen';
+  const stationTicketItems = isBaristaTicket ? baristaItems : isKitchenTicket ? kitchenItems : orderItems;
+
   // Generate Dynamic QRIS if showQrisOnReceipt is active (both SVG and Data URL for print stability)
   useEffect(() => {
     let isCancelled = false;
@@ -119,18 +134,34 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
   const handlePrint = async (targetType = receiptType) => {
     const isBoth = targetType === 'both';
     const isMerch = targetType === 'merchant';
+    const isBar = targetType === 'barista';
+    const isKitchen = targetType === 'kitchen';
+    const isStation = isBar || isKitchen;
     const orderJobId = String(order?.orderNumber || order?.invoiceNo || `ORD_${order?.id}`);
-    const checkJobId = isMerch ? `${orderJobId}_PERTINGGAL` : orderJobId;
+    const checkJobId = isMerch
+      ? `${orderJobId}_PERTINGGAL`
+      : isBar
+      ? `${orderJobId}_BARISTA`
+      : isKitchen
+      ? `${orderJobId}_KITCHEN`
+      : orderJobId;
 
     if (!isBoth && printQueue.hasPrinted(checkJobId)) {
+      const typeLabel = isMerch
+        ? 'pertinggal'
+        : isBar
+        ? 'tiket barista'
+        : isKitchen
+        ? 'tiket dapur'
+        : 'pelanggan';
       const confirmReprint = window.confirm(
-        `Struk ${isMerch ? 'pertinggal' : 'pelanggan'} untuk pesanan ini sudah pernah dicetak. Apakah Anda ingin mencetak ulang (reprint)?`
+        `Struk/tiket ${typeLabel} untuk pesanan ini sudah pernah dicetak. Apakah Anda ingin mencetak ulang (reprint)?`
       );
       if (!confirmReprint) return;
     }
 
     // Ensure QR payload is ready before opening print if QR is enabled
-    if (!isMerch && showQrisOnReceipt && settings?.qrisEnabled !== false && (!receiptQrisUrl || !receiptQrisSvg)) {
+    if (!isMerch && !isStation && showQrisOnReceipt && settings?.qrisEnabled !== false && (!receiptQrisUrl || !receiptQrisSvg)) {
       try {
         const qrisPayload = generateDynamicQrisForOrder(order, settings);
         const [url, svg] = await Promise.all([
@@ -173,6 +204,27 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
           printQueue.printedJobIds.add(`${orderJobId}_PERTINGGAL`);
 
           toast.success('Struk pelanggan & struk pertinggal berhasil dicetak!');
+        } else if (isStation) {
+          const itemsToPrint = isBar ? baristaItems : kitchenItems;
+          const stationName = isBar ? 'BARISTA' : 'DAPUR';
+          if (itemsToPrint.length === 0) {
+            toast.warning(`Tidak ada item untuk stasiun ${stationName}`);
+            setIsPrinting(false);
+            return;
+          }
+          const bytes = buildKitchenTicketEscPos(order, {
+            paperWidth,
+            stationName,
+            items: itemsToPrint,
+          });
+          const copies = printCopies || 1;
+          for (let i = 0; i < copies; i++) {
+            const ok = await sendRawData(bytes);
+            if (!ok) throw new Error('Pengiriman data printer terputus');
+            if (i < copies - 1) await new Promise((r) => setTimeout(r, 400));
+          }
+          printQueue.printedJobIds.add(checkJobId);
+          toast.success(`Tiket ${stationName.toLowerCase()} berhasil dicetak langsung ke printer!`);
         } else {
           const bytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
             showQris: !isMerch && showQrisOnReceipt,
@@ -192,7 +244,13 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
         await recordPrintJob({
           printerProfileId: activeReceiptPrinter?.id || null,
           orderId: order?.id || null,
-          documentType: isMerch ? 'MERCHANT_RECEIPT' : 'RECEIPT',
+          documentType: isMerch
+            ? 'MERCHANT_RECEIPT'
+            : isBar
+            ? 'BARISTA_TICKET'
+            : isKitchen
+            ? 'KITCHEN_TICKET'
+            : 'RECEIPT',
           status: 'PRINTED',
           requestedBy: order?.cashierName || order?.cashier?.name || order?.shift?.cashier?.name || 'Kasir',
         });
@@ -204,7 +262,13 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
         await recordPrintJob({
           printerProfileId: activeReceiptPrinter?.id || null,
           orderId: order?.id || null,
-          documentType: isMerch ? 'MERCHANT_RECEIPT' : 'RECEIPT',
+          documentType: isMerch
+            ? 'MERCHANT_RECEIPT'
+            : isBar
+            ? 'BARISTA_TICKET'
+            : isKitchen
+            ? 'KITCHEN_TICKET'
+            : 'RECEIPT',
           status: 'FAILED',
           errorCode: 'ERR_PRINT_FAILED',
           errorMessage: err.message,
@@ -236,6 +300,21 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
             });
             await sendRawData(merchBytes);
             toast.success('Struk pelanggan & pertinggal berhasil dicetak!');
+          } else if (isStation) {
+            const itemsToPrint = isBar ? baristaItems : kitchenItems;
+            const stationName = isBar ? 'BARISTA' : 'DAPUR';
+            if (itemsToPrint.length === 0) {
+              toast.warning(`Tidak ada item untuk stasiun ${stationName}`);
+              setIsPrinting(false);
+              return;
+            }
+            const bytes = buildKitchenTicketEscPos(order, {
+              paperWidth,
+              stationName,
+              items: itemsToPrint,
+            });
+            await sendRawData(bytes);
+            toast.success(`Tiket ${stationName.toLowerCase()} berhasil dicetak!`);
           } else {
             const bytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
               showQris: !isMerch && showQrisOnReceipt,
@@ -295,7 +374,8 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
             </body>
           </html>
         `;
-        await AndroidPrinter.printSystemHtml(html, `Struk_${isMerch ? 'Pertinggal_' : ''}${orderJobId}`);
+        const prefix = isMerch ? 'Pertinggal_' : isBar ? 'Barista_' : isKitchen ? 'Dapur_' : '';
+        await AndroidPrinter.printSystemHtml(html, `Struk_${prefix}${orderJobId}`);
         return;
       }
     }
@@ -386,13 +466,21 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                     </div>
                   ) : null}
 
-                  {order.isBillCheck ? (
+                  {order.isBillCheck && !isKitchenStationTicket ? (
                     <div className="font-bold text-[10px] text-neutral-950 tracking-wider uppercase my-1">
                       *** TAGIHAN SEMENTARA (BILL) ***
                     </div>
                   ) : receiptType === 'merchant' ? (
                     <div className="font-bold text-[10px] text-neutral-950 tracking-wider uppercase my-1 bg-neutral-100 py-1 border-y border-dashed border-neutral-400">
                       *** STRUK PERTINGGAL ***
+                    </div>
+                  ) : isBaristaTicket ? (
+                    <div className="font-bold text-[11px] text-neutral-950 tracking-wider uppercase my-1 bg-neutral-100 py-1 border-y-2 border-dashed border-neutral-800">
+                      *** TIKET BARISTA (BAR) ***
+                    </div>
+                  ) : isKitchenTicket ? (
+                    <div className="font-bold text-[11px] text-neutral-950 tracking-wider uppercase my-1 bg-neutral-100 py-1 border-y-2 border-dashed border-neutral-800">
+                      *** TIKET DAPUR (KITCHEN) ***
                     </div>
                   ) : null}
                 </div>
@@ -404,18 +492,18 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
 
                 {/* Metadata */}
                 <div className="space-y-0.5 text-[10px]">
-                  {order.isBillCheck && (
+                  {order.isBillCheck && !isKitchenStationTicket && (
                     <div className="flex justify-between font-bold text-neutral-950">
                       <span>Status:</span>
                       <span>BELUM LUNAS</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-neutral-700">No. Faktur:</span>
+                    <span className="text-neutral-700">No. Invoice:</span>
                     <span className="font-bold text-neutral-950">{order.invoiceNo || `KMZ-${order.id}`}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-700">Tanggal:</span>
+                    <span className="text-neutral-700">{isKitchenStationTicket ? 'Waktu:' : 'Tanggal:'}</span>
                     <span className="text-neutral-950">{formatDateTime(order.createdAt || new Date().toISOString())}</span>
                   </div>
                   {settings?.receiptShowCashier !== false && (
@@ -446,168 +534,233 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   {dividerText}
                 </div>
 
-                {/* Line Items */}
-                <div className="space-y-1.5 my-1.5">
-                  {(order.items || []).map((item, idx) => {
-                    const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
-                    const unitPrice = Number(item.price || item.unitPrice || 0);
-                    const itemName = item.name || item.productName || 'Item';
-                    const variantStr = item.variantName ? ` • ${item.variantName}` : '';
-                    return (
-                      <div key={idx} className="space-y-0.5 text-[10px]">
-                        <div className="flex justify-between items-baseline font-bold text-neutral-950">
-                          <span className="truncate pr-1">{itemName}</span>
-                          <span className="shrink-0">{formatRupiah(itemTotal)}</span>
-                        </div>
-                        <div className="text-neutral-600 pl-2">
-                          {item.qty} x {formatRupiah(unitPrice)}{variantStr}
-                        </div>
-                        {settings?.receiptShowNotes !== false && item.note && (
-                          <div className="text-neutral-500 italic pl-2 text-[9px]">
-                            * {item.note}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Monospace Divider */}
-                <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
-                  {dividerText}
-                </div>
-
-                {/* Financial Summary */}
-                <div className="space-y-0.5 text-[10px]">
-                  <div className="flex justify-between text-neutral-800">
-                    <span>Subtotal:</span>
-                    <span>{formatRupiah(order.subtotal || order.total || 0)}</span>
-                  </div>
-
-                  {Number(order.discount) > 0 && (
-                    <div className="flex justify-between text-neutral-800">
-                      <span>Diskon:</span>
-                      <span>-{formatRupiah(order.discount)}</span>
-                    </div>
-                  )}
-
-                  {Number(order.tax) > 0 && (
-                    <div className="flex justify-between text-neutral-800">
-                      <span>PB1 / Pajak (10%):</span>
-                      <span>{formatRupiah(order.tax)}</span>
-                    </div>
-                  )}
-
-                  {Number(order.serviceFee) > 0 && (
-                    <div className="flex justify-between text-neutral-800">
-                      <span>Service Fee (5%):</span>
-                      <span>{formatRupiah(order.serviceFee)}</span>
-                    </div>
-                  )}
-
-                  {/* Monospace Divider */}
-                  <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
-                    {dividerText}
-                  </div>
-
-                  <div className="flex justify-between font-bold text-xs text-neutral-950">
-                    <span>TOTAL:</span>
-                    <span>{formatRupiah(order.total || order.grandTotal || 0)}</span>
-                  </div>
-
-                  {/* Monospace Divider */}
-                  <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
-                    {dividerText}
-                  </div>
-
-                  <div className="flex justify-between text-neutral-800">
-                    <span>Metode Pembayaran:</span>
-                    <span className="font-bold text-neutral-950">{displayPaymentMethod}</span>
-                  </div>
-
-                  {cashReceived ? (
-                    <>
-                      <div className="flex justify-between text-neutral-800">
-                        <span>Bayar Tunai:</span>
-                        <span>{formatRupiah(cashReceived)}</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-neutral-950">
-                        <span>Kembalian:</span>
-                        <span>{formatRupiah(cashChange || 0)}</span>
-                      </div>
-                    </>
-                  ) : null}
-
-                  {/* Dynamic QRIS (khusus struk pelanggan) */}
-                  {receiptType !== 'merchant' && settings?.receiptShowQris !== false && showQrisOnReceipt && settings?.qrisEnabled !== false && (
-                    <>
-                      <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
-                        {dividerText}
-                      </div>
-                      <div className="text-center space-y-1 my-1.5">
-                        <div className="font-bold text-[11px] text-neutral-950 uppercase tracking-wide">
-                          QRIS
-                        </div>
-                        <div className="text-[10px] text-neutral-800">
-                          Total Tagihan: {formatRupiah(order.total || order.grandTotal || 0)}
-                        </div>
-                        <div className="my-1.5 flex justify-center">
-                          {receiptQrisSvg ? (
-                            <div
-                              className="w-28 h-28 flex items-center justify-center p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0 [&_svg]:w-full [&_svg]:h-full"
-                              dangerouslySetInnerHTML={{ __html: receiptQrisSvg }}
-                            />
-                          ) : receiptQrisUrl ? (
-                            <img
-                              src={receiptQrisUrl}
-                              alt="QRIS Dinamis"
-                              className="w-28 h-28 object-contain p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0"
-                            />
-                          ) : (
-                            <div className="w-28 h-28 flex flex-col items-center justify-center text-[9px] text-neutral-400 border border-neutral-200 rounded p-2">
-                              <Loader2 className="w-4 h-4 animate-spin text-komazi-coral mb-1" />
-                              <span>Memuat QR...</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-[9px] text-neutral-600">(Nominal otomatis terisi & terkunci)</div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Monospace Divider & Footer (Khusus Struk Pelanggan) */}
-                {receiptType !== 'merchant' && (
+                {isKitchenStationTicket ? (
                   <>
+                    {/* Line Items for Kitchen/Barista Station (Tiket Kerja Tanpa Harga) */}
+                    <div className="space-y-2 my-1.5">
+                      {stationTicketItems.length === 0 ? (
+                        <div className="text-center text-neutral-500 py-3 italic text-[10px]">
+                          Tidak ada item {isBaristaTicket ? 'minuman / bar' : 'makanan / dapur'} pada pesanan ini.
+                        </div>
+                      ) : (
+                        stationTicketItems.map((item, idx) => {
+                          const itemName = item.name || item.productName || 'Item';
+                          return (
+                            <div key={idx} className="space-y-0.5 text-[11px] border-b border-dashed border-neutral-300 pb-1.5 last:border-b-0">
+                              <div className="flex items-baseline font-bold text-neutral-950 text-xs">
+                                <span className="w-7 shrink-0">{item.qty}x</span>
+                                <span className="truncate">{itemName}</span>
+                              </div>
+                              {item.variantName && (
+                                <div className="text-neutral-700 pl-7 text-[10px]">
+                                  Varian: {item.variantName}
+                                </div>
+                              )}
+                              {item.modifiers && (
+                                <div className="text-neutral-700 pl-7 text-[10px]">
+                                  Mod: {item.modifiers}
+                                </div>
+                              )}
+                              {item.note && (
+                                <div className="text-neutral-950 font-bold pl-7 text-[10px] mt-0.5 bg-neutral-100 p-0.5 rounded">
+                                  &gt;&gt; NOTE: {item.note}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Catatan Pesanan Khusus (Jika ada) */}
+                    {(order.note || order.orderNote || order.notes) && (
+                      <>
+                        <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                          {dividerText}
+                        </div>
+                        <div className="text-[10px] space-y-0.5 bg-neutral-100 p-1.5 rounded">
+                          <span className="font-bold text-neutral-950 block">Catatan Pesanan:</span>
+                          <span className="text-neutral-800 italic">{order.note || order.orderNote || order.notes}</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Monospace Divider */}
                     <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
                       {dividerText}
                     </div>
 
-                    <div className="text-center space-y-0.5 text-[9px] text-neutral-700 mt-2">
-                      {settings?.receiptShowFooter !== false && (
-                        <div className="font-bold text-[10px] text-neutral-950 whitespace-pre-line">
-                          {footerText}
+                    {/* Ringkasan Total Item Tiket Kerja */}
+                    <div className="text-center font-bold text-[10px] text-neutral-950 tracking-wider py-1 uppercase">
+                      *** TOTAL: {stationTicketItems.reduce((acc, it) => acc + (Number(it.qty) || 1), 0)} ITEM UNTUK DISIAPKAN ***
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Line Items Struk Penjualan (Pelanggan / Pertinggal) */}
+                    <div className="space-y-1.5 my-1.5">
+                      {(order.items || []).map((item, idx) => {
+                        const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
+                        const unitPrice = Number(item.price || item.unitPrice || 0);
+                        const itemName = item.name || item.productName || 'Item';
+                        const variantStr = item.variantName ? ` • ${item.variantName}` : '';
+                        return (
+                          <div key={idx} className="space-y-0.5 text-[10px]">
+                            <div className="flex justify-between items-baseline font-bold text-neutral-950">
+                              <span className="truncate pr-1">{itemName}</span>
+                              <span className="shrink-0">{formatRupiah(itemTotal)}</span>
+                            </div>
+                            <div className="text-neutral-600 pl-2">
+                              {item.qty} x {formatRupiah(unitPrice)}{variantStr}
+                            </div>
+                            {settings?.receiptShowNotes !== false && item.note && (
+                              <div className="text-neutral-500 italic pl-2 text-[9px]">
+                                * {item.note}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Monospace Divider */}
+                    <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                      {dividerText}
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div className="space-y-0.5 text-[10px]">
+                      <div className="flex justify-between text-neutral-800">
+                        <span>Subtotal:</span>
+                        <span>{formatRupiah(order.subtotal || order.total || 0)}</span>
+                      </div>
+
+                      {Number(order.discount) > 0 && (
+                        <div className="flex justify-between text-neutral-800">
+                          <span>Diskon:</span>
+                          <span>-{formatRupiah(order.discount)}</span>
                         </div>
                       )}
-                      {settings?.receiptShowWifi !== false && settings?.wifiName && (
-                        <div>WiFi: {settings.wifiName} | Pass: {settings.wifiPass || '-'}</div>
+
+                      {Number(order.tax) > 0 && (
+                        <div className="flex justify-between text-neutral-800">
+                          <span>PB1 / Pajak (10%):</span>
+                          <span>{formatRupiah(order.tax)}</span>
+                        </div>
                       )}
-                      {!footerText.toLowerCase().includes('follow ig') &&
-                        !footerText.toLowerCase().includes('@komazi') &&
-                        !footerText.toLowerCase().includes('instagram') && (
-                          <div>Follow IG: @komazicoffee</div>
+
+                      {Number(order.serviceFee) > 0 && (
+                        <div className="flex justify-between text-neutral-800">
+                          <span>Service Fee (5%):</span>
+                          <span>{formatRupiah(order.serviceFee)}</span>
+                        </div>
                       )}
-                      {settings?.receiptShowBarcode !== false && (
+
+                      {/* Monospace Divider */}
+                      <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                        {dividerText}
+                      </div>
+
+                      <div className="flex justify-between font-bold text-xs text-neutral-950">
+                        <span>TOTAL:</span>
+                        <span>{formatRupiah(order.total || order.grandTotal || 0)}</span>
+                      </div>
+
+                      {/* Monospace Divider */}
+                      <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                        {dividerText}
+                      </div>
+
+                      <div className="flex justify-between text-neutral-800">
+                        <span>Metode Pembayaran:</span>
+                        <span className="font-bold text-neutral-950">{displayPaymentMethod}</span>
+                      </div>
+
+                      {cashReceived ? (
                         <>
-                          <div className="tracking-[3px] font-mono text-[8px] text-neutral-800 pt-1 select-none">
-                            ||||| | |||| ||| ||||| |||| || |
+                          <div className="flex justify-between text-neutral-800">
+                            <span>Bayar Tunai:</span>
+                            <span>{formatRupiah(cashReceived)}</span>
                           </div>
-                          <div className="text-[8px] text-neutral-500 font-mono tracking-wider">
-                            {order.invoiceNo || `KMZ-${order.id}`}
+                          <div className="flex justify-between font-bold text-neutral-950">
+                            <span>Kembalian:</span>
+                            <span>{formatRupiah(cashChange || 0)}</span>
+                          </div>
+                        </>
+                      ) : null}
+
+                      {/* Dynamic QRIS (khusus struk pelanggan) */}
+                      {receiptType !== 'merchant' && settings?.receiptShowQris !== false && showQrisOnReceipt && settings?.qrisEnabled !== false && (
+                        <>
+                          <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                            {dividerText}
+                          </div>
+                          <div className="text-center space-y-1 my-1.5">
+                            <div className="font-bold text-[11px] text-neutral-950 uppercase tracking-wide">
+                              QRIS
+                            </div>
+                            <div className="text-[10px] text-neutral-800">
+                              Total Tagihan: {formatRupiah(order.total || order.grandTotal || 0)}
+                            </div>
+                            <div className="my-1.5 flex justify-center">
+                              {receiptQrisSvg ? (
+                                <div
+                                  className="w-28 h-28 flex items-center justify-center p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0 [&_svg]:w-full [&_svg]:h-full"
+                                  dangerouslySetInnerHTML={{ __html: receiptQrisSvg }}
+                                />
+                              ) : receiptQrisUrl ? (
+                                <img
+                                  src={receiptQrisUrl}
+                                  alt="QRIS Dinamis"
+                                  className="w-28 h-28 object-contain p-1 bg-white border border-neutral-200 rounded print:border-none print:p-0"
+                                />
+                              ) : (
+                                <div className="w-28 h-28 flex flex-col items-center justify-center text-[9px] text-neutral-400 border border-neutral-200 rounded p-2">
+                                  <Loader2 className="w-4 h-4 animate-spin text-komazi-coral mb-1" />
+                                  <span>Memuat QR...</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-[9px] text-neutral-600">(Nominal otomatis terisi & terkunci)</div>
                           </div>
                         </>
                       )}
                     </div>
+
+                    {/* Monospace Divider & Footer (Khusus Struk Pelanggan) */}
+                    {receiptType !== 'merchant' && (
+                      <>
+                        <div className="font-mono text-neutral-400 select-none overflow-hidden my-1 text-center font-normal tracking-tighter leading-none" aria-hidden="true">
+                          {dividerText}
+                        </div>
+
+                        <div className="text-center space-y-0.5 text-[9px] text-neutral-700 mt-2">
+                          {settings?.receiptShowFooter !== false && (
+                            <div className="font-bold text-[10px] text-neutral-950 whitespace-pre-line">
+                              {footerText}
+                            </div>
+                          )}
+                          {settings?.receiptShowWifi !== false && settings?.wifiName && (
+                            <div>WiFi: {settings.wifiName} | Pass: {settings.wifiPass || '-'}</div>
+                          )}
+                          {!footerText.toLowerCase().includes('follow ig') &&
+                            !footerText.toLowerCase().includes('@komazi') &&
+                            !footerText.toLowerCase().includes('instagram') && (
+                              <div>Follow IG: @komazicoffee</div>
+                          )}
+                          {settings?.receiptShowBarcode !== false && (
+                            <>
+                              <div className="tracking-[3px] font-mono text-[8px] text-neutral-800 pt-1 select-none">
+                                ||||| | |||| ||| ||||| |||| || |
+                              </div>
+                              <div className="text-[8px] text-neutral-500 font-mono tracking-wider">
+                                {order.invoiceNo || `KMZ-${order.id}`}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -682,7 +835,63 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                       )}
                     </div>
                     <div className="font-bold text-xs text-white">Struk Pertinggal</div>
-                    <div className="text-[10px] text-komazi-muted mt-0.5 leading-tight">Arsip kasir & dapur</div>
+                    <div className="text-[10px] text-komazi-muted mt-0.5 leading-tight">Arsip kasir & toko</div>
+                  </button>
+
+                  {/* Card: Barista */}
+                  <button
+                    type="button"
+                    onClick={() => setReceiptType('barista')}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                      receiptType === 'barista'
+                        ? 'bg-cyan-500/15 border-cyan-500 text-white shadow-xs'
+                        : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
+                    }`}
+                    title="Tiket Pesanan Barista / Minuman"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <Coffee className={`w-4 h-4 ${receiptType === 'barista' ? 'text-cyan-400' : 'text-komazi-muted'}`} />
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                          baristaItems.length > 0 ? 'bg-cyan-500/20 text-cyan-300' : 'bg-neutral-800 text-neutral-500'
+                        }`}>
+                          {baristaItems.length}
+                        </span>
+                        {receiptType === 'barista' && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="font-bold text-xs text-white">Struk Barista</div>
+                    <div className="text-[10px] text-komazi-muted mt-0.5 leading-tight">Tiket minuman (Bar)</div>
+                  </button>
+
+                  {/* Card: Dapur */}
+                  <button
+                    type="button"
+                    onClick={() => setReceiptType('kitchen')}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                      receiptType === 'kitchen'
+                        ? 'bg-orange-500/15 border-orange-500 text-white shadow-xs'
+                        : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
+                    }`}
+                    title="Tiket Pesanan Dapur / Makanan"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <ChefHat className={`w-4 h-4 ${receiptType === 'kitchen' ? 'text-orange-400' : 'text-komazi-muted'}`} />
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                          kitchenItems.length > 0 ? 'bg-orange-500/20 text-orange-300' : 'bg-neutral-800 text-neutral-500'
+                        }`}>
+                          {kitchenItems.length}
+                        </span>
+                        {receiptType === 'kitchen' && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-orange-400" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="font-bold text-xs text-white">Struk Dapur</div>
+                    <div className="text-[10px] text-komazi-muted mt-0.5 leading-tight">Tiket makanan (Kitchen)</div>
                   </button>
                 </div>
               </div>
@@ -690,7 +899,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
               {/* 2. Format Kertas Thermal (58mm vs 80mm) */}
               <div className="space-y-2">
                 <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
-                  Ukuran Kertas Thermal
+                  Ukuran Kertas 
                 </label>
                 <div className="grid grid-cols-2 gap-2 bg-komazi-surface-2 p-1 rounded-xl border border-komazi-border">
                   <button
@@ -703,7 +912,6 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                     }`}
                   >
                     <span>58 mm</span>
-                    <span className="text-[10px] text-komazi-muted">(Standar)</span>
                   </button>
                   <button
                     type="button"
@@ -715,13 +923,12 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                     }`}
                   >
                     <span>80 mm</span>
-                    <span className="text-[10px] text-komazi-muted">(Lebar)</span>
                   </button>
                 </div>
               </div>
 
               {/* 3. Opsi Tambahan (QRIS Dinamis) */}
-              {receiptType !== 'merchant' && settings?.qrisEnabled !== false && (
+              {!isKitchenStationTicket && receiptType !== 'merchant' && settings?.qrisEnabled !== false && (
                 <div className="space-y-2">
                   <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
                     Opsi Tambahan
@@ -800,13 +1007,22 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                 variant="primary"
                 icon={Printer}
                 onClick={() => handlePrint(receiptType)}
+                disabled={isPrinting || (isKitchenStationTicket && stationTicketItems.length === 0)}
                 className="w-full py-3 rounded-xl font-bold text-sm shadow-md"
               >
-                {receiptType === 'merchant' ? 'Cetak Struk Pertinggal' : 'Cetak Struk Pelanggan'}
+                {isKitchenStationTicket && stationTicketItems.length === 0
+                  ? `Tidak Ada Item ${isBaristaTicket ? 'Barista' : 'Dapur'}`
+                  : isBaristaTicket
+                  ? 'Cetak Struk Barista'
+                  : isKitchenTicket
+                  ? 'Cetak Struk Dapur'
+                  : receiptType === 'merchant'
+                  ? 'Cetak Struk Pertinggal'
+                  : 'Cetak Struk Pelanggan'}
               </LoadingButton>
 
               <div className="flex items-center gap-2">
-                {isConnected && (
+                {isConnected && !isKitchenStationTicket && (
                   <button
                     type="button"
                     onClick={() => handlePrint('both')}

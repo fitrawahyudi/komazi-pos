@@ -86,6 +86,8 @@ export const useCartStore = create(
             name: product.name,
             imageUrl: product.imageUrl,
             categoryName: product.categoryName,
+            stationId: product.stationId || product.station?.id || null,
+            station: product.station || null,
             variant: selectedVariant,
             modifiers: selectedModifiers,
             unitPrice,

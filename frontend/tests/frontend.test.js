@@ -462,6 +462,124 @@ test('12. KDS Kitchen Auto-Print & Station Items Filtering: validates station it
   assert.ok(kitchenTicket.length > 50, 'Kitchen ticket payload should be valid ESC/POS bytes');
 });
 
+test('13. Universal File Saver: handles workbook and blob downloads safely across platforms', async () => {
+  const { saveWorkbook, saveBlobFile, blobToBase64 } = await import('../src/utils/fileSaver.js');
+  const XLSX = (await import('xlsx-js-style')).default;
+
+  // Test saveWorkbook
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([['Kolom A', 'Kolom B'], ['Nilai 1', 'Nilai 2']]);
+  XLSX.utils.book_append_sheet(wb, ws, 'TestSheet');
+
+  const wbResult = await saveWorkbook(wb, 'test_output.xlsx');
+  assert.equal(wbResult.success, true);
+  assert.equal(wbResult.fileName, 'test_output.xlsx');
+
+  // Test blobToBase64 and saveBlobFile
+  const testBlob = new Blob(['Halo Komazi POS'], { type: 'text/plain' });
+  const base64Str = await blobToBase64(testBlob);
+  assert.ok(typeof base64Str === 'string', 'blobToBase64 should return string');
+
+  const blobResult = await saveBlobFile(testBlob, 'test_file.csv');
+  assert.equal(blobResult.success, true);
+  assert.equal(blobResult.fileName, 'test_file.csv');
+});
+
+test('14. Menu Station Routing & Fallback: resolves preparation station accurately to prevent misrouting', async () => {
+  const { isDrinkItem } = await import('../src/utils/format.js');
+
+  const mockStations = [
+    { id: 101, name: 'Bar Counter', code: 'BAR_MAIN', type: 'BAR' },
+    { id: 102, name: 'Kitchen Counter', code: 'KITCHEN_MAIN', type: 'KITCHEN' },
+  ];
+
+  const getProductStationType = (prod) => {
+    if (prod?.station?.type) return prod.station.type;
+    if (prod?.stationId && mockStations.length > 0) {
+      const found = mockStations.find((s) => s.id === prod.stationId);
+      if (found?.type) return found.type;
+    }
+    return isDrinkItem(prod) ? 'BAR' : 'KITCHEN';
+  };
+
+  // Case 1: Explicit BAR stationId on a non-drink item (e.g., special Barista Toast)
+  const barSpecialItem = { id: 1, name: 'Barista Toast', stationId: 101, categoryName: 'Food' };
+  assert.equal(getProductStationType(barSpecialItem), 'BAR', 'Explicit stationId 101 should route to BAR');
+
+  // Case 2: Explicit KITCHEN stationId on a drink item (e.g., Artisan Kitchen Brew)
+  const kitchenSpecialDrink = { id: 2, name: 'Es Kopi Komazi', stationId: 102, categoryName: 'Kopi' };
+  assert.equal(getProductStationType(kitchenSpecialDrink), 'KITCHEN', 'Explicit stationId 102 should route to KITCHEN');
+
+  // Case 3: Embedded station object relation
+  const embeddedItem = { id: 3, name: 'Matcha Frappe', station: { type: 'BAR' } };
+  assert.equal(getProductStationType(embeddedItem), 'BAR', 'Embedded station relation should route to BAR');
+
+  // Case 4: No explicit stationId - falls back to isDrinkItem (Kopi -> BAR)
+  const autoDrink = { id: 4, name: 'Americano', categoryName: 'Kopi' };
+  assert.equal(getProductStationType(autoDrink), 'BAR', 'Drink category should fallback to BAR');
+
+  // Case 5: No explicit stationId - falls back to isDrinkItem (Rice bowl -> KITCHEN)
+  const autoFood = { id: 5, name: 'Nasi Ayam Goreng', categoryName: 'Makanan' };
+  assert.equal(getProductStationType(autoFood), 'KITCHEN', 'Food category should fallback to KITCHEN');
+});
+
+test('15. Strict Kitchen vs Barista Isolation in Ticket Generation: ensures barista items never leak into kitchen tickets and vice-versa', async () => {
+  const { isKitchenItem, isBaristaItem } = await import('../src/utils/format.js');
+  const { buildKitchenTicketEscPos } = await import('../src/utils/escpos.js');
+
+  const mixedOrder = {
+    id: 99,
+    invoiceNo: 'KMZ-TEST-99',
+    createdAt: new Date().toISOString(),
+    orderType: 'DINE_IN',
+    tableNo: '5',
+    customerName: 'Joko',
+    cashierName: 'Kasir Utama',
+    items: [
+      { name: 'Kopizi Aren Ice', qty: 2, note: 'Less sugar' },
+      { name: 'Americano Hot', qty: 1 },
+      { name: 'Nasi Goreng Komazi', qty: 1, note: 'Pedas sedang' },
+      { name: 'Kentang Goreng', qty: 1 },
+      { name: 'Matcha Latte', qty: 1 },
+    ],
+  };
+
+  // 1. Verify item-level categorization
+  assert.equal(isBaristaItem(mixedOrder.items[0]), true, 'Kopizi Aren should be Barista');
+  assert.equal(isKitchenItem(mixedOrder.items[0]), false, 'Kopizi Aren must NOT be Kitchen');
+
+  assert.equal(isBaristaItem(mixedOrder.items[1]), true, 'Americano should be Barista');
+  assert.equal(isKitchenItem(mixedOrder.items[1]), false, 'Americano must NOT be Kitchen');
+
+  assert.equal(isKitchenItem(mixedOrder.items[2]), true, 'Nasi Goreng should be Kitchen');
+  assert.equal(isBaristaItem(mixedOrder.items[2]), false, 'Nasi Goreng must NOT be Barista');
+
+  assert.equal(isKitchenItem(mixedOrder.items[3]), true, 'Kentang Goreng should be Kitchen');
+  assert.equal(isBaristaItem(mixedOrder.items[3]), false, 'Kentang Goreng must NOT be Barista');
+
+  // 2. Build Kitchen Ticket with default stationName DAPUR
+  const kitchenBytes = buildKitchenTicketEscPos(mixedOrder, { stationName: 'DAPUR' });
+  const kitchenText = new TextDecoder().decode(kitchenBytes);
+
+  assert.ok(kitchenText.includes('Nasi Goreng Komazi'), 'Kitchen ticket must include Nasi Goreng');
+  assert.ok(kitchenText.includes('Kentang Goreng'), 'Kitchen ticket must include Kentang Goreng');
+  assert.ok(!kitchenText.includes('Kopizi Aren Ice'), 'Kitchen ticket must NEVER include Kopizi Aren Ice');
+  assert.ok(!kitchenText.includes('Americano Hot'), 'Kitchen ticket must NEVER include Americano Hot');
+  assert.ok(!kitchenText.includes('Matcha Latte'), 'Kitchen ticket must NEVER include Matcha Latte');
+
+  // 3. Build Barista Ticket with stationName BARISTA
+  const baristaBytes = buildKitchenTicketEscPos(mixedOrder, { stationName: 'BARISTA' });
+  const baristaText = new TextDecoder().decode(baristaBytes);
+
+  assert.ok(baristaText.includes('Kopizi Aren Ice'), 'Barista ticket must include Kopizi Aren Ice');
+  assert.ok(baristaText.includes('Americano Hot'), 'Barista ticket must include Americano Hot');
+  assert.ok(baristaText.includes('Matcha Latte'), 'Barista ticket must include Matcha Latte');
+  assert.ok(!baristaText.includes('Nasi Goreng Komazi'), 'Barista ticket must NEVER include Nasi Goreng');
+  assert.ok(!baristaText.includes('Kentang Goreng'), 'Barista ticket must NEVER include Kentang Goreng');
+});
+
+
+
 
 
 

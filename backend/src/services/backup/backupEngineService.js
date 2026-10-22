@@ -270,7 +270,7 @@ export const backupEngineService = {
         `[BackupEngine] Backup ${executionId} BERHASIL dalam ${durationSeconds}s (${savedStorage.sizeBytes} bytes, SHA: ${checksumSha256.slice(0, 12)}...)`
       );
 
-      // 9. Kirim notifikasi ringkasan aman ke Telegram Owner (tanpa dump & tanpa secret)
+      // 9. Kirim notifikasi ringkasan dan lampiran berkas .sql ke Telegram Owner
       try {
         const notifHtml = `
 💾 <b>PENCADANGAN DATABASE BERHASIL</b>
@@ -286,9 +286,17 @@ export const backupEngineService = {
 <b>Checksum SHA-256:</b>
 <code>${checksumSha256}</code>
 ━━━━━━━━━━━━━━━━━━
-<i>Integritas terenkripsi AES-256-GCM & lulus uji verifikasi round-trip.</i>
+<i>Integritas terenkripsi AES-256-GCM & lulus uji verifikasi round-trip. Berkas .sql terlampir.</i>
         `.trim();
-        await notifier.toRoles(['OWNER'], notifHtml);
+
+        const sqlFileName = fileName.replace(/\.gz\.enc$/, '') || `komazi_pos_${dateStr}_${timeStr}_${executionId.slice(4, 12)}.sql`;
+        const sqlBuffer = Buffer.from(sql, 'utf8');
+
+        if (typeof notifier.sendDocumentToRoles === 'function') {
+          await notifier.sendDocumentToRoles(['OWNER'], sqlBuffer, sqlFileName, notifHtml);
+        } else {
+          await notifier.toRoles(['OWNER'], notifHtml);
+        }
       } catch (notifErr) {
         logger.scheduler.warn(`[BackupEngine] Gagal mengirim notifikasi Telegram: ${notifErr.message}`);
       }

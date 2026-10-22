@@ -3,7 +3,7 @@ import prisma from '../config/db.js';
 import { events } from './events.js';
 import { buildOrderCard } from './keyboards/index.js';
 import { rupiah, esc } from './utils/format.js';
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 import { generateBotImage } from '../services/botImage/index.js';
 import { sendPhotoWithFallback, notifierVisual } from './utils/sendVisual.js';
 
@@ -35,6 +35,47 @@ export async function safeSend(chatId, text, extra = {}) {
   }
 }
 
+/**
+ * Mengirimkan berkas dokumen (seperti file .sql dump database) ke chat Telegram dengan aman
+ */
+export async function safeSendDocument(chatId, fileBuffer, fileName, caption = '', extra = {}) {
+  if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) return false;
+  try {
+    const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer || '', 'utf8');
+    const safeFileName = fileName || 'backup.sql';
+    const inputFile = new InputFile(buffer, safeFileName);
+
+    if (caption && caption.length > 1024) {
+      await safeSend(chatId, caption, extra);
+      await bot.api.sendDocument(chatId, inputFile, {
+        caption: `💾 Berkas: <code>${safeFileName}</code>`,
+        parse_mode: 'HTML',
+        ...extra,
+      });
+    } else {
+      await bot.api.sendDocument(chatId, inputFile, {
+        caption: caption || undefined,
+        parse_mode: 'HTML',
+        ...extra,
+      });
+    }
+    return true;
+  } catch (err) {
+    if (err.error_code === 403) {
+      await prisma.user.updateMany({
+        where: { telegramId: String(chatId) },
+        data: { telegramId: null },
+      }).catch(() => {});
+      return false;
+    }
+    console.warn(`[Notifier] Gagal mengirim dokumen ke ${chatId}, fallback teks:`, err.description || err.message);
+    if (caption) {
+      await safeSend(chatId, caption, extra).catch(() => {});
+    }
+    return false;
+  }
+}
+
 export const notifier = {
   async toUser(userId, text, extra = {}) {
     const u = await prisma.user.findUnique({ where: { id: Number(userId) } });
@@ -52,6 +93,32 @@ export const notifier = {
       },
     });
     await Promise.all(users.map((u) => safeSend(u.telegramId, text, extra)));
+  },
+
+  async sendDocumentToRoles(roles = [], fileBuffer, fileName, caption = '', extra = {}) {
+    try {
+      const users = await prisma.user.findMany({
+        where: {
+          role: { in: roles },
+          isActive: true,
+          telegramId: { not: null },
+        },
+      });
+      if (!users || users.length === 0) return [];
+      return await Promise.all(
+        users.map((u) => safeSendDocument(u.telegramId, fileBuffer, fileName, caption, extra))
+      );
+    } catch (err) {
+      console.warn('[Notifier] sendDocumentToRoles error:', err.message);
+      return [];
+    }
+  },
+
+  async sendDocumentToUser(userId, fileBuffer, fileName, caption = '', extra = {}) {
+    const u = await prisma.user.findUnique({ where: { id: Number(userId) } });
+    if (u?.telegramId) {
+      await safeSendDocument(u.telegramId, fileBuffer, fileName, caption, extra);
+    }
   },
 };
 

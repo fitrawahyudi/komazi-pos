@@ -24,6 +24,7 @@ export async function getAllProducts(req, res) {
       include: {
         category: true,
         variants: true,
+        station: true,
       },
       orderBy: { id: 'desc' },
     };
@@ -58,6 +59,7 @@ export async function getProductById(req, res) {
       include: {
         category: true,
         variants: true,
+        station: true,
       },
     });
 
@@ -419,8 +421,9 @@ export async function bulkCreateProducts(req, res) {
 
         // Routing station (KDS vs BDS)
         let resolvedStationId = null;
-        if (item.kitchenStation) {
-          const sType = String(item.kitchenStation).toUpperCase().includes('BAR') ? 'BAR' : 'KITCHEN';
+        const rawStation = (item.kitchenStation || item.station || item.stasiun || '').toString().trim().toUpperCase();
+        if (rawStation) {
+          const sType = (rawStation.includes('BAR') || rawStation.includes('MINUM') || rawStation.includes('KOPI')) ? 'BAR' : 'KITCHEN';
           const matchedStation = stations.find((s) => s.type === sType);
           if (matchedStation) resolvedStationId = matchedStation.id;
         }

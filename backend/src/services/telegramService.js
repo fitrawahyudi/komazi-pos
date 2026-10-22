@@ -152,6 +152,61 @@ export async function sendTelegramPhoto(photoBuffer, caption, targetChatId = nul
   };
 }
 
+async function sendSingleDocument(botToken, chatId, documentBuffer, fileName, caption) {
+  const url = `https://api.telegram.org/bot${botToken}/sendDocument`;
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    if (caption) {
+      formData.append('caption', caption.slice(0, 1024));
+      formData.append('parse_mode', 'HTML');
+    }
+    const blob = new Blob([documentBuffer], { type: 'application/sql' });
+    formData.append('document', blob, fileName || 'backup.sql');
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.ok) {
+      return { success: true, data, chatId };
+    }
+    console.warn(`[TelegramService] Gagal sendDocument (${chatId}), fallback text:`, data.description);
+    return sendSingleMessage(botToken, chatId, caption);
+  } catch (err) {
+    console.warn(`[TelegramService] Error sendDocument (${chatId}), fallback text:`, err.message);
+    return sendSingleMessage(botToken, chatId, caption);
+  }
+}
+
+export async function sendTelegramDocument(documentBuffer, fileName, caption, targetChatId = null) {
+  const { botToken } = getTelegramConfig();
+  if (!botToken) {
+    return { success: false, reason: 'TELEGRAM_CONFIG_MISSING' };
+  }
+
+  if (targetChatId) {
+    return sendSingleDocument(botToken, targetChatId, documentBuffer, fileName, caption);
+  }
+
+  const recipients = await getAdminRecipients();
+  if (recipients.length === 0) {
+    return { success: false, reason: 'NO_RECIPIENTS_FOUND' };
+  }
+
+  const results = await Promise.allSettled(
+    recipients.map((cId) => sendSingleDocument(botToken, cId, documentBuffer, fileName, caption))
+  );
+
+  const successCount = results.filter((r) => r.status === 'fulfilled' && r.value?.success).length;
+  return {
+    success: successCount > 0,
+    recipientsCount: recipients.length,
+    sentCount: successCount,
+  };
+}
+
 async function getBotSetting(key, defaultValue = 'true') {
   try {
     const s = await prisma.setting.findUnique({ where: { key } });
@@ -359,7 +414,6 @@ export async function notifyShiftOpened({ shift, cashier, register, openingCash 
     const regName = register?.name || shift?.register?.name || 'Kasir Utama';
     const regCode = register?.code || shift?.register?.code || 'REG-01';
     const initialCash = Number(openingCash !== undefined ? openingCash : shift?.openingCash || 0);
-    const shiftId = shift?.id || 'NEW';
     const openedTimeStr = new Intl.DateTimeFormat('id-ID', {
       timeZone: 'Asia/Jakarta',
       hour: '2-digit',
@@ -373,7 +427,6 @@ export async function notifyShiftOpened({ shift, cashier, register, openingCash 
     const message = `
 🟢 <b>NOTIFIKASI SESI KASIR DIBUKA</b>
 ━━━━━━━━━━━━━━━━━━
-<b>ID Sesi:</b> #${shiftId}
 <b>Kasir Pembuka:</b> ${cashierName}
 <b>Terminal:</b> ${regName} (${regCode})
 <b>Modal Awal Kas:</b> Rp ${initialCash.toLocaleString('id-ID')}
@@ -417,7 +470,6 @@ export async function notifyShiftClosed({ shift, cashier, closedBy, summary }) {
     const cashierName = cashier?.name || shift?.cashier?.name || 'Kasir';
     const closedByName = closedBy?.name || summary?.closedByName || cashierName;
     const regName = summary?.registerName || shift?.register?.name || 'Kasir Utama';
-    const shiftId = shift?.id || summary?.id || 'Z-REP';
 
     const initialCash = Number(summary?.openingCash || shift?.openingCash || 0);
     const countedCash = Number(summary?.closingCash !== undefined ? summary.closingCash : shift?.closingCash || 0);
@@ -449,7 +501,7 @@ export async function notifyShiftClosed({ shift, cashier, closedBy, summary }) {
     const message = `
 🔒 <b>NOTIFIKASI PENUTUPAN SESI KASIR (Z-REPORT)</b>
 ━━━━━━━━━━━━━━━━━━
-<b>ID Sesi:</b> #${shiftId} • <b>Terminal:</b> ${regName}
+<b>Terminal:</b> ${regName}
 <b>Kasir Pembuka:</b> ${cashierName}
 ${closedByName && closedByName !== cashierName ? `<b>Kasir Penutup:</b> ${closedByName}\n` : ''}<b>Waktu Tutup:</b> ${closedTimeStr} WIB
 ━━━━━━━━━━━━━━━━━━

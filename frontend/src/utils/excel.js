@@ -1,4 +1,7 @@
 import XLSX from 'xlsx-js-style';
+import { saveWorkbook, saveBlobFile } from './fileSaver.js';
+
+export { saveWorkbook, saveBlobFile };
 
 /**
  * Excel Palette & Styling Tokens
@@ -173,7 +176,7 @@ export function exportToExcel(data, fileName = 'export.xlsx', sheetName = 'Sheet
   ws['!autofilter'] = { ref: `A1:${lastColLetter}${data.length + 1}` };
 
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  XLSX.writeFile(wb, fileName);
+  saveWorkbook(wb, fileName);
 }
 
 /**
@@ -520,7 +523,7 @@ export function downloadRecipeTemplate(options = {}) {
   );
   XLSX.utils.book_append_sheet(wb, wsBahan, 'Data Sumber Persediaan');
 
-  XLSX.writeFile(wb, 'template_import_resep_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_resep_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -652,7 +655,7 @@ export function downloadMenuTemplate(options = {}) {
   const wsIng = buildReferenceSheet(['Nama Bahan', 'Satuan', 'Harga Modal per Satuan', 'Stok Tersedia'], ingRows);
   XLSX.utils.book_append_sheet(wb, wsIng, 'Data Bahan Baku');
 
-  XLSX.writeFile(wb, 'template_import_menu_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_menu_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -725,7 +728,7 @@ export function downloadIngredientTemplate() {
   const wsSatuan = buildReferenceSheet(['Satuan Valid', 'Jenis Takaran', 'Contoh Bahan'], satuanRows);
   XLSX.utils.book_append_sheet(wb, wsSatuan, 'Daftar Satuan Valid');
 
-  XLSX.writeFile(wb, 'template_import_bahan_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_bahan_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -787,7 +790,7 @@ export function downloadCustomerTemplate() {
   const wsTier = buildReferenceSheet(['Kode Tier', 'Nama Tier', 'Diskon (%)', 'Min Belanja'], tierRows);
   XLSX.utils.book_append_sheet(wb, wsTier, 'Data Tier Member');
 
-  XLSX.writeFile(wb, 'template_import_pelanggan_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_pelanggan_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -870,7 +873,7 @@ export function downloadStaffTemplate() {
   const wsRole = buildReferenceSheet(['Peran Sistem', 'Hak Akses'], roleRows);
   XLSX.utils.book_append_sheet(wb, wsRole, 'Data Peran & Hak Akses');
 
-  XLSX.writeFile(wb, 'template_import_staf_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_staf_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,7 +931,7 @@ export function downloadScheduleTemplate() {
   const wsStaff = buildReferenceSheet(['Username', 'Nama Lengkap', 'Peran', 'Departemen'], staffRows);
   XLSX.utils.book_append_sheet(wb, wsStaff, 'Data Pegawai');
 
-  XLSX.writeFile(wb, 'template_import_jadwal_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_jadwal_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -971,7 +974,7 @@ export function downloadAttendanceTemplate() {
   ]);
   XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
 
-  XLSX.writeFile(wb, 'template_import_absensi_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_absensi_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1017,7 +1020,7 @@ export function downloadInboundTemplate() {
   ]);
   XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
 
-  XLSX.writeFile(wb, 'template_import_pembelian_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_pembelian_komazi.xlsx');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1060,7 +1063,7 @@ export function downloadStockOpnameTemplate() {
   ]);
   XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
 
-  XLSX.writeFile(wb, 'template_import_opname_komazi.xlsx');
+  saveWorkbook(wb, 'template_import_opname_komazi.xlsx');
 }
 
 /**
@@ -1677,7 +1680,7 @@ export function exportOrdersToExcel({
   const dateFileStr = new Date().toISOString().slice(0, 10);
   const fileName = `KOMAZI_Riwayat_Pesanan_${dateFileStr}.xlsx`;
 
-  XLSX.writeFile(wb, fileName);
+  saveWorkbook(wb, fileName);
   return { success: true, count: orders.length, itemCount: itemDataRows.length, fileName, workbook: wb };
 }
 
@@ -1806,16 +1809,9 @@ export function exportOrdersToCsv({
   const dateFileStr = new Date().toISOString().slice(0, 10);
   const fileName = `KOMAZI_Riwayat_Pesanan_${dateFileStr}.csv`;
 
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  if (typeof window !== 'undefined') {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlobFile(blob, fileName);
   }
 
   return { success: true, count: orders.length, fileName, csvContent };
@@ -2477,13 +2473,7 @@ export function exportZReportToExcel({
   const dateFileStr = new Date().toISOString().slice(0, 10);
   const fileName = `KOMAZI_ZReport_Sesi_${session.id || 'Current'}_${dateFileStr}.xlsx`;
 
-  if (typeof window !== 'undefined') {
-    XLSX.writeFile(wb, fileName);
-  } else {
-    try {
-      XLSX.writeFile(wb, fileName);
-    } catch (_) {}
-  }
+  saveWorkbook(wb, fileName);
 
   return { success: true, fileName, session };
 }

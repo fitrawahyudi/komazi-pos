@@ -161,3 +161,22 @@ test('8. Retention Immunity: Never purges backups when total count is small', as
   assert.equal(typeof retentionRes.deletedCount, 'number');
   assert.ok(retentionRes.keptCount >= 0);
 });
+
+test('9. Telegram Bot SQL Attachment: verifies safeSendDocument and sendDocumentToRoles handle .sql attachment', async () => {
+  const { notifier, safeSendDocument } = await import('../src/bot/notifier.js');
+  const { sendTelegramDocument } = await import('../src/services/telegramService.js');
+
+  // Verify functions exist
+  assert.equal(typeof safeSendDocument, 'function', 'safeSendDocument should be an exported function');
+  assert.equal(typeof notifier.sendDocumentToRoles, 'function', 'notifier.sendDocumentToRoles should be a function');
+  assert.equal(typeof notifier.sendDocumentToUser, 'function', 'notifier.sendDocumentToUser should be a function');
+  assert.equal(typeof sendTelegramDocument, 'function', 'sendTelegramDocument should be an exported function');
+
+  // Test safeSendDocument handles missing token or invalid chatId gracefully without throwing
+  const sendRes = await safeSendDocument('invalid_chat_id', Buffer.from('-- TEST SQL', 'utf8'), 'test.sql', 'Test caption');
+  assert.equal(typeof sendRes, 'boolean');
+
+  // Test notifier.sendDocumentToRoles handles role dispatch gracefully without throwing
+  const rolesRes = await notifier.sendDocumentToRoles(['OWNER'], Buffer.from('-- TEST SQL', 'utf8'), 'test_backup.sql', '💾 <b>PENCADANGAN DATABASE BERHASIL</b>');
+  assert.ok(Array.isArray(rolesRes), 'sendDocumentToRoles should return an array of send results');
+});

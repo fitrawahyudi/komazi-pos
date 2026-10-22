@@ -24,6 +24,8 @@ import {
   QrCode,
   Store,
   Receipt,
+  ChefHat,
+  Coffee,
 } from 'lucide-react';
 import { usePrinterStore } from '../store/printerStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -41,6 +43,8 @@ export default function PrinterPage({ isEmbedded = false }) {
     paperWidth,
     autoPrintOnCheckout,
     autoPrintMerchantCopy,
+    autoPrintKitchenOnCheckout,
+    autoPrintBaristaOnCheckout,
     printCopies,
     kickCashDrawer,
     isConnected,
@@ -51,6 +55,8 @@ export default function PrinterPage({ isEmbedded = false }) {
     setConnectionType,
     setAutoPrintOnCheckout,
     setAutoPrintMerchantCopy,
+    setAutoPrintKitchenOnCheckout,
+    setAutoPrintBaristaOnCheckout,
     setPrintCopies,
     setKickCashDrawer,
     connectBluetooth,
@@ -58,6 +64,8 @@ export default function PrinterPage({ isEmbedded = false }) {
     disconnectPrinter,
     testPrint,
     feedPaper,
+    printKitchenTicketForOrder,
+    printBaristaTicketForOrder,
   } = usePrinterStore();
 
   const { settings, updateSettings } = useSettingsStore();
@@ -66,6 +74,8 @@ export default function PrinterPage({ isEmbedded = false }) {
   const [showTestModal, setShowTestModal] = useState(false);
   const [isFeeding, setIsFeeding] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isTestingKitchen, setIsTestingKitchen] = useState(false);
+  const [isTestingBarista, setIsTestingBarista] = useState(false);
   const [testQrSvg, setTestQrSvg] = useState('');
 
   // Receipt formatting & element visibility state
@@ -200,6 +210,68 @@ export default function PrinterPage({ isEmbedded = false }) {
       await feedPaper(3);
     } finally {
       setIsFeeding(false);
+    }
+  };
+
+  // Handle Test Print Kitchen Ticket (Only Food / Kitchen Items)
+  const handleTestKitchenTicket = async () => {
+    setIsTestingKitchen(true);
+    try {
+      const mockKitchenOrder = {
+        id: 'TEST-KITCHEN',
+        invoiceNo: 'TEST-KITCHEN',
+        createdAt: new Date().toISOString(),
+        orderType: 'DINE_IN',
+        tableNo: '01',
+        customerName: 'Uji Coba Dapur',
+        cashierName: 'Kasir',
+        note: 'Tidak pedas',
+        items: [
+          { name: 'Nasi Goreng Komazi', qty: 1, note: 'Telur ceplok matang', station: { type: 'KITCHEN' } },
+          { name: 'Kentang Goreng', qty: 1, station: { type: 'KITCHEN' } },
+        ],
+      };
+      const res = await printKitchenTicketForOrder(mockKitchenOrder, { force: true });
+      if (res.success) {
+        toast.success('Uji cetak tiket dapur berhasil terkirim!');
+      } else {
+        toast.error(`Gagal cetak tiket dapur: ${res.message || 'Printer tidak merespon'}`);
+      }
+    } catch (err) {
+      toast.error(`Gagal uji tiket dapur: ${err.message}`);
+    } finally {
+      setIsTestingKitchen(false);
+    }
+  };
+
+  // Handle Test Print Barista Ticket (Only Beverage / Bar Items)
+  const handleTestBaristaTicket = async () => {
+    setIsTestingBarista(true);
+    try {
+      const mockBaristaOrder = {
+        id: 'TEST-BARISTA',
+        invoiceNo: 'TEST-BARISTA',
+        createdAt: new Date().toISOString(),
+        orderType: 'DINE_IN',
+        tableNo: '01',
+        customerName: 'Uji Coba Barista',
+        cashierName: 'Kasir',
+        note: 'Less ice, normal sugar',
+        items: [
+          { name: 'Kopizi Aren (Kopi Susu)', qty: 2, variantName: 'Ice', note: 'Less sweet', station: { type: 'BAR' } },
+          { name: 'Manual Brew V60', qty: 1, variantName: 'Hot', note: 'Beans Gayo', station: { type: 'BAR' } },
+        ],
+      };
+      const res = await printBaristaTicketForOrder(mockBaristaOrder, { force: true });
+      if (res.success) {
+        toast.success('Uji cetak tiket barista berhasil terkirim!');
+      } else {
+        toast.error(`Gagal cetak tiket barista: ${res.message || 'Printer tidak merespon'}`);
+      }
+    } catch (err) {
+      toast.error(`Gagal uji tiket barista: ${err.message}`);
+    } finally {
+      setIsTestingBarista(false);
     }
   };
 
@@ -523,6 +595,32 @@ export default function PrinterPage({ isEmbedded = false }) {
 
             <label className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border cursor-pointer hover:bg-neutral-800/60 transition-colors">
               <div>
+                <span className="text-xs font-bold text-komazi-text block">Cetak Tiket Dapur Otomatis</span>
+                <span className="text-[10px] text-komazi-muted">Otomatis mencetak tiket dapur (khusus item makanan) saat pembayaran selesai</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoPrintKitchenOnCheckout}
+                onChange={(e) => setAutoPrintKitchenOnCheckout(e.target.checked)}
+                className="w-4 h-4 rounded text-komazi-coral focus:ring-komazi-coral"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border cursor-pointer hover:bg-neutral-800/60 transition-colors">
+              <div>
+                <span className="text-xs font-bold text-komazi-text block">Cetak Tiket Barista Otomatis</span>
+                <span className="text-[10px] text-komazi-muted">Otomatis mencetak tiket barista (khusus item minuman/kopi) saat pembayaran selesai</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoPrintBaristaOnCheckout}
+                onChange={(e) => setAutoPrintBaristaOnCheckout(e.target.checked)}
+                className="w-4 h-4 rounded text-komazi-coral focus:ring-komazi-coral"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border cursor-pointer hover:bg-neutral-800/60 transition-colors">
+              <div>
                 <span className="text-xs font-bold text-komazi-text block">Buka Laci Kasir (Cash Drawer)</span>
                 <span className="text-[10px] text-komazi-muted">Kirim sinyal pulsa RJ11 laci saat struk dicetak</span>
               </div>
@@ -625,6 +723,35 @@ export default function PrinterPage({ isEmbedded = false }) {
                 </>
               )}
             </button>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleTestKitchenTicket}
+                disabled={isTestingKitchen || !isConnected}
+                className="py-2 px-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isTestingKitchen ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ChefHat className="w-3.5 h-3.5" />
+                )}
+                <span>Uji Tiket Dapur</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleTestBaristaTicket}
+                disabled={isTestingBarista || !isConnected}
+                className="py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isTestingBarista ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Coffee className="w-3.5 h-3.5" />
+                )}
+                <span>Uji Tiket Barista</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -975,7 +1102,7 @@ export default function PrinterPage({ isEmbedded = false }) {
                 {/* Metadata */}
                 <div className="space-y-0.5 text-[10px]">
                   <div className="flex justify-between">
-                    <span className="text-neutral-700">No. Faktur:</span>
+                    <span className="text-neutral-700">No. Invoice:</span>
                     <span className="font-bold text-neutral-950">KMZ-PREVIEW-001</span>
                   </div>
                   <div className="flex justify-between">

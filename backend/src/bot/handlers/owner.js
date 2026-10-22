@@ -11,6 +11,8 @@ import { logBotAudit } from '../middlewares/audit.js';
 import { generateBotImage } from '../../services/botImage/index.js';
 import { replyWithPhotoFallback } from '../utils/sendVisual.js';
 import { withLoadingAnimation } from '../utils/loading.js';
+import { parseReportDateInput } from '../utils/dateParser.js';
+import { sendSalesReportResponse } from '../utils/salesReportHelper.js';
 import {
   calculatePeakHourAndRevenueForecast,
   calculateStockRunoutForecast,
@@ -95,22 +97,50 @@ export function registerOwner(bot) {
     );
   });
 
-  // 2) Laporan Berbagai Periode
-  bot.command('laporan', requireRole('OWNER'), async (ctx) => {
+  // 2) Laporan Berbagai Periode & Tanggal Kustom (Owner & Manager)
+  bot.command('laporan', requireRole('OWNER', 'MANAGER'), async (ctx) => {
+    const arg = ctx.match ? ctx.match.trim() : '';
+    if (arg) {
+      const parsed = parseReportDateInput(arg);
+      if (parsed) {
+        return withLoadingAnimation(ctx, { chatAction: 'upload_photo' }, async () => {
+          const summary = await orderService.getSummary('custom', parsed);
+          return sendSalesReportResponse(ctx, summary, parsed.label);
+        });
+      } else {
+        await ctx.reply(
+          `⚠️ <b>Format tanggal tidak valid:</b> <code>${esc(arg)}</code>\n\n` +
+          `<b>Contoh format yang didukung:</b>\n` +
+          `• Tanggal tunggal: <code>/laporan 15-10-2026</code> atau <code>/laporan 15 Oktober 2026</code>\n` +
+          `• Rentang tanggal: <code>/laporan 10-10-2026 s/d 15-10-2026</code>`,
+          { parse_mode: 'HTML' }
+        );
+      }
+    }
+
     const kb = new InlineKeyboard()
       .text('Hari Ini', 'rep_per:today')
       .text('Kemarin', 'rep_per:yesterday')
       .row()
       .text('7 Hari Terakhir', 'rep_per:7d')
-      .text('Bulan Ini', 'rep_per:month');
+      .text('Bulan Ini', 'rep_per:month')
+      .row()
+      .text('📅 Tanggal Kustom', 'rep_action:custom_prompt');
 
-    return ctx.reply('📊 <b>Pilih Periode Laporan Penjualan:</b>', {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
+    return ctx.reply(
+      '📊 <b>Pilih Periode Laporan Penjualan:</b>\n\n' +
+      'Pilih tombol periode di bawah, atau ketik langsung dengan tanggal:\n' +
+      '• <code>/laporan 15-10-2026</code>\n' +
+      '• <code>/laporan 10-10-2026 s/d 15-10-2026</code>\n' +
+      '• <code>/laporan 15 Oktober 2026</code>',
+      {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      }
+    );
   });
 
-  bot.callbackQuery(/^rep_per:(today|yesterday|7d|month)$/, requireRole('OWNER'), async (ctx) => {
+  bot.callbackQuery(/^rep_per:(today|yesterday|7d|month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const period = ctx.match[1];
     await ctx.answerCallbackQuery();
 
@@ -119,7 +149,6 @@ export function registerOwner(bot) {
       { chatAction: 'upload_photo' },
       async () => {
         const summary = await orderService.getSummary(period);
-
         const periodLabels = {
           today: 'Hari Ini',
           yesterday: 'Kemarin',
@@ -127,38 +156,14 @@ export function registerOwner(bot) {
           month: 'Bulan Ini',
         };
 
-        const topLines = (summary.topProducts || [])
-          .map((p, i) => `${i + 1}. ${esc(p.name)}: <b>${p.qty} item</b>`)
-          .join('\n') || '-';
-
-        const caption = `
-📊 <b>LAPORAN PENJUALAN (${periodLabels[period].toUpperCase()})</b>
-━━━━━━━━━━━━━━━━━━
-<b>Total Omzet:</b> <b>${rupiah(summary.totalRevenue)}</b>
-<b>Total Transaksi:</b> ${summary.totalTransactions} Pesanan
-
-<b>Metode Pembayaran:</b>
-• Tunai (Cash): ${rupiah(summary.byMethod.CASH)}
-• QRIS Dinamis: ${rupiah(summary.byMethod.QRIS)}
-• Transfer Bank: ${rupiah(summary.byMethod.TRANSFER)}
-
-<b>Top 5 Menu Paling Diminati:</b>
-${topLines}
-━━━━━━━━━━━━━━━━━━
-        `.trim();
-
-        return replyWithPhotoFallback(ctx, {
-          imageBufferPromise: generateBotImage('sales_report', {
-            periodLabel: periodLabels[period],
-            totalRevenue: summary.totalRevenue,
-            totalTransactions: summary.totalTransactions,
-            byMethod: summary.byMethod,
-            topProducts: summary.topProducts,
-          }),
-          captionHtml: caption,
-        });
+        return sendSalesReportResponse(ctx, summary, periodLabels[period] || period);
       }
     );
+  });
+
+  bot.callbackQuery('rep_action:custom_prompt', requireRole('OWNER', 'MANAGER'), async (ctx) => {
+    await ctx.answerCallbackQuery();
+    return ctx.conversation.enter('customReportConversation');
   });
 
   // Helper render laporan laba rugi P&L
@@ -817,5 +822,27 @@ ${stockForecast.criticalItems.slice(0, 5).map((it) => `• <b>${esc(it.name)}</b
     } catch (err) {
       return ctx.reply(`❌ Gagal memuat ringkasan omzet: ${err.message}`);
     }
+  });
+
+  // 7) Pencadangan Database Langsung via Bot (/backup)
+  bot.command(['backup', 'cadangkan'], requireRole('OWNER'), async (ctx) => {
+    return withLoadingAnimation(
+      ctx,
+      { chatAction: 'upload_document' },
+      async () => {
+        try {
+          const { backupEngineService } = await import('../../services/backup/backupEngineService.js');
+          const caller = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Owner');
+          await backupEngineService.executeBackup({
+            backupType: 'MANUAL',
+            triggeredBy: `${caller} (Telegram Bot)`,
+            retentionCategory: 'MANUAL',
+          });
+          // Notifikasi lengkap dan berkas .sql otomatis terkirim melalui backupEngineService
+        } catch (err) {
+          return ctx.reply(`❌ <b>Pencadangan Gagal:</b> ${esc(err.message)}`, { parse_mode: 'HTML' });
+        }
+      }
+    );
   });
 }

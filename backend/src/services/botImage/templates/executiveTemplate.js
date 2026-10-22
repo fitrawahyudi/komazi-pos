@@ -76,17 +76,6 @@ export function renderRealtimeSalesCard(data = {}) {
         </div>
         <div class="metric-sub">Basket size / invoice</div>
       </div>
-
-      <div class="metric-card">
-        <div class="metric-label">
-          <span>💻</span>
-          <span>Workspace Aktif</span>
-        </div>
-        <div class="metric-value" style="color:#48D1CC;">
-          ${activeWsCount} Sesi
-        </div>
-        <div class="metric-sub">Tamu sedang bekerja</div>
-      </div>
     </div>
 
     <!-- 2 Column Breakdown -->
@@ -99,12 +88,12 @@ export function renderRealtimeSalesCard(data = {}) {
           <span style="text-align:right;">Total Omzet</span>
         </div>
         <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr;">
-          <span style="font-weight:600;color:#FFFFFF;">📱 QRIS Dinamis (EMVCo)</span>
+          <span style="font-weight:600;color:#FFFFFF;">📱 QRIS Dinamis</span>
           <span style="text-align:right;color:#9CA3AF;">${qrisShare}%</span>
           <span style="text-align:right;font-weight:700;color:#60A5FA;">${formatRupiah(qrisTotal)}</span>
         </div>
         <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr;">
-          <span style="font-weight:600;color:#FFFFFF;">💵 Uang Tunai (Cash)</span>
+          <span style="font-weight:600;color:#FFFFFF;">💵 Uang Tunai</span>
           <span style="text-align:right;color:#9CA3AF;">${cashShare}%</span>
           <span style="text-align:right;font-weight:700;color:#10B981;">${formatRupiah(cashTotal)}</span>
         </div>

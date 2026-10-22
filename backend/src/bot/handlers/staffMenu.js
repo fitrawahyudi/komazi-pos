@@ -19,8 +19,8 @@ export function registerStaffMenu(bot) {
   });
 
   // 2. Laporan Penjualan
-  bot.hears('📊 Laporan Hari Ini', async (ctx) => {
-    const text = ensureWatermark('📈 Ketik <code>/laporan</code> untuk melihat laporan penjualan harian lengkap.');
+  bot.hears(['📊 Laporan Penjualan', '📊 Laporan Hari Ini'], async (ctx) => {
+    const text = ensureWatermark('📈 Ketik <code>/laporan</code> untuk melihat pilihan periode dan tanggal laporan penjualan.');
     return ctx.reply(text, { parse_mode: 'HTML' });
   });
 
@@ -127,16 +127,18 @@ export function registerStaffMenu(bot) {
     );
   });
 
-  bot.command(['tutup_menu', 'sembunyikan_menu', 'hide_keyboard'], async (ctx) => {
-    return ctx.reply(
-      ensureWatermark(
-        '⌨️ <b>Tombol menu bawah telah ditutup.</b>\n\nKetik <code>/menu</code> kapan saja untuk menampilkan kembali tombol menu.'
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: { remove_keyboard: true },
-      }
-    );
-  });
+  if (typeof bot.command === 'function') {
+    bot.command(['tutup_menu', 'sembunyikan_menu', 'hide_keyboard'], async (ctx) => {
+      return ctx.reply(
+        ensureWatermark(
+          '⌨️ <b>Tombol menu bawah telah ditutup.</b>\n\nKetik <code>/menu</code> kapan saja untuk menampilkan kembali tombol menu.'
+        ),
+        {
+          parse_mode: 'HTML',
+          reply_markup: { remove_keyboard: true },
+        }
+      );
+    });
+  }
 }
 

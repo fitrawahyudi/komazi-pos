@@ -49,5 +49,5 @@ export function buildStaffReplyKeyboard(role) {
         .text('❌ Sembunyikan Menu');
   }
 
-  return kb.resized();
+  return kb.resized().persistent();
 }

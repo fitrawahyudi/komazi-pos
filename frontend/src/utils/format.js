@@ -104,11 +104,14 @@ export function isDrinkItem(item) {
     cat.includes('tea') ||
     cat.includes('teh') ||
     cat.includes('mocktail') ||
+    cat.includes('signature drink') ||
     name.includes('latte') ||
     name.includes('espresso') ||
     name.includes('cappuccino') ||
+    name.includes('cappucino') ||
     name.includes('americano') ||
     name.includes('macchiato') ||
+    name.includes('machiato') ||
     name.includes('affogato') ||
     name.includes('frappe') ||
     name.includes('brew') ||
@@ -121,6 +124,8 @@ export function isDrinkItem(item) {
     name.includes('milkshake') ||
     name.includes('kopi') ||
     name.includes('coffee') ||
+    name.includes('kopizi') ||
+    name.includes('kopsu') ||
     name.includes('susu') ||
     name.includes('chocolate') ||
     name.includes('cokelat') ||
@@ -128,13 +133,85 @@ export function isDrinkItem(item) {
     name.includes('soda') ||
     name.includes('lemonade') ||
     name.includes('air mineral') ||
+    name.includes('mineral') ||
+    name.includes('cleo') ||
+    name.includes('aqua') ||
     name.includes('taro') ||
     name.includes('red velvet') ||
     name.includes('boba') ||
     name.includes('cincau') ||
     name.includes('aren') ||
-    name.includes('sanger')
+    name.includes('sanger') ||
+    name.includes('cold brew') ||
+    name.includes('manual brew') ||
+    name.includes('long black') ||
+    name.includes('piccolo') ||
+    name.includes('cortado') ||
+    name.includes('flat white') ||
+    name.includes('mojito') ||
+    name.includes('kombucha') ||
+    name.includes('squash') ||
+    name.includes('sparkling') ||
+    name.includes('syrup') ||
+    name.includes('sirup') ||
+    name.startsWith('es ') ||
+    name.startsWith('ice ')
   );
+}
+
+/**
+ * Accurately resolve station type ('BAR' | 'KITCHEN') for a cart or order item.
+ * Prioritizes:
+ * 1. Direct station object/type on item (item.station?.type || item.stationType)
+ * 2. Direct stationId matching known stations
+ * 3. Product catalog lookup via productId (posStore or custom products list)
+ * 4. Comprehensive category and keyword detection
+ */
+export function resolveItemStation(item, options = {}) {
+  if (!item) return 'KITCHEN';
+
+  // 1. Explicit station object on item or embedded product
+  const directType = item.station?.type || item.stationType || item.product?.station?.type;
+  if (directType === 'BAR' || directType === 'KITCHEN') return directType;
+
+  const directCode = item.station?.code || item.product?.station?.code;
+  if (directCode === 'BAR_MAIN') return 'BAR';
+  if (directCode === 'KITCHEN_MAIN') return 'KITCHEN';
+
+  const stations = options.stations || [];
+  const products = options.products || [];
+
+  // 2. Station by stationId on item
+  const directStationId = item.stationId || item.product?.stationId;
+  if (directStationId && stations.length > 0) {
+    const matched = stations.find((s) => Number(s.id) === Number(directStationId));
+    if (matched?.type) return matched.type;
+  }
+
+  // 3. Product catalog lookup if productId exists
+  const prodId = item.productId || item.product?.id || item.id;
+  if (prodId && products.length > 0) {
+    const prod = products.find((p) => Number(p.id) === Number(prodId));
+    if (prod) {
+      if (prod.station?.type) return prod.station.type;
+      if (prod.stationId && stations.length > 0) {
+        const matched = stations.find((s) => Number(s.id) === Number(prod.stationId));
+        if (matched?.type) return matched.type;
+      }
+      if (isDrinkItem(prod)) return 'BAR';
+    }
+  }
+
+  // 4. Default heuristic check
+  return isDrinkItem(item) ? 'BAR' : 'KITCHEN';
+}
+
+export function isKitchenItem(item, options = {}) {
+  return resolveItemStation(item, options) === 'KITCHEN';
+}
+
+export function isBaristaItem(item, options = {}) {
+  return resolveItemStation(item, options) === 'BAR';
 }
 
 /**

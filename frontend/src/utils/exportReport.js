@@ -1,5 +1,6 @@
 import XLSX from 'xlsx-js-style';
 import { getColumnLetter, EXCEL_STYLES } from './excel.js';
+import { saveBlobFile } from './fileSaver.js';
 
 /**
  * Format timestamp to clean Indonesian Western Standard Time (WIB)
@@ -158,17 +159,10 @@ export function prepareOrdersReportData(orders = [], canViewCogs = true) {
 }
 
 /**
- * Download a Blob in browser
+ * Download a Blob in browser or save to Documents on Android Native
  */
 export function triggerFileDownload(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return saveBlobFile(blob, filename);
 }
 
 /**

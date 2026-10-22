@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { useRecipeStore } from '../store/useRecipeStore';
 import { useStockStore } from '../store/stockStore';
 import { usePersistentState } from '../hooks/usePersistentState';
-import { formatRupiah, getProductInitials, getProductColor } from '../utils/format';
+import { formatRupiah, getProductInitials, getProductColor, isDrinkItem } from '../utils/format';
 import {
   UtensilsCrossed,
   Plus,
@@ -21,6 +21,7 @@ import {
   Sparkles,
   Info,
   Coffee,
+  ChefHat,
   Check,
   Calculator,
   RotateCcw,
@@ -46,12 +47,14 @@ export default function MenuPage() {
   const {
     products,
     categories,
+    stations = [],
     addProduct,
     updateProduct,
     deleteProduct,
     toggleSoldOut,
     bulkSetSoldOut,
     bulkUpdateCategory,
+    bulkUpdateStation,
     bulkDeleteProducts,
     addCategory,
   } = usePosStore();
@@ -62,20 +65,33 @@ export default function MenuPage() {
   const [selectedProductForRecipe, setSelectedProductForRecipe] = useState(null);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
 
-  // Load fresh catalog, recipes and ingredients when mounting
+  // Load fresh catalog, recipes, stations and ingredients when mounting
   useEffect(() => {
     usePosStore.getState().fetchCategories?.();
     usePosStore.getState().fetchProducts?.();
+    usePosStore.getState().fetchStations?.();
     if (canManageRecipe) {
       useRecipeStore.getState().fetchCogsOverview?.();
       useStockStore.getState().fetchIngredients?.();
     }
   }, [canManageRecipe]);
 
+  // Helper untuk menentukan tipe station produk secara andal
+  const getProductStationType = (prod) => {
+    if (prod?.station?.type) return prod.station.type;
+    if (prod?.stationId && stations.length > 0) {
+      const found = stations.find((s) => s.id === prod.stationId);
+      if (found?.type) return found.type;
+    }
+    return isDrinkItem(prod) ? 'BAR' : 'KITCHEN';
+  };
+
   // Multi-select state
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isBulkCatModalOpen, setIsBulkCatModalOpen] = useState(false);
   const [bulkTargetCatId, setBulkTargetCatId] = useState('');
+  const [isBulkStationModalOpen, setIsBulkStationModalOpen] = useState(false);
+  const [bulkTargetStationId, setBulkTargetStationId] = useState('');
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
@@ -97,6 +113,7 @@ export default function MenuPage() {
     }
   }, [searchParams]);
   const [statusFilter, setStatusFilter] = usePersistentState('menu_statusFilter', 'ALL'); // 'ALL' | 'AVAILABLE' | 'SOLDOUT' | 'INACTIVE'
+  const [stationFilter, setStationFilter] = usePersistentState('menu_stationFilter', 'ALL'); // 'ALL' | 'BAR' | 'KITCHEN'
   const [recipeFilter, setRecipeFilter] = usePersistentState('menu_recipeFilter', 'ALL'); // 'ALL' | 'WITH_RECIPE' | 'NO_RECIPE'
   const [priceRangeFilter, setPriceRangeFilter] = usePersistentState('menu_priceRangeFilter', 'ALL'); // 'ALL' | 'UNDER_25K' | '25K_TO_40K' | 'ABOVE_40K'
   const [sortBy, setSortBy] = usePersistentState('menu_sortBy', 'DEFAULT'); // 'DEFAULT' | 'NAME_ASC' | 'NAME_DESC' | 'PRICE_ASC' | 'PRICE_DESC' | 'NEWEST'
@@ -114,18 +131,22 @@ export default function MenuPage() {
       toast.error('Tidak ada data produk untuk diekspor');
       return;
     }
-    const exportData = products.map((p) => ({
-      'ID': p.id,
-      'Nama Produk': p.name,
-      'Kategori': categories.find((c) => c.id === p.categoryId)?.name || '-',
-      'Harga Jual': p.price,
-      'Harga Dinamis?': p.isDynamicPrice ? 'ya' : 'tidak',
-      'Batas Harga Minimum': p.minPrice ? Number(p.minPrice) : 0,
-      'SKU': p.sku || '-',
-      'Deskripsi': p.description || '-',
-      'Status': p.isSoldOut ? 'Habis' : 'Tersedia',
-      'Varian': (p.variants || []).map((v) => `${v.name} (${v.price})`).join(', ') || '-',
-    }));
+    const exportData = products.map((p) => {
+      const sType = getProductStationType(p);
+      return {
+        'ID': p.id,
+        'Nama Produk': p.name,
+        'Kategori': categories.find((c) => c.id === p.categoryId)?.name || '-',
+        'Stasiun': sType === 'BAR' ? 'Barista' : 'Dapur',
+        'Harga Jual': p.price,
+        'Harga Dinamis?': p.isDynamicPrice ? 'ya' : 'tidak',
+        'Batas Harga Minimum': p.minPrice ? Number(p.minPrice) : 0,
+        'SKU': p.sku || '-',
+        'Deskripsi': p.description || '-',
+        'Status': p.isSoldOut ? 'Habis' : 'Tersedia',
+        'Varian': (p.variants || []).map((v) => `${v.name} (${v.price})`).join(', ') || '-',
+      };
+    });
     exportToExcel(exportData, `katalog_menu_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`, 'Katalog Menu');
     toast.success('Katalog menu berhasil diekspor ke Excel');
   };
@@ -134,6 +155,7 @@ export default function MenuPage() {
   const [formData, setFormData] = useState({
     name: '',
     categoryId: '',
+    stationId: '',
     price: 25000,
     isDynamicPrice: false,
     minPrice: 0,
@@ -151,12 +173,30 @@ export default function MenuPage() {
       setIsAddCatModalOpen(true);
       return;
     }
-    const defaultCatId = validCats[0]?.id || '';
+    const defaultCat = validCats[0];
+    const defaultCatId = defaultCat?.id || '';
+
+    // Auto-detect default station based on default category name
+    const isDrinkCat = defaultCat && (
+      defaultCat.name?.toLowerCase().includes('kopi') ||
+      defaultCat.name?.toLowerCase().includes('coffee') ||
+      defaultCat.name?.toLowerCase().includes('minuman') ||
+      defaultCat.name?.toLowerCase().includes('drink') ||
+      defaultCat.name?.toLowerCase().includes('beverage') ||
+      defaultCat.name?.toLowerCase().includes('tea') ||
+      defaultCat.name?.toLowerCase().includes('teh') ||
+      defaultCat.name?.toLowerCase().includes('non-coffee')
+    );
+    const barStation = stations.find((s) => s.type === 'BAR');
+    const kitchenStation = stations.find((s) => s.type === 'KITCHEN');
+    const defaultStationId = isDrinkCat ? (barStation?.id || '') : (kitchenStation?.id || '');
+
     setEditingProduct(null);
     setModalTab('info');
     setFormData({
       name: '',
       categoryId: defaultCatId,
+      stationId: defaultStationId,
       price: 25000,
       isDynamicPrice: false,
       minPrice: 0,
@@ -175,9 +215,13 @@ export default function MenuPage() {
   const handleOpenEdit = (prod) => {
     setEditingProduct(prod);
     setModalTab('info');
+    const prodStationType = getProductStationType(prod);
+    const matchingStation = stations.find((s) => s.id === prod.stationId) || stations.find((s) => s.type === prodStationType);
+
     setFormData({
       name: prod.name,
       categoryId: prod.categoryId,
+      stationId: prod.stationId || matchingStation?.id || '',
       price: prod.price,
       isDynamicPrice: Boolean(prod.isDynamicPrice),
       minPrice: Number(prod.minPrice) || 0,
@@ -338,9 +382,20 @@ export default function MenuPage() {
         price: Math.max(0, Number(m.price) || 0),
       }));
 
+    // Resolve stationId properly
+    let finalStationId = formData.stationId ? Number(formData.stationId) : null;
+    if (!finalStationId || isNaN(finalStationId)) {
+      const selectedCat = categories.find((c) => c.id === catIdNum);
+      const isDrink = isDrinkItem({ name: formData.name, categoryName: selectedCat?.name });
+      const targetType = isDrink ? 'BAR' : 'KITCHEN';
+      const matched = stations.find((s) => s.type === targetType);
+      finalStationId = matched?.id || null;
+    }
+
     const payload = {
       ...formData,
       categoryId: catIdNum,
+      stationId: finalStationId,
       price: Number(formData.price) || 0,
       isDynamicPrice: Boolean(formData.isDynamicPrice),
       minPrice: Number(formData.minPrice) || 0,
@@ -373,6 +428,12 @@ export default function MenuPage() {
       // 1. Kategori
       const matchCat = selectedCatId === 'all' || p.categoryId === Number(selectedCatId);
       if (!matchCat) return false;
+
+      // 1b. Stasiun Persiapan (Routing KDS: Barista vs Dapur)
+      if (stationFilter !== 'ALL') {
+        const itemStationType = getProductStationType(p);
+        if (itemStationType !== stationFilter) return false;
+      }
 
       // 2. Pencarian Fleksibel (Nama Produk, SKU, Deskripsi, Nama Kategori)
       if (searchQuery.trim()) {
@@ -436,7 +497,7 @@ export default function MenuPage() {
     }
 
     return result;
-  }, [products, selectedCatId, searchQuery, statusFilter, recipeFilter, priceRangeFilter, sortBy, recipes]);
+  }, [products, selectedCatId, stationFilter, searchQuery, statusFilter, recipeFilter, priceRangeFilter, sortBy, recipes, stations]);
 
   // Statistik Cepat untuk Quick Chips
   const stats = useMemo(() => {
@@ -448,13 +509,16 @@ export default function MenuPage() {
     const withRecipe = activeProducts.filter((p) => recipes[p.id] && recipes[p.id].length > 0).length;
     const noRecipe = total - withRecipe;
     const dynamicCount = activeProducts.filter((p) => p.isDynamicPrice).length;
-    return { total, available, soldOut, inactive, withRecipe, noRecipe, dynamicCount };
-  }, [products, recipes]);
+    const barCount = activeProducts.filter((p) => getProductStationType(p) === 'BAR').length;
+    const kitchenCount = total - barCount;
+    return { total, available, soldOut, inactive, withRecipe, noRecipe, dynamicCount, barCount, kitchenCount };
+  }, [products, recipes, stations]);
 
   const hasActiveFilters =
     selectedCatId !== 'all' ||
     Boolean(searchQuery.trim()) ||
     statusFilter !== 'ALL' ||
+    stationFilter !== 'ALL' ||
     recipeFilter !== 'ALL' ||
     priceRangeFilter !== 'ALL' ||
     sortBy !== 'DEFAULT';
@@ -463,6 +527,7 @@ export default function MenuPage() {
     setSelectedCatId('all');
     setSearchQuery('');
     setStatusFilter('ALL');
+    setStationFilter('ALL');
     setRecipeFilter('ALL');
     setPriceRangeFilter('ALL');
     setSortBy('DEFAULT');
@@ -475,7 +540,7 @@ export default function MenuPage() {
   // Reset ke halaman 1 jika filter berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCatId, statusFilter, recipeFilter, priceRangeFilter, sortBy]);
+  }, [searchQuery, selectedCatId, statusFilter, stationFilter, recipeFilter, priceRangeFilter, sortBy]);
 
   // Sliced items per page
   const paginatedProducts = useMemo(() => {
@@ -706,6 +771,24 @@ export default function MenuPage() {
               </div>
             )}
 
+            {/* Filter Stasiun Persiapan */}
+            <div className="relative">
+              <select
+                value={stationFilter}
+                onChange={(e) => setStationFilter(e.target.value)}
+                className={`text-xs font-semibold px-3 py-2 rounded-xl border bg-komazi-surface-2 focus:outline-none cursor-pointer transition-colors ${
+                  stationFilter !== 'ALL'
+                    ? 'border-cyan-400 text-cyan-400 bg-cyan-400/10'
+                    : 'border-komazi-border text-komazi-muted hover:text-komazi-text'
+                }`}
+                title="Filter berdasarkan stasiun persiapan (Barista / Dapur)"
+              >
+                <option value="ALL">Semua Stasiun</option>
+                <option value="BAR">☕ Barista</option>
+                <option value="KITCHEN">🍳 Dapur</option>
+              </select>
+            </div>
+
             {/* Filter Rentang Harga */}
             <div className="relative">
               <select
@@ -795,6 +878,7 @@ export default function MenuPage() {
                 </th>
                 <th className="py-3 px-4">Produk</th>
                 <th className="py-3 px-4">Kategori</th>
+                <th className="py-3 px-4">Stasiun</th>
                 <th className="py-3 px-4">SKU</th>
                 <th className="py-3 px-4">Harga Dasar</th>
                 {canManageRecipe && (
@@ -808,7 +892,7 @@ export default function MenuPage() {
             <tbody className="divide-y divide-komazi-border">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={canManageRecipe ? 9 : 8} className="py-14 text-center text-komazi-muted">
+                  <td colSpan={canManageRecipe ? 10 : 9} className="py-14 text-center text-komazi-muted">
                     <div className="max-w-xs mx-auto flex flex-col items-center justify-center space-y-2">
                       <div className="w-12 h-12 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-center text-komazi-muted mb-1">
                         <UtensilsCrossed className="w-6 h-6 stroke-[1.8]" />
@@ -879,6 +963,25 @@ export default function MenuPage() {
                       </td>
                       <td className="py-3 px-4 font-semibold text-komazi-text">
                         {prod.categoryName}
+                      </td>
+                      <td className="py-3 px-4">
+                        {(() => {
+                          const sType = getProductStationType(prod);
+                          if (sType === 'BAR') {
+                            return (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-semibold text-[11px] whitespace-nowrap">
+                                <Coffee className="w-3 h-3 text-cyan-400 shrink-0" />
+                                <span>Barista</span>
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-semibold text-[11px] whitespace-nowrap">
+                              <ChefHat className="w-3 h-3 text-amber-400 shrink-0" />
+                              <span>Dapur</span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4 font-mono text-komazi-muted text-[11px]">
                         {prod.sku || '-'}
@@ -1101,6 +1204,20 @@ export default function MenuPage() {
 
             <button
               type="button"
+              onClick={() => {
+                const firstStation = stations[0]?.id || '';
+                setBulkTargetStationId(firstStation);
+                setIsBulkStationModalOpen(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-text border border-komazi-border text-xs font-semibold transition-all flex items-center gap-1 active:scale-95"
+              title="Ubah stasiun persiapan untuk menu terpilih"
+            >
+              <ChefHat className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Pindah Stasiun</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsBulkDeleteModalOpen(true)}
               className="px-2.5 py-1.5 rounded-xl bg-danger hover:bg-danger/80 text-white text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm"
               title="Hapus menu terpilih"
@@ -1206,7 +1323,7 @@ export default function MenuPage() {
                   <div className="space-y-4 animate-in fade-in duration-150">
                     <div>
                       <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                        Nama Menu:
+                        Nama Menu
                       </label>
                       <input
                         type="text"
@@ -1221,11 +1338,21 @@ export default function MenuPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                          Kategori:
+                          Kategori
                         </label>
                         <select
                           value={formData.categoryId}
-                          onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                          onChange={(e) => {
+                            const newCatId = e.target.value;
+                            const newCat = categories.find((c) => String(c.id) === String(newCatId));
+                            const isDrinkCat = isDrinkItem({ name: formData.name, categoryName: newCat?.name });
+                            const targetStation = stations.find((s) => s.type === (isDrinkCat ? 'BAR' : 'KITCHEN'));
+                            setFormData((prev) => ({
+                              ...prev,
+                              categoryId: newCatId,
+                              stationId: targetStation?.id || prev.stationId,
+                            }));
+                          }}
                           className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral outline-none"
                           required
                         >
@@ -1245,7 +1372,7 @@ export default function MenuPage() {
 
                       <div>
                         <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                          {formData.isDynamicPrice ? 'Harga Saran / Acuan (Rp):' : 'Harga Dasar (Rp):'}
+                          {formData.isDynamicPrice ? 'Harga Saran / Acuan' : 'Harga Dasar'}
                         </label>
                         <input
                           type="number"
@@ -1260,6 +1387,113 @@ export default function MenuPage() {
                       </div>
                     </div>
 
+                    {/* Stasiun Persiapan (Routing Pesanan KDS / Tiket) */}
+                    <div className="p-3.5 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold uppercase text-komazi-muted">
+                          Stasiun Persiapan
+                        </label>
+                        <span className="text-[11px] text-cyan-400 font-semibold">
+                          {(() => {
+                            const curStation = stations.find((s) => String(s.id) === String(formData.stationId));
+                            if (curStation) {
+                              return curStation.type === 'BAR' ? '☕ Barista (Bar)' : '🍳 Dapur (Kitchen)';
+                            }
+                            const selCat = categories.find((c) => String(c.id) === String(formData.categoryId));
+                            const isDrink = isDrinkItem({ name: formData.name, categoryName: selCat?.name });
+                            return isDrink ? '☕ Otomatis: Barista' : '🍳 Otomatis: Dapur';
+                          })()}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {(() => {
+                          const barStation = stations.find((s) => s.type === 'BAR');
+                          const kitchenStation = stations.find((s) => s.type === 'KITCHEN');
+                          const isBar = Boolean(
+                            (formData.stationId && barStation && String(formData.stationId) === String(barStation.id)) ||
+                            (!formData.stationId && (() => {
+                              const selCat = categories.find((c) => String(c.id) === String(formData.categoryId));
+                              return isDrinkItem({ name: formData.name, categoryName: selCat?.name });
+                            })())
+                          );
+                          const isKitchen = !isBar;
+
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({ ...prev, stationId: barStation?.id || '' }));
+                                }}
+                                className={`p-3 rounded-xl border flex items-center gap-3 transition-all text-left ${
+                                  isBar
+                                    ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-sm ring-1 ring-cyan-400/40'
+                                    : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:border-komazi-border-light hover:text-komazi-text'
+                                }`}
+                              >
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                  isBar ? 'bg-cyan-500/25 text-cyan-300' : 'bg-komazi-surface-2 text-komazi-muted'
+                                }`}>
+                                  <Coffee className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-xs">Barista (Bar)</p>
+                                  <p className="text-[10px] text-komazi-muted truncate">Kopi & Minuman</p>
+                                </div>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({ ...prev, stationId: kitchenStation?.id || '' }));
+                                }}
+                                className={`p-3 rounded-xl border flex items-center gap-3 transition-all text-left ${
+                                  isKitchen
+                                    ? 'bg-amber-500/15 border-amber-400 text-white shadow-sm ring-1 ring-amber-400/40'
+                                    : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:border-komazi-border-light hover:text-komazi-text'
+                                }`}
+                              >
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                  isKitchen ? 'bg-amber-500/25 text-amber-300' : 'bg-komazi-surface-2 text-komazi-muted'
+                                }`}>
+                                  <ChefHat className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-xs">Dapur (Kitchen)</p>
+                                  <p className="text-[10px] text-komazi-muted truncate">Makanan & Snack</p>
+                                </div>
+                              </button>
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      {stations.length > 2 && (
+                        <div className="pt-2">
+                          <label className="block text-[11px] text-komazi-muted mb-1">
+                            Pilih Stasiun Spesifik (Opsional jika lebih dari 2 stasiun):
+                          </label>
+                          <select
+                            value={formData.stationId || ''}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, stationId: e.target.value ? Number(e.target.value) : '' }))}
+                            className="w-full p-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-cyan-400 outline-none"
+                          >
+                            <option value="">-- Ikuti Otomatis (Default) --</option>
+                            {stations.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} ({st.type === 'BAR' ? 'Barista / Bar' : 'Dapur / Kitchen'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <p className="text-[11px] text-komazi-muted leading-relaxed">
+                        Pesanan menu ini akan dicetak ke struk stasiun terkait dan muncul pada KDS Barista atau Dapur agar tidak salah proses.
+                      </p>
+                    </div>
+
                     {/* Toggle: Menu Harga Dinamis (Open Price) */}
                     <div className="p-3.5 rounded-2xl bg-komazi-surface-2 border border-komazi-border space-y-3">
                       <div className="flex items-center justify-between gap-3">
@@ -1269,7 +1503,7 @@ export default function MenuPage() {
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-komazi-text">
-                              Menu Harga Dinamis (Open Price)
+                              Menu Harga Dinamis
                             </span>
                             <span className="block text-[11px] text-komazi-muted">
                               Aktifkan jika harga ditentukan fleksibel oleh kasir saat transaksi
@@ -1338,7 +1572,7 @@ export default function MenuPage() {
 
                     <div>
                       <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                        Deskripsi Singkat:
+                        Deskripsi Singkat
                       </label>
                       <textarea
                         rows="2"
@@ -1805,6 +2039,126 @@ export default function MenuPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Bulk Station Change Modal */}
+      {isBulkStationModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[9998] overflow-y-auto overscroll-contain p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn select-none"
+        >
+          <div className="min-h-full flex items-center justify-center">
+            <div className="w-full max-w-sm bg-komazi-surface border border-komazi-border rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4 my-auto">
+              <div className="flex items-center justify-between pb-2 border-b border-komazi-border">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                    <ChefHat className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-komazi-text">Pindah Stasiun Persiapan</h3>
+                    <p className="text-[11px] text-komazi-muted">{selectedProductIds.length} menu terpilih</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBulkStationModalOpen(false)}
+                  className="text-komazi-muted hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                <label className="text-xs font-semibold text-komazi-text">
+                  Pilih Stasiun Tujuan (KDS & Tiket Struk):
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(() => {
+                    const barStation = stations.find((s) => s.type === 'BAR');
+                    const kitchenStation = stations.find((s) => s.type === 'KITCHEN');
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setBulkTargetStationId(barStation?.id || '')}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-center ${
+                            String(bulkTargetStationId) === String(barStation?.id)
+                              ? 'bg-cyan-500/15 border-cyan-400 text-cyan-300 font-bold'
+                              : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-komazi-border-light'
+                          }`}
+                        >
+                          <Coffee className="w-5 h-5 text-cyan-400" />
+                          <span className="text-xs">Barista (Bar)</span>
+                          <span className="text-[10px] opacity-75">Kopi & Minuman</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkTargetStationId(kitchenStation?.id || '')}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-center ${
+                            String(bulkTargetStationId) === String(kitchenStation?.id)
+                              ? 'bg-amber-500/15 border-amber-400 text-amber-300 font-bold'
+                              : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-komazi-border-light'
+                          }`}
+                        >
+                          <ChefHat className="w-5 h-5 text-amber-400" />
+                          <span className="text-xs">Dapur (Kitchen)</span>
+                          <span className="text-[10px] opacity-75">Makanan & Snack</span>
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {stations.length > 2 && (
+                  <div className="pt-1">
+                    <label className="block text-[11px] text-komazi-muted mb-1">
+                      Atau pilih stasiun spesifik:
+                    </label>
+                    <select
+                      value={bulkTargetStationId}
+                      onChange={(e) => setBulkTargetStationId(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-cyan-400 focus:outline-none"
+                    >
+                      {stations.map((st) => (
+                        <option key={st.id} value={st.id}>
+                          {st.name} ({st.type === 'BAR' ? 'Barista' : 'Dapur'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkStationModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const st = stations.find((s) => String(s.id) === String(bulkTargetStationId));
+                    const res = await bulkUpdateStation(selectedProductIds, bulkTargetStationId);
+                    if (res?.success) {
+                      toast.success(`${selectedProductIds.length} menu berhasil dipindahkan ke stasiun "${st?.name || (st?.type === 'BAR' ? 'Barista' : 'Dapur')}".`);
+                      setSelectedProductIds([]);
+                      setIsBulkStationModalOpen(false);
+                    } else {
+                      toast.error(res?.message || 'Gagal mengubah stasiun menu');
+                    }
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow-md transition-all active:scale-95"
+                >
+                  Terapkan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Recipe Modal for COGS calculation */}

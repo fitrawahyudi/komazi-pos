@@ -139,6 +139,7 @@ ${statusEmoji} ${statusSummary}${issuesSection}
 export async function executeMonitoringJob(job) {
   const payload = job.payload || {};
   const alertRole = payload.alertRole || 'OWNER';
+  const isSilent = payload.silent === true || payload.isTest === true || process.env.NODE_ENV === 'test';
   // Hanya cek AI jika eksplisit diminta (misal sentinel job), job stok tidak perlu cek AI
   const checkAiGateway = payload.checkAiGateway === true;
 
@@ -146,8 +147,8 @@ export async function executeMonitoringJob(job) {
 
   const results = await checkSystemHealth({ checkAi: checkAiGateway });
 
-  // Kirim alert ke Telegram HANYA saat ada isu/anomali terdeteksi (mencegah spam)
-  if (results.hasIssues) {
+  // Kirim alert ke Telegram HANYA saat ada isu/anomali terdeteksi & bukan dalam mode pengujian (mencegah spam/false alarm)
+  if (results.hasIssues && !isSilent) {
     const issueLines = results.issues.map((i) => `• ⚠️ ${i}`).join('\n');
     const alertHtml = `
 🚨 <b>ALERT</b>
@@ -166,6 +167,8 @@ ${issueLines}
 
     await notifier.toRoles([alertRole], alertHtml);
     logger.scheduler.warn(`[MonitoringJob] Anomaly alert dispatched to ${alertRole}`, { issues: results.issues });
+  } else if (results.hasIssues && isSilent) {
+    logger.scheduler.info(`[MonitoringJob] Test/Silent mode active: Anomaly detected but Telegram alert suppressed`, { issues: results.issues });
   }
 
   return {

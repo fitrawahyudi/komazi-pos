@@ -8,7 +8,7 @@ import {
   Clock,
   AlertTriangle,
   Menu,
-  Sparkles,
+  Bot,
   Bell,
   X,
   Maximize2,
@@ -208,7 +208,7 @@ export default function Navbar() {
               aria-label="Tanya Komazi AI"
               className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-komazi-primary/10 hover:bg-komazi-primary/20 border border-komazi-primary/30 text-komazi-primary text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-2xs flex items-center gap-1.5"
             >
-              <Sparkles className="w-3.5 h-3.5 text-komazi-primary animate-pulse" />
+              <Bot className="w-3.5 h-3.5 text-komazi-primary animate-pulse" />
               <span className="hidden md:inline font-bold">Komazi AI</span>
             </button>
           )}

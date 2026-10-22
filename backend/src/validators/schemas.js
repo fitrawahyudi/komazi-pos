@@ -44,6 +44,7 @@ export const productModifierSchema = z.object({
 export const productSchema = z.object({
   name: z.string().min(1, 'Nama produk wajib diisi'),
   categoryId: z.number().int(),
+  stationId: z.number().int().optional().nullable(),
   price: z.number().nonnegative('Harga tidak boleh negatif'),
   sku: z.string().optional().nullable(),
   imageUrl: z.string().optional().nullable(),

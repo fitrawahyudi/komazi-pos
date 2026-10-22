@@ -29,7 +29,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import XLSX from 'xlsx-js-style';
-import { exportToExcel } from '../utils/excel';
+import { exportToExcel, saveWorkbook } from '../utils/excel';
 import { useShiftStore } from '../store/shiftStore';
 import { useAuthStore } from '../store/authStore';
 import { formatRupiah, formatDateTime } from '../utils/format';
@@ -217,7 +217,7 @@ export default function ShiftHistoryPage() {
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Sesi Kasir');
-        XLSX.writeFile(wb, `Komazi_Riwayat_Sesi_Kasir_${dateStr}.csv`, { bookType: 'csv' });
+        saveWorkbook(wb, `Komazi_Riwayat_Sesi_Kasir_${dateStr}.csv`, { bookType: 'csv' });
         toast.success('Laporan riwayat sesi berhasil di-export ke CSV!');
       }
       setShowExportMenu(false);

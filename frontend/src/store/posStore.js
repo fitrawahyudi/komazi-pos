@@ -7,12 +7,40 @@ export const usePosStore = create(
     (set, get) => ({
       categories: [],
       products: [],
+      stations: [],
       isLoading: false,
       selectedCategoryId: 'all',
       searchQuery: '',
 
       setSelectedCategoryId: (id) => set({ selectedCategoryId: id }),
       setSearchQuery: (query) => set({ searchQuery: query }),
+
+      fetchStations: async () => {
+        try {
+          const res = await api.stations.getAll();
+          if (res && res.success && Array.isArray(res.data)) {
+            set({ stations: res.data });
+            return res.data;
+          }
+        } catch (err) {
+          console.error('[PosStore] Error fetching stations:', err);
+        }
+        return get().stations;
+      },
+
+      bulkUpdateStation: async (productIds, stationId) => {
+        try {
+          const numStationId = stationId ? Number(stationId) : null;
+          await Promise.all(
+            productIds.map((id) => api.products.update(id, { stationId: numStationId }))
+          );
+          await get().fetchProducts();
+          return { success: true };
+        } catch (err) {
+          console.error('[PosStore] Error bulk updating product stations:', err);
+          return { success: false, message: err.message || 'Gagal mengubah stasiun menu' };
+        }
+      },
 
       fetchCategories: async () => {
         try {

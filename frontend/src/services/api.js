@@ -338,6 +338,12 @@ export const api = {
     bulkCreate: (products) => request('/products/bulk', { method: 'POST', body: JSON.stringify({ products }) }),
     bulkDelete: (ids) => request('/products/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   },
+  stations: {
+    getAll: () => request('/stations'),
+    create: (data) => request('/stations', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/stations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id) => request(`/stations/${id}`, { method: 'DELETE' }),
+  },
   orders: {
     getAll: (options = {}) => {
       const { force, ...queryParams } = options || {};

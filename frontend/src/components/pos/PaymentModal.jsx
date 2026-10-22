@@ -278,6 +278,8 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
           unitPrice: Number(i.unitPrice) || 0,
           lineTotal: Number(i.lineTotal) || 0,
           note: i.note ? String(i.note) : null,
+          stationId: i.stationId || i.station?.id || null,
+          station: i.station || null,
         })),
         workspaceSessionId: attachedWorkspaceSession?.id || null,
         workspaceSession: attachedWorkspaceSession || null,
@@ -367,16 +369,22 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
           }
         }
 
-        // 3.5 Auto-print kitchen ticket if enabled
+        // 3.5 Auto-print kitchen and/or barista tickets if enabled
         try {
           const printerState = usePrinterStore.getState();
+          const cashierName = typeof user?.name === 'string' ? user.name : 'Kasir';
           if (printerState.autoPrintKitchenOnCheckout && newOrder) {
             printerState.printKitchenTicketForOrder(newOrder, {
-              requestedBy: typeof user?.name === 'string' ? user.name : 'Kasir',
+              requestedBy: cashierName,
+            });
+          }
+          if (printerState.autoPrintBaristaOnCheckout && newOrder) {
+            printerState.printBaristaTicketForOrder(newOrder, {
+              requestedBy: cashierName,
             });
           }
         } catch (err) {
-          console.warn('Auto kitchen print notice:', err);
+          console.warn('Auto ticket print notice:', err);
         }
 
         // 4. Clear the current cart & sync open bills
@@ -465,14 +473,6 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
               </div>
               <h2 className="font-bold text-base text-komazi-text">Pembayaran</h2>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors cursor-pointer"
-              title="Tutup / Batal"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
 
           {/* Content */}
@@ -513,7 +513,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                   }`}
               >
                 <Banknote className="w-5 h-5 mb-1 text-success" />
-                <span>Tunai (Cash)</span>
+                <span>Tunai</span>
               </button>
 
               <button
@@ -659,9 +659,6 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
                       </span>
                       <p className="font-mono font-black text-2xl text-komazi-coral">
                         {formatRupiah(summary.grandTotal)}
-                      </p>
-                      <p className="text-[11px] text-komazi-muted">
-                        Merchant: <span className="text-komazi-text font-bold">{settings.qrisMerchantName || settings.storeName || 'KOMAZI COFFEE & WORKSPACE'}</span>
                       </p>
                     </div>
 

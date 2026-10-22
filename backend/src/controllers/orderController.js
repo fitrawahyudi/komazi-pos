@@ -33,25 +33,11 @@ async function getDefaultStationId(isDrink) {
 
 // Helper: dapatkan station id untuk produk jika belum di-set
 async function resolveStationId(product) {
-  const isDrink = isDrinkItemHelper(product);
-
   if (product?.stationId) {
-    if (product.station?.type) {
-      if (isDrink && product.station.type === 'KITCHEN') {
-        return await getDefaultStationId(true);
-      }
-      return product.stationId;
-    } else {
-      const existingStation = await prisma.station.findUnique({ where: { id: product.stationId } });
-      if (existingStation) {
-        if (isDrink && existingStation.type === 'KITCHEN') {
-          return await getDefaultStationId(true);
-        }
-        return existingStation.id;
-      }
-    }
+    return product.stationId;
   }
 
+  const isDrink = isDrinkItemHelper(product);
   return await getDefaultStationId(isDrink);
 }
 

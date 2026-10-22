@@ -318,7 +318,7 @@ export default function RecipeModal({ isOpen, onClose, product }) {
             <div>
               <h3 className="text-xs font-bold text-komazi-text uppercase tracking-wider flex items-center gap-1.5">
                 <Package className="w-3.5 h-3.5 text-komazi-coral" />
-                <span>Komposisi Bahan Baku (Bill of Materials)</span>
+                <span>Komposisi Bahan Baku</span>
               </h3>
               <p className="text-[11px] text-komazi-muted mt-0.5">
                 Masukkan takaran bahan baku yang digunakan untuk membuat 1 porsi menu ini.
@@ -339,7 +339,7 @@ export default function RecipeModal({ isOpen, onClose, product }) {
             <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-2.5">
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
               <span>
-                Master bahan baku belum tersedia di sistem. Tambahkan data bahan baku pada menu <strong>Bahan & Stok</strong> terlebih dahulu agar harga modal dapat dikalkulasikan.
+                Master bahan baku belum tersedia di sistem. Tambahkan data bahan baku pada menu <strong>Sumber Persediaan</strong> terlebih dahulu agar harga modal dapat dikalkulasikan.
               </span>
             </div>
           )}

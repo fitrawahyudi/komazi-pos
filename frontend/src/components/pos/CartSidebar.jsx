@@ -120,7 +120,7 @@ export default function CartSidebar({
   }, [customers.length, fetchCustomers]);
 
   // Customer picker state
-  const [customerSearch, setCustomerSearch] = useState('Tamu Umum');
+  const [customerSearch, setCustomerSearch] = useState('Tamu Komazi');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const customerInputRef = useRef(null);
 

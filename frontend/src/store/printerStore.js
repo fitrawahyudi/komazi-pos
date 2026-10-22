@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-printer';
 import { toast } from './toastStore';
 import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../utils/escpos';
+import { isKitchenItem, isBaristaItem } from '../utils/format';
+import { usePosStore } from './posStore';
 import { AndroidPrinter } from '../adapters/printer/printer.android';
 import { isAndroid, isNative } from '../services/platform';
 import { api } from '../services/api';
@@ -32,6 +34,7 @@ let activeGattServer = null;
 let activeCharacteristic = null;
 let activeSerialPort = null;
 const recentKitchenPrints = new Map();
+const recentBaristaPrints = new Map();
 
 /**
  * Sanitizes hardware and browser Web Bluetooth/Serial error messages
@@ -213,6 +216,7 @@ export const usePrinterStore = create(
       paperWidth: '58mm', // '58mm' | '80mm'
       autoPrintOnCheckout: false,
       autoPrintKitchenOnCheckout: false,
+      autoPrintBaristaOnCheckout: false,
       autoPrintMerchantCopy: false,
       printCopies: 1,
       kickCashDrawer: true,
@@ -252,6 +256,12 @@ export const usePrinterStore = create(
       setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => {
         set({ autoPrintKitchenOnCheckout });
         if (autoPrintKitchenOnCheckout && (isAndroid || isNative)) {
+          AndroidPrinter.startBackgroundService().catch(() => {});
+        }
+      },
+      setAutoPrintBaristaOnCheckout: (autoPrintBaristaOnCheckout) => {
+        set({ autoPrintBaristaOnCheckout });
+        if (autoPrintBaristaOnCheckout && (isAndroid || isNative)) {
           AndroidPrinter.startBackgroundService().catch(() => {});
         }
       },
@@ -571,9 +581,23 @@ export const usePrinterStore = create(
         });
       },
 
-      // Print Kitchen Ticket For Completed Order
+      // Print Kitchen Ticket For Completed Order (Only Kitchen / Food Items)
       printKitchenTicketForOrder: async (order, options = {}) => {
         if (!order) return { success: false, message: 'Data pesanan kosong' };
+
+        // Dapatkan data produk & station dari posStore jika tersedia
+        const posState = usePosStore.getState?.() || {};
+        const products = posState.products || [];
+        const stations = posState.kitchenStations || [];
+
+        // Filter item khusus dapur
+        const allItems = options.items || order.items || [];
+        const kitchenItems = allItems.filter((it) => isKitchenItem(it, { products, stations }));
+
+        if (kitchenItems.length === 0) {
+          console.log('[PrinterStore] Tidak ada item dapur untuk dicetak pada order:', order.id || order.invoiceNo);
+          return { success: true, skipped: true, message: 'Tidak ada item dapur untuk dicetak' };
+        }
 
         // Deduplikasi cetak tiket dapur: hindari cetak ganda jika event socket diterima berulang kali
         const orderKey = String(order.id || order.invoiceNo || '');
@@ -615,6 +639,8 @@ export const usePrinterStore = create(
           if (isConnected) {
             const rawBytes = buildKitchenTicketEscPos(order, {
               paperWidth: effectivePaperWidth,
+              stationName: options.stationName || 'DAPUR',
+              items: kitchenItems,
               ...options,
             });
 
@@ -637,6 +663,96 @@ export const usePrinterStore = create(
             documentType: 'KITCHEN_TICKET',
             status: printSuccess ? 'PRINTED' : 'FAILED',
             errorCode: printSuccess ? null : 'ERR_KITCHEN_PRINTER_OFFLINE',
+            errorMessage,
+            requestedBy: options.requestedBy || 'Sistem POS',
+          });
+        } catch {}
+
+        return { success: printSuccess, message: errorMessage };
+      },
+
+      // Print Barista / Bar Ticket For Completed Order (Only Bar / Beverage Items)
+      printBaristaTicketForOrder: async (order, options = {}) => {
+        if (!order) return { success: false, message: 'Data pesanan kosong' };
+
+        // Dapatkan data produk & station dari posStore jika tersedia
+        const posState = usePosStore.getState?.() || {};
+        const products = posState.products || [];
+        const stations = posState.kitchenStations || [];
+
+        // Filter item khusus barista / bar
+        const allItems = options.items || order.items || [];
+        const baristaItems = allItems.filter((it) => isBaristaItem(it, { products, stations }));
+
+        if (baristaItems.length === 0) {
+          console.log('[PrinterStore] Tidak ada item barista untuk dicetak pada order:', order.id || order.invoiceNo);
+          return { success: true, skipped: true, message: 'Tidak ada item barista untuk dicetak' };
+        }
+
+        // Deduplikasi cetak tiket barista
+        const orderKey = String(order.id || order.invoiceNo || '');
+        const now = Date.now();
+        if (!options.force && orderKey) {
+          const lastTime = recentBaristaPrints.get(orderKey);
+          if (recentBaristaPrints.size > 200) {
+            for (const [k, t] of recentBaristaPrints.entries()) {
+              if (now - t > 300000) recentBaristaPrints.delete(k);
+            }
+          }
+          if (lastTime && now - lastTime < 30000) {
+            console.log(`[PrinterStore] Tiket barista ${orderKey} sudah dicetak ${now - lastTime}ms yang lalu. Mengabaikan cetak duplikat.`);
+            return { success: true, duplicateIgnored: true };
+          }
+          recentBaristaPrints.set(orderKey, now);
+        }
+
+        let { isConnected, sendRawData, activeKitchenPrinter, recordPrintJob, autoConnectPrinter } = get();
+
+        // Jika printer belum terhubung dan berada di lingkungan Android/Native, coba auto-connect
+        if (!isConnected && (isAndroid || isNative)) {
+          const autoRes = await autoConnectPrinter(true);
+          if (autoRes?.success || get().isConnected) {
+            isConnected = true;
+          }
+        }
+
+        const effectivePaperWidth =
+          options.paperWidth ||
+          (activeKitchenPrinter?.paperWidthMm ? `${activeKitchenPrinter.paperWidthMm}mm` : null) ||
+          get().paperWidth ||
+          '58mm';
+
+        let printSuccess = false;
+        let errorMessage = null;
+
+        try {
+          if (isConnected) {
+            const rawBytes = buildKitchenTicketEscPos(order, {
+              paperWidth: effectivePaperWidth,
+              stationName: options.stationName || 'BARISTA',
+              items: baristaItems,
+              ...options,
+            });
+
+            printSuccess = await sendRawData(rawBytes);
+          } else {
+            printSuccess = false;
+            errorMessage = 'Printer barista/dapur tidak terhubung';
+          }
+        } catch (err) {
+          console.error('[PrinterStore] printBaristaTicketForOrder error:', err);
+          printSuccess = false;
+          errorMessage = err.message || 'Gagal transmisi tiket barista';
+        }
+
+        // Record print job audit log
+        try {
+          await recordPrintJob({
+            printerProfileId: activeKitchenPrinter?.id || null,
+            orderId: order.id,
+            documentType: 'BARISTA_TICKET',
+            status: printSuccess ? 'PRINTED' : 'FAILED',
+            errorCode: printSuccess ? null : 'ERR_BARISTA_PRINTER_OFFLINE',
             errorMessage,
             requestedBy: options.requestedBy || 'Sistem POS',
           });
@@ -1150,6 +1266,7 @@ export const usePrinterStore = create(
         paperWidth: state.paperWidth,
         autoPrintOnCheckout: state.autoPrintOnCheckout,
         autoPrintKitchenOnCheckout: state.autoPrintKitchenOnCheckout,
+        autoPrintBaristaOnCheckout: state.autoPrintBaristaOnCheckout,
         autoPrintMerchantCopy: state.autoPrintMerchantCopy,
         printCopies: state.printCopies,
         kickCashDrawer: state.kickCashDrawer,

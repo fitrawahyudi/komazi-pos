@@ -5,7 +5,7 @@
  */
 
 import EscPosEncoder from 'esc-pos-encoder';
-import { formatOrderType, formatDateTime, formatRupiah } from './format.js';
+import { formatOrderType, formatDateTime, formatRupiah, isKitchenItem, isBaristaItem } from './format.js';
 import {
   generateEscPosQrRasterBytes,
   generateDynamicQrisForOrder,
@@ -345,7 +345,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
   }
 
   encoder
-    .twoColumns('No. Faktur:', order.invoiceNo || `KMZ-${order.id}`, paperWidth)
+    .twoColumns('No. Invoice:', order.invoiceNo || `KMZ-${order.id}`, paperWidth)
     .twoColumns('Tanggal:', formatDateTime(order.createdAt || new Date().toISOString()), paperWidth);
 
   if (storeSettings.receiptShowCashier !== false) {
@@ -483,8 +483,10 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
  */
 export function buildKitchenTicketEscPos(order, options = {}) {
   const paperWidth = options.paperWidth || '58mm';
-  const stationName = options.stationName || 'DAPUR / BAR';
+  const rawStationName = options.stationName || 'DAPUR';
   const isAdditional = options.isAdditional || false;
+  const isBar = rawStationName.toUpperCase().includes('BAR');
+  const stationName = options.stationName || (isBar ? 'BARISTA' : 'DAPUR');
   const encoder = new KomaziReceiptEncoder(paperWidth);
 
   encoder
@@ -492,12 +494,12 @@ export function buildKitchenTicketEscPos(order, options = {}) {
     .align('center')
     .bold(true)
     .doubleSize(true)
-    .line(isAdditional ? `[TAMBAHAN] ${stationName}` : `[ORDER] ${stationName}`)
+    .line(isAdditional ? `[TAMBAHAN] ${stationName}` : `[TIKET] ${stationName}`)
     .doubleSize(false)
     .bold(false)
     .line('================================')
     .align('left')
-    .twoColumns('No. Pesanan:', order.invoiceNo || `#${order.id}`, paperWidth)
+    .twoColumns('No. Invoice:', order.invoiceNo || `#${order.id}`, paperWidth)
     .twoColumns('Waktu:', formatDateTime(order.createdAt || new Date().toISOString()), paperWidth)
     .twoColumns(
       'Tipe:',
@@ -515,7 +517,15 @@ export function buildKitchenTicketEscPos(order, options = {}) {
 
   encoder.divider(paperWidth);
 
-  const itemsToPrint = options.items || order.items || [];
+  // Filter items specifically for the target station so barista items never print on kitchen tickets
+  const itemsToPrint =
+    options.items ||
+    (order.items || []).filter((item) => {
+      if (isBar) {
+        return isBaristaItem(item, options);
+      }
+      return isKitchenItem(item, options);
+    });
   itemsToPrint.forEach((item) => {
     encoder.bold(true);
     encoder.line(`${item.qty}x  ${item.name || item.productName || 'Item'}`);
@@ -533,12 +543,21 @@ export function buildKitchenTicketEscPos(order, options = {}) {
     }
   });
 
-  if (order.note || order.orderNote) {
+  if (order.note || order.orderNote || order.notes) {
     encoder.divider(paperWidth);
     encoder.bold(true);
-    encoder.line(`Catatan Khusus: ${order.note || order.orderNote}`);
+    encoder.line(`Catatan Khusus: ${order.note || order.orderNote || order.notes}`);
     encoder.bold(false);
   }
+
+  const totalItemCount = itemsToPrint.reduce((acc, it) => acc + (Number(it.qty) || 1), 0);
+  encoder
+    .divider(paperWidth)
+    .align('center')
+    .bold(true)
+    .line(`*** TOTAL: ${totalItemCount} ITEM ***`)
+    .bold(false)
+    .align('left');
 
   encoder
     .divider(paperWidth)

@@ -359,47 +359,5 @@ ${supplierLine}
       await ctx.answerCallbackQuery({ text: err.message, show_alert: true });
     }
   });
-
-  // 5) Laporan Hari Ini (Manager/Owner) dengan Animasi Loading Bar
-  bot.command('laporan', requireRole('MANAGER', 'OWNER'), async (ctx) => {
-    return withLoadingAnimation(
-      ctx,
-      { chatAction: 'typing' },
-      async () => {
-        const summary = await orderService.getSummary('today');
-
-        const topLines = (summary.topProducts || [])
-          .map((p, i) => `${i + 1}. ${esc(p.name)}: <b>${p.qty} terjual</b>`)
-          .join('\n') || '-';
-
-        const caption = `
-📊 <b>LAPORAN PENJUALAN HARI INI</b>
-━━━━━━━━━━━━━━━━━━
-<b>Total Omzet:</b> <b>${rupiah(summary.totalRevenue)}</b>
-<b>Total Transaksi:</b> ${summary.totalTransactions} Pesanan
-
-<b>Rincian Metode Pembayaran:</b>
-• Tunai (Cash): ${rupiah(summary.byMethod.CASH)}
-• QRIS Dinamis: ${rupiah(summary.byMethod.QRIS)}
-• Transfer Bank: ${rupiah(summary.byMethod.TRANSFER)}
-
-<b>Top 5 Menu Paling Laris:</b>
-${topLines}
-━━━━━━━━━━━━━━━━━━
-<i>Data realtime POS • @komazi-assistant</i>
-        `.trim();
-
-        return replyWithPhotoFallback(ctx, {
-          imageBufferPromise: generateBotImage('sales_report', {
-            periodLabel: 'Hari Ini',
-            totalRevenue: summary.totalRevenue,
-            totalTransactions: summary.totalTransactions,
-            byMethod: summary.byMethod,
-            topProducts: summary.topProducts,
-          }),
-          captionHtml: caption,
-        });
-      }
-    );
-  });
 }
+

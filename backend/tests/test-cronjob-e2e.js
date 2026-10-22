@@ -81,7 +81,7 @@ async function runTestSuite() {
         targetRoles: ['OWNER'],
         timeoutSeconds: 30,
         retryLimit: 2,
-        payload: { checkDb: true, checkDisk: false },
+        payload: { checkDb: true, checkDisk: false, isTest: true },
       },
       { type: 'USER', id: 'test_admin', name: 'Test Administrator' }
     );
@@ -150,7 +150,7 @@ async function runTestSuite() {
     const monRes = await executeMonitoringJob({
       id: testJob.id,
       name: 'E2E Monitoring Job',
-      payload: {},
+      payload: { isTest: true },
     });
     assert(monRes && monRes.status.database === 'ONLINE', 'Monitoring handler pings MySQL successfully');
     assert(typeof monRes.status.dbLatencyMs === 'number', 'Monitoring handler measures DB latency');

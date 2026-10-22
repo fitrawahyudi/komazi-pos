@@ -66,6 +66,7 @@ import { stockIn } from './conversations/stockIn.js';
 import { requestApproval } from './conversations/requestApproval.js';
 import { createJobWizard } from './conversations/createJobWizard.js';
 import { recordWasteConv } from './conversations/recordWaste.js';
+import { customReportConversation } from './conversations/customReportConversation.js';
 import { renderJobsList, storeQuickJobDraft } from './handlers/jobs.js';
 import { parseNaturalScheduleText } from '../services/cron/naturalScheduleParser.js';
 import { formatScheduleNaturalReply } from '../services/ai/aiToneFormatter.js';
@@ -117,6 +118,7 @@ bot.use(createConversation(stockIn, 'stockIn'));
 bot.use(createConversation(recordWasteConv, 'recordWasteConv'));
 bot.use(createConversation(requestApproval, 'requestApproval'));
 bot.use(createConversation(createJobWizard, 'createJobWizard'));
+bot.use(createConversation(customReportConversation, 'customReportConversation'));
 
 // 5) Handlers peran & fitur
 registerStart(bot);
