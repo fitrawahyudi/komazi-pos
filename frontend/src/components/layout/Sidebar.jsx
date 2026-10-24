@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Bluetooth,
   BluetoothConnected,
+  Usb,
   Coffee,
   LogOut,
   ChevronDown,
@@ -70,9 +71,10 @@ export default function Sidebar() {
     setSidebarCollapsed,
     toggleSidebarCollapsed,
     openBluetoothModal,
+    openUsbModal,
   } = useUiStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const { isConnected: isPrinterConnected, connectedDeviceName } = usePrinterStore();
+  const { isConnected: isPrinterConnected, connectedDeviceName, connectionType } = usePrinterStore();
 
   const role = user?.role || 'CASHIER';
   const isCashier = role === 'CASHIER';
@@ -647,15 +649,15 @@ export default function Sidebar() {
 
       {/* User Status and Quick Logout Card */}
       <div className="p-3 border-t border-komazi-border bg-komazi-surface shrink-0">
-        {/* Bluetooth Printer Button (All role kecuali BARISTA, KITCHEN, dan OWNER) */}
+        {/* Printer Button (All role kecuali BARISTA, KITCHEN, dan OWNER) */}
         {!isKitchenStaff && !isOwner && (
           <button
             type="button"
-            onClick={openBluetoothModal}
+            onClick={connectionType === 'USB' ? openUsbModal : openBluetoothModal}
             title={
               btConnected
-                ? `Printer Bluetooth Terhubung: ${connectedDeviceName || 'Thermal'}`
-                : 'Hubungkan Printer Bluetooth'
+                ? `Printer ${connectionType === 'USB' ? 'USB' : 'Bluetooth'} Terhubung: ${connectedDeviceName || 'Thermal'}`
+                : `Hubungkan Printer (${connectionType === 'USB' ? 'USB' : 'Bluetooth'})`
             }
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all mb-2 focus-visible:ring-2 focus-visible:ring-komazi-coral focus-visible:outline-none ${btConnected
               ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20'
@@ -663,12 +665,22 @@ export default function Sidebar() {
               }`}
           >
             {btConnected ? (
-              <BluetoothConnected className="w-4 h-4 shrink-0" />
+              connectionType === 'USB' ? (
+                <Usb className="w-4 h-4 shrink-0 text-emerald-400" />
+              ) : (
+                <BluetoothConnected className="w-4 h-4 shrink-0" />
+              )
+            ) : connectionType === 'USB' ? (
+              <Usb className="w-4 h-4 shrink-0" />
             ) : (
               <Bluetooth className="w-4 h-4 shrink-0" />
             )}
             <span className="truncate">
-              {btConnected ? 'Printer Terhubung' : 'Hubungkan Printer'}
+              {btConnected
+                ? `${connectionType === 'USB' ? 'USB' : 'Printer'} Terhubung`
+                : connectionType === 'USB'
+                ? 'Hubungkan USB'
+                : 'Hubungkan Printer'}
             </span>
           </button>
         )}

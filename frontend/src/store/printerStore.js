@@ -1,14 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-printer';
-import { toast } from './toastStore';
-import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../utils/escpos';
-import { isKitchenItem, isBaristaItem } from '../utils/format';
-import { usePosStore } from './posStore';
-import { AndroidPrinter } from '../adapters/printer/printer.android';
-import { isAndroid, isNative } from '../services/platform';
-import { api } from '../services/api';
-import { useSettingsStore } from './settingsStore';
+import { toast } from './toastStore.js';
+import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../utils/escpos.js';
+import { isKitchenItem, isBaristaItem } from '../utils/format.js';
+import { AndroidPrinter } from '../adapters/printer/printer.android.js';
+import { isAndroid, isNative } from '../services/platform.js';
+import { api } from '../services/api.js';
+import { useSettingsStore } from './settingsStore.js';
 
 // Known Bluetooth thermal printer service UUIDs (standard & vendor custom)
 export const BT_PRINTER_SERVICES = [
@@ -33,11 +31,84 @@ let activeBluetoothDevice = null;
 let activeGattServer = null;
 let activeCharacteristic = null;
 let activeSerialPort = null;
+let activeUsbDevice = null;
+let activeUsbInterfaceNumber = null;
+let activeUsbOutEndpoint = null;
 const recentKitchenPrints = new Map();
 const recentBaristaPrints = new Map();
 
 /**
- * Sanitizes hardware and browser Web Bluetooth/Serial error messages
+ * Resolves configuration and bulk OUT endpoint for WebUSB thermal printer
+ */
+export async function setupWebUsbDevice(device) {
+  if (!device.opened) {
+    await device.open();
+  }
+
+  if (device.configuration === null) {
+    await device.selectConfiguration(1);
+  }
+
+  let targetInterface = null;
+  let targetEndpoint = null;
+
+  if (device.configuration && Array.isArray(device.configuration.interfaces)) {
+    for (const iface of device.configuration.interfaces) {
+      for (const alt of iface.alternates || []) {
+        const outEp = (alt.endpoints || []).find((ep) => ep.direction === 'out');
+        if (outEp) {
+          targetInterface = iface;
+          targetEndpoint = outEp;
+          break;
+        }
+      }
+      if (targetEndpoint) break;
+    }
+  }
+
+  if (!targetInterface || !targetEndpoint) {
+    throw new Error('Tidak ditemukan endpoint OUT untuk pengiriman data pada printer USB ini.');
+  }
+
+  try {
+    await device.claimInterface(targetInterface.interfaceNumber);
+  } catch (claimErr) {
+    if (claimErr.name === 'SecurityError' || claimErr.message?.toLowerCase().includes('claim')) {
+      throw new Error(
+        'Akses antarmuka printer USB diblokir oleh driver sistem. Jika menggunakan Windows, gunakan mode "Driver Sistem / Browser" atau gunakan mode "Port Serial COM".'
+      );
+    }
+    throw claimErr;
+  }
+
+  return {
+    interfaceNumber: targetInterface.interfaceNumber,
+    endpointNumber: targetEndpoint.endpointNumber,
+  };
+}
+
+/**
+ * Opens a Web Serial port for thermal printer with proper baudRate and options
+ */
+export async function setupWebSerialPort(port, baudRate = 9600) {
+  try {
+    await port.open({
+      baudRate: Number(baudRate) || 9600,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      bufferSize: 4096,
+      flowControl: 'none',
+    });
+  } catch (openErr) {
+    if (!openErr.message?.toLowerCase().includes('already open')) {
+      throw openErr;
+    }
+  }
+}
+
+/**
+ * Sanitizes hardware and browser Web Bluetooth/USB/Serial error messages
  * into user-friendly Indonesian messages for cashier staff.
  */
 export function formatFriendlyPrinterError(err) {
@@ -52,10 +123,21 @@ export function formatFriendlyPrinterError(err) {
     msg.includes('cancelled') ||
     msg.includes('user cancelled') ||
     msg.includes('no port selected') ||
+    msg.includes('no device selected') ||
     msg.includes('batal memilih') ||
     msg.includes('dibatalkan')
   ) {
     return 'Pemilihan perangkat printer dibatalkan.';
+  }
+
+  // 1b. USB Interface claim / driver lock
+  if (msg.includes('claiminterface') || msg.includes('unable to claim') || msg.includes('claim')) {
+    return 'Akses antarmuka printer USB diklaim oleh driver OS. Silakan gunakan mode "Driver Sistem / Browser" atau gunakan mode "Port Serial COM".';
+  }
+
+  // 1c. USB Transfer error
+  if (msg.includes('transferout') || msg.includes('transfer failed')) {
+    return 'Gagal mentransfer data ke printer USB. Pastikan kabel USB terpasang kuat.';
   }
 
   // 2. User Gesture (Web Bluetooth browser security restriction)
@@ -86,6 +168,12 @@ export function formatFriendlyPrinterError(err) {
     msg.includes('insecure context') ||
     msg.includes('permissions policy')
   ) {
+    if (msg.includes('usb')) {
+      return 'Akses printer USB dibatasi oleh browser. Pastikan menggunakan koneksi aman (HTTPS/localhost) atau gunakan mode Driver Sistem.';
+    }
+    if (msg.includes('serial') || msg.includes('com')) {
+      return 'Akses printer Serial/COM dibatasi oleh browser. Pastikan menggunakan koneksi aman (HTTPS/localhost) atau gunakan mode Driver Sistem.';
+    }
     return 'Akses Bluetooth dibatasi oleh browser. Pastikan menggunakan koneksi aman (HTTPS/localhost).';
   }
 
@@ -139,14 +227,19 @@ export function formatFriendlyPrinterError(err) {
   return rawMsg.startsWith('Kendala printer:') ? rawMsg : `Kendala printer: ${rawMsg}`;
 }
 
+let WebBluetoothReceiptPrinterClass = null;
+
 /**
  * Lazy initialization of WebBluetoothReceiptPrinter singleton
  */
-function getWebBluetoothPrinter(set, get) {
+async function getWebBluetoothPrinter(set, get) {
   if (typeof window === 'undefined' || !navigator?.bluetooth) return null;
   if (!receiptPrinterInstance) {
     try {
-      receiptPrinterInstance = new WebBluetoothReceiptPrinter();
+      if (!WebBluetoothReceiptPrinterClass) {
+        WebBluetoothReceiptPrinterClass = (await import('@point-of-sale/webbluetooth-receipt-printer')).default;
+      }
+      receiptPrinterInstance = new WebBluetoothReceiptPrinterClass();
 
       // Listen for successful connection event from the package
       receiptPrinterInstance.addEventListener('connected', (device) => {
@@ -213,6 +306,8 @@ export const usePrinterStore = create(
     (set, get) => ({
       // Local Hardware Configuration & Connection Status
       connectionType: 'BROWSER', // 'BROWSER' | 'BLUETOOTH' | 'USB' | 'NETWORK'
+      usbSubtype: null, // 'DIRECT' | 'SERIAL' | null
+      usbBaudRate: 9600, // 9600 | 19200 | 38400 | 57600 | 115200
       paperWidth: '58mm', // '58mm' | '80mm'
       autoPrintOnCheckout: false,
       autoPrintKitchenOnCheckout: false,
@@ -252,6 +347,8 @@ export const usePrinterStore = create(
       // Local Setters
       setPaperWidth: (paperWidth) => set({ paperWidth }),
       setConnectionType: (connectionType) => set({ connectionType }),
+      setUsbSubtype: (usbSubtype) => set({ usbSubtype }),
+      setUsbBaudRate: (usbBaudRate) => set({ usbBaudRate: Number(usbBaudRate) || 9600 }),
       setAutoPrintOnCheckout: (autoPrintOnCheckout) => set({ autoPrintOnCheckout }),
       setAutoPrintKitchenOnCheckout: (autoPrintKitchenOnCheckout) => {
         set({ autoPrintKitchenOnCheckout });
@@ -946,7 +1043,7 @@ export const usePrinterStore = create(
 
         set({ isConnecting: true });
 
-        const printer = getWebBluetoothPrinter(set, get);
+        const printer = await getWebBluetoothPrinter(set, get);
 
         if (printer && !options.useBroadScan) {
           try {
@@ -993,39 +1090,179 @@ export const usePrinterStore = create(
         }
       },
 
-      // Connect via Web Serial (USB Thermal Printer)
-      connectUsb: async () => {
-        if (!navigator?.serial) {
+      // Connect via Direct WebUSB (Plug & Play USB Thermal Printer)
+      connectUsbDirect: async () => {
+        if (typeof window !== 'undefined' && window.isSecureContext === false) {
+          toast.error(
+            'WebUSB memerlukan koneksi aman (HTTPS atau localhost). Gunakan mode "Driver Sistem / Browser" jika mengakses via alamat IP / HTTP.'
+          );
+          return { success: false, message: 'Insecure context' };
+        }
+
+        if (typeof navigator === 'undefined' || !navigator?.usb) {
+          toast.error(
+            'WebUSB API tidak didukung pada browser ini. Gunakan Google Chrome atau Edge.'
+          );
+          return { success: false, message: 'WebUSB not supported' };
+        }
+
+        set({ isConnecting: true });
+        try {
+          const device = await navigator.usb.requestDevice({ filters: [] });
+          const { interfaceNumber, endpointNumber } = await setupWebUsbDevice(device);
+
+          activeUsbDevice = device;
+          activeUsbInterfaceNumber = interfaceNumber;
+          activeUsbOutEndpoint = endpointNumber;
+
+          // Disconnect serial port if previously active
+          if (activeSerialPort) {
+            try {
+              await activeSerialPort.close();
+            } catch {}
+            activeSerialPort = null;
+          }
+
+          const deviceName = device.productName || device.manufacturerName || 'Printer Thermal USB';
+          set({
+            isConnected: true,
+            isConnecting: false,
+            connectionType: 'USB',
+            usbSubtype: 'DIRECT',
+            connectedDeviceName: `${deviceName} (USB)`,
+            connectedDeviceAddress: `usb:${device.vendorId}:${device.productId}`,
+          });
+
+          toast.success(`Berhasil terhubung ke ${deviceName}!`);
+          return { success: true, name: deviceName };
+        } catch (err) {
+          set({ isConnecting: false });
+          if (
+            err.name === 'NotFoundError' ||
+            err.message?.includes('cancelled') ||
+            err.message?.includes('No device selected')
+          ) {
+            return { success: false, cancelled: true };
+          }
+          const friendly = formatFriendlyPrinterError(err);
+          toast.error(friendly);
+          return { success: false, message: friendly };
+        }
+      },
+
+      // Connect via Web Serial (USB Serial COM Port Thermal Printer)
+      connectUsbSerial: async (customBaudRate) => {
+        if (typeof window !== 'undefined' && window.isSecureContext === false) {
+          toast.error(
+            'Web Serial memerlukan koneksi aman (HTTPS atau localhost). Gunakan mode "Driver Sistem / Browser" jika mengakses via alamat IP / HTTP.'
+          );
+          return { success: false, message: 'Insecure context' };
+        }
+
+        if (typeof navigator === 'undefined' || !navigator?.serial) {
           toast.error(
             'Web Serial API tidak didukung pada browser ini. Gunakan Google Chrome/Edge di desktop.'
           );
           return { success: false, message: 'Web Serial not supported' };
         }
 
+        const baudRate = Number(customBaudRate) || get().usbBaudRate || 9600;
         set({ isConnecting: true });
         try {
           const port = await navigator.serial.requestPort();
-          await port.open({ baudRate: 9600 });
+          await setupWebSerialPort(port, baudRate);
 
           activeSerialPort = port;
+
+          // Disconnect direct USB if previously active
+          if (activeUsbDevice) {
+            try {
+              if (activeUsbInterfaceNumber !== null) {
+                await activeUsbDevice.releaseInterface(activeUsbInterfaceNumber);
+              }
+              await activeUsbDevice.close();
+            } catch {}
+            activeUsbDevice = null;
+            activeUsbInterfaceNumber = null;
+            activeUsbOutEndpoint = null;
+          }
+
+          const info = port.getInfo ? port.getInfo() : {};
+          const devName = info.usbVendorId
+            ? `Port COM (VID:${info.usbVendorId.toString(16).toUpperCase()})`
+            : `Printer Serial COM (${baudRate} bps)`;
 
           set({
             isConnected: true,
             isConnecting: false,
             connectionType: 'USB',
-            connectedDeviceName: 'Printer Thermal USB (COM)',
+            usbSubtype: 'SERIAL',
+            usbBaudRate: baudRate,
+            connectedDeviceName: devName,
+            connectedDeviceAddress: info.usbVendorId
+              ? `serial:${info.usbVendorId}:${info.usbProductId || 0}`
+              : 'serial:com',
           });
 
-          toast.success('Berhasil terhubung ke Printer USB!');
-          return { success: true };
+          toast.success(`Berhasil terhubung ke Port Serial (${baudRate} bps)!`);
+          return { success: true, name: devName };
         } catch (err) {
           set({ isConnecting: false });
-          if (err.name === 'NotFoundError' || err.message?.includes('cancelled') || err.message?.includes('No port selected')) {
+          if (
+            err.name === 'NotFoundError' ||
+            err.message?.includes('cancelled') ||
+            err.message?.includes('No port selected')
+          ) {
             return { success: false, cancelled: true };
           }
           const friendly = formatFriendlyPrinterError(err);
           toast.error(friendly);
           return { success: false, message: friendly };
+        }
+      },
+
+      // Unified Connect USB (Smart handler: direct or serial)
+      connectUsb: async (mode) => {
+        if (mode === 'direct') {
+          return await get().connectUsbDirect();
+        }
+        if (mode === 'serial') {
+          return await get().connectUsbSerial();
+        }
+
+        // Auto mode: check browser support
+        if (typeof navigator !== 'undefined') {
+          if (navigator.usb && !navigator.serial) {
+            return await get().connectUsbDirect();
+          }
+          if (!navigator.usb && navigator.serial) {
+            return await get().connectUsbSerial();
+          }
+        }
+        // If both supported, default to direct USB
+        return await get().connectUsbDirect();
+      },
+
+      // Kick Cash Drawer pulse via RJ-11 port on thermal printer
+      openCashDrawer: async () => {
+        const { isConnected, sendRawData } = get();
+        if (!isConnected) {
+          toast.warning('Printer belum terhubung. Pastikan printer thermal terhubung untuk membuka laci kasir.');
+          return false;
+        }
+        try {
+          // ESC p m t1 t2: Generate pulse to RJ-11 drawer kick-out connector (pin 2)
+          const pulse = new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]);
+          const ok = await sendRawData(pulse);
+          if (ok) {
+            toast.success('Sinyal buka laci kasir (kick drawer) berhasil dikirim!');
+            return true;
+          }
+          return false;
+        } catch (err) {
+          const friendly = formatFriendlyPrinterError(err);
+          toast.error(`Gagal membuka laci kasir: ${friendly}`);
+          return false;
         }
       },
 
@@ -1055,21 +1292,43 @@ export const usePrinterStore = create(
           if (activeBluetoothDevice && activeBluetoothDevice.gatt?.connected) {
             activeBluetoothDevice.gatt.disconnect();
           }
-          if (activeSerialPort) {
-            activeSerialPort.close().catch(() => {});
-          }
         } catch {}
+
+        // Disconnect WebUSB device
+        if (activeUsbDevice) {
+          try {
+            if (activeUsbInterfaceNumber !== null) {
+              await activeUsbDevice.releaseInterface(activeUsbInterfaceNumber);
+            }
+            await activeUsbDevice.close();
+          } catch (e) {
+            console.warn('[PrinterStore] Error closing WebUSB device:', e);
+          }
+          activeUsbDevice = null;
+          activeUsbInterfaceNumber = null;
+          activeUsbOutEndpoint = null;
+        }
+
+        // Disconnect Web Serial port
+        if (activeSerialPort) {
+          try {
+            await activeSerialPort.close();
+          } catch (e) {
+            console.warn('[PrinterStore] Error closing Serial port:', e);
+          }
+          activeSerialPort = null;
+        }
 
         activeBluetoothDevice = null;
         activeGattServer = null;
         activeCharacteristic = null;
-        activeSerialPort = null;
 
         set({
           isConnected: false,
           isConnecting: false,
           connectedDeviceName: null,
           connectedDeviceAddress: null,
+          usbSubtype: null,
           connectionType: 'BROWSER',
         });
         toast.info('Printer diputus.');
@@ -1134,12 +1393,61 @@ export const usePrinterStore = create(
           }
         }
 
-        // B. USB Serial transmission
-        if (connectionType === 'USB' && activeSerialPort && activeSerialPort.writable) {
-          const writer = activeSerialPort.writable.getWriter();
-          await writer.write(uint8Data);
-          writer.releaseLock();
-          return true;
+        // B. USB Transmission (Direct WebUSB or Web Serial COM)
+        if (connectionType === 'USB') {
+          // B1. Direct WebUSB
+          if (activeUsbDevice && activeUsbOutEndpoint !== null) {
+            if (!activeUsbDevice.opened) {
+              set({ isConnected: false });
+              throw new Error('Koneksi printer USB tertutup. Silakan sambungkan kembali.');
+            }
+            try {
+              const chunkSize = 1024;
+              for (let i = 0; i < uint8Data.length; i += chunkSize) {
+                const chunk = uint8Data.slice(i, i + chunkSize);
+                const res = await activeUsbDevice.transferOut(activeUsbOutEndpoint, chunk);
+                if (res.status !== 'ok') {
+                  throw new Error(`Transfer USB gagal (status: ${res.status})`);
+                }
+              }
+              return true;
+            } catch (usbErr) {
+              console.error('[PrinterStore] WebUSB transferOut error:', usbErr);
+              throw usbErr;
+            }
+          }
+
+          // B2. Web Serial COM Port
+          if (activeSerialPort) {
+            if (!activeSerialPort.writable) {
+              set({ isConnected: false });
+              throw new Error('Port serial printer tidak dalam kondisi siap tulis.');
+            }
+            if (activeSerialPort.writable.locked) {
+              throw new Error('Aliran data port serial sedang terkunci oleh proses lain.');
+            }
+
+            const writer = activeSerialPort.writable.getWriter();
+            try {
+              const chunkSize = 512;
+              for (let i = 0; i < uint8Data.length; i += chunkSize) {
+                const chunk = uint8Data.slice(i, i + chunkSize);
+                await writer.write(chunk);
+                if (i + chunkSize < uint8Data.length) {
+                  await new Promise((r) => setTimeout(r, 15));
+                }
+              }
+              return true;
+            } catch (writeErr) {
+              console.error('[PrinterStore] Serial write error:', writeErr);
+              throw writeErr;
+            } finally {
+              writer.releaseLock();
+            }
+          }
+
+          set({ isConnected: false });
+          throw new Error('Printer kabel USB belum terhubung. Silakan sambungkan printer USB.');
         }
 
         return false;
@@ -1220,9 +1528,10 @@ export const usePrinterStore = create(
 
       // Auto-Reconnect
       autoConnectPrinter: async (silent = true) => {
-        const { isConnected, isConnecting, connectedDeviceAddress } = get();
+        const { isConnected, isConnecting, connectionType, usbSubtype, usbBaudRate, connectedDeviceAddress } = get();
         if (isConnected || isConnecting) return { success: true };
 
+        // 1. Android Bluetooth Auto-Connect
         if (isAndroid || isNative) {
           try {
             const res = await AndroidPrinter.autoConnect();
@@ -1255,7 +1564,69 @@ export const usePrinterStore = create(
           } catch (err) {
             console.warn('[PrinterStore] autoConnectPrinter notice:', err);
           }
+          return { success: false };
         }
+
+        // 2. USB Auto-Connect (Browser WebUSB or Web Serial)
+        if (connectionType === 'USB') {
+          // A. Direct WebUSB
+          if ((!usbSubtype || usbSubtype === 'DIRECT') && typeof navigator !== 'undefined' && navigator.usb?.getDevices) {
+            try {
+              const devices = await navigator.usb.getDevices();
+              if (devices && devices.length > 0) {
+                const device = devices[0];
+                const { interfaceNumber, endpointNumber } = await setupWebUsbDevice(device);
+                activeUsbDevice = device;
+                activeUsbInterfaceNumber = interfaceNumber;
+                activeUsbOutEndpoint = endpointNumber;
+
+                const deviceName = device.productName || device.manufacturerName || 'Printer Thermal USB';
+                set({
+                  isConnected: true,
+                  isConnecting: false,
+                  connectionType: 'USB',
+                  usbSubtype: 'DIRECT',
+                  connectedDeviceName: `${deviceName} (USB)`,
+                });
+                if (!silent) toast.success(`Printer USB otomatis terhubung: ${deviceName}`);
+                return { success: true, name: deviceName };
+              }
+            } catch (usbErr) {
+              console.warn('[PrinterStore] WebUSB autoConnect notice:', usbErr);
+            }
+          }
+
+          // B. Web Serial Port
+          if ((!usbSubtype || usbSubtype === 'SERIAL') && typeof navigator !== 'undefined' && navigator.serial?.getPorts) {
+            try {
+              const ports = await navigator.serial.getPorts();
+              if (ports && ports.length > 0) {
+                const port = ports[0];
+                const baud = usbBaudRate || 9600;
+                await setupWebSerialPort(port, baud);
+                activeSerialPort = port;
+
+                const info = port.getInfo ? port.getInfo() : {};
+                const devName = info.usbVendorId
+                  ? `Port COM (VID:${info.usbVendorId.toString(16).toUpperCase()})`
+                  : `Printer Serial COM (${baud} bps)`;
+
+                set({
+                  isConnected: true,
+                  isConnecting: false,
+                  connectionType: 'USB',
+                  usbSubtype: 'SERIAL',
+                  connectedDeviceName: devName,
+                });
+                if (!silent) toast.success(`Port Serial otomatis terhubung: ${devName}`);
+                return { success: true, name: devName };
+              }
+            } catch (serialErr) {
+              console.warn('[PrinterStore] Web Serial autoConnect notice:', serialErr);
+            }
+          }
+        }
+
         return { success: false };
       },
     }),
@@ -1263,6 +1634,8 @@ export const usePrinterStore = create(
       name: 'komazi-printer-storage',
       partialize: (state) => ({
         connectionType: state.connectionType,
+        usbSubtype: state.usbSubtype,
+        usbBaudRate: state.usbBaudRate,
         paperWidth: state.paperWidth,
         autoPrintOnCheckout: state.autoPrintOnCheckout,
         autoPrintKitchenOnCheckout: state.autoPrintKitchenOnCheckout,
@@ -1277,3 +1650,29 @@ export const usePrinterStore = create(
     }
   )
 );
+
+// Register hardware disconnect event listeners for USB and Serial
+if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+  if (navigator.usb) {
+    navigator.usb.addEventListener('disconnect', (event) => {
+      const state = usePrinterStore.getState();
+      if (state.connectionType === 'USB' && activeUsbDevice && event.device === activeUsbDevice) {
+        activeUsbDevice = null;
+        activeUsbInterfaceNumber = null;
+        activeUsbOutEndpoint = null;
+        usePrinterStore.setState({ isConnected: false, connectedDeviceName: null });
+        toast.warning('Kabel printer USB dicabut / terputus.');
+      }
+    });
+  }
+  if (navigator.serial) {
+    navigator.serial.addEventListener('disconnect', (event) => {
+      const state = usePrinterStore.getState();
+      if (state.connectionType === 'USB' && activeSerialPort && event.target === activeSerialPort) {
+        activeSerialPort = null;
+        usePrinterStore.setState({ isConnected: false, connectedDeviceName: null });
+        toast.warning('Kabel printer Serial / COM dicabut / terputus.');
+      }
+    });
+  }
+}

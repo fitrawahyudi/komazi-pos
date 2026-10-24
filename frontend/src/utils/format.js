@@ -267,4 +267,17 @@ export function isToday(dateInput) {
   );
 }
 
+/**
+ * Return date string in YYYY-MM-DD format (local time)
+ */
+export function getLocalDateString(dateInput = new Date()) {
+  if (dateInput === null || dateInput === undefined || dateInput === '') return '';
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 

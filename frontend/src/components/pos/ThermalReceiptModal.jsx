@@ -6,6 +6,7 @@ import {
   X,
   Receipt,
   Bluetooth,
+  Usb,
   AlertCircle,
   Loader2,
   QrCode,
@@ -27,10 +28,11 @@ import { isAndroid, isNative } from '../../services/platform';
 import LoadingButton from '../ui/loading/LoadingButton';
 
 export default function ThermalReceiptModal({ order, onClose, initialType = 'customer' }) {
-  const { openBluetoothModal } = useUiStore();
+  const { openBluetoothModal, openUsbModal } = useUiStore();
   const {
     paperWidth: defaultPaperWidth,
     connectionType,
+    setConnectionType,
     isConnected,
     connectedDeviceName,
     sendRawData,
@@ -38,6 +40,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
     autoPrintOnCheckout,
     autoPrintMerchantCopy,
     connectBluetooth,
+    connectUsb,
     recordPrintJob,
     activeReceiptPrinter,
     kickCashDrawer,
@@ -280,6 +283,13 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
 
     // B. Bluetooth selected but not yet connected
     if (connectionType === 'BLUETOOTH' && !isConnected) {
+      if (typeof window !== 'undefined' && window.isSecureContext === false) {
+        toast.warning(
+          'Akses Bluetooth dibatasi browser pada koneksi HTTP. Silakan gunakan mode "Driver Sistem" atau buka via localhost/HTTPS.'
+        );
+        openBluetoothModal();
+        return;
+      }
       setIsPrinting(true);
       try {
         const res = await connectBluetooth();
@@ -347,7 +357,78 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
       return;
     }
 
-    // C. Default Universal Browser / System Printer Dialog
+    // C. USB selected but not yet connected
+    if (connectionType === 'USB' && !isConnected) {
+      if (typeof window !== 'undefined' && window.isSecureContext === false && !navigator?.usb && !navigator?.serial) {
+        toast.warning(
+          'Fitur WebUSB/Serial dibatasi browser pada koneksi HTTP. Silakan gunakan mode "Driver Sistem" atau buka via localhost/HTTPS.'
+        );
+        openUsbModal();
+        return;
+      }
+      setIsPrinting(true);
+      try {
+        const res = await connectUsb();
+        if (res && res.success) {
+          toast.info('Mengirim struk ke printer thermal USB...');
+          if (isBoth) {
+            const custBytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
+              showQris: showQrisOnReceipt,
+              kickCashDrawer,
+              isMerchantCopy: false,
+            });
+            await sendRawData(custBytes);
+            await new Promise((r) => setTimeout(r, 500));
+            const merchBytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
+              showQris: false,
+              kickCashDrawer: false,
+              isMerchantCopy: true,
+            });
+            await sendRawData(merchBytes);
+            toast.success('Struk pelanggan & pertinggal berhasil dicetak!');
+          } else if (isStation) {
+            const itemsToPrint = isBar ? baristaItems : kitchenItems;
+            const stationName = isBar ? 'BARISTA' : 'DAPUR';
+            if (itemsToPrint.length === 0) {
+              toast.warning(`Tidak ada item untuk stasiun ${stationName}`);
+              setIsPrinting(false);
+              return;
+            }
+            const bytes = buildKitchenTicketEscPos(order, {
+              paperWidth,
+              stationName,
+              items: itemsToPrint,
+            });
+            await sendRawData(bytes);
+            toast.success(`Tiket ${stationName.toLowerCase()} berhasil dicetak!`);
+          } else {
+            const bytes = buildOrderReceiptEscPos(order, settings, paperWidth, {
+              showQris: !isMerch && showQrisOnReceipt,
+              kickCashDrawer,
+              isMerchantCopy: isMerch,
+            });
+            const copies = printCopies || 1;
+            for (let i = 0; i < copies; i++) {
+              const ok = await sendRawData(bytes);
+              if (!ok) throw new Error('Pengiriman data printer terputus');
+              if (i < copies - 1) await new Promise((r) => setTimeout(r, 400));
+            }
+            toast.success(`Struk ${isMerch ? 'pertinggal' : 'pelanggan'} berhasil dicetak langsung ke printer!`);
+          }
+          printQueue.printedJobIds.add(checkJobId);
+        } else if (res && !res.cancelled) {
+          openUsbModal();
+        }
+      } catch (err) {
+        toast.info('Silakan hubungkan printer USB Anda.');
+        openUsbModal();
+      } finally {
+        setIsPrinting(false);
+      }
+      return;
+    }
+
+    // D. Default Universal Browser / System Printer Dialog
     if (targetType !== receiptType && !isBoth) {
       setReceiptType(targetType);
       await new Promise((r) => setTimeout(r, 100));
@@ -389,8 +470,8 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
       if (showQrisOnReceipt && !isQrReady) {
         return;
       }
-      // Web Bluetooth memerlukan user gesture langsung (klik), jangan auto-trigger timer jika belum terhubung
-      if (connectionType === 'BLUETOOTH' && !isConnected) {
+      // Web Bluetooth & WebUSB/Serial memerlukan interaksi pengguna jika belum terhubung
+      if ((connectionType === 'BLUETOOTH' || connectionType === 'USB') && !isConnected) {
         return;
       }
       const timer = setTimeout(() => {
@@ -956,11 +1037,75 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                 </div>
               )}
 
-              {/* 4. Status Perangkat Printer */}
+              {/* 4. Pemilihan Jalur Cetak / Status Perangkat Printer */}
               <div className="space-y-2">
-                <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
-                  Perangkat Pencetak
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
+                    Jalur Cetak / Printer
+                  </label>
+                  {isConnected && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Aktif ({connectionType})
+                    </span>
+                  )}
+                </div>
+
+                {/* 3-Way Mode Selector: USB, Bluetooth, Driver Sistem */}
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-komazi-surface-2 rounded-xl border border-komazi-border text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectionType('USB');
+                      if (!isConnected || connectionType !== 'USB') openUsbModal();
+                    }}
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      connectionType === 'USB'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                    }`}
+                    title="Cetak langsung lewat kabel USB atau port Serial COM"
+                  >
+                    <Usb className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Kabel USB</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectionType('BLUETOOTH');
+                      if (!isConnected || connectionType !== 'BLUETOOTH') openBluetoothModal();
+                    }}
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      connectionType === 'BLUETOOTH'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                    }`}
+                    title="Cetak via Bluetooth thermal ESC/POS"
+                  >
+                    <Bluetooth className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Bluetooth</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectionType('BROWSER');
+                      toast.info('Mode Cetak Driver Sistem / Browser aktif');
+                    }}
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      connectionType === 'BROWSER'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                    }`}
+                    title="Cetak lewat driver printer Windows/Mac atau dialog browser (Bisa di HTTP)"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Driver Sistem</span>
+                  </button>
+                </div>
+
+                {/* Status Perangkat & Tombol Hubungkan */}
                 <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 min-w-0">
@@ -976,24 +1121,41 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                         <>
                           <span className="w-2 h-2 rounded-full bg-neutral-500 shrink-0" />
                           <span className="font-medium text-komazi-muted truncate">
-                            Driver Cetak Browser / Sistem (Siap)
+                            {connectionType === 'USB'
+                              ? 'Kabel USB Belum Terhubung'
+                              : connectionType === 'BLUETOOTH'
+                              ? 'Bluetooth Belum Terhubung'
+                              : 'Driver Cetak Browser (Universal - Siap)'}
                           </span>
                         </>
                       )}
                     </div>
 
-                    {!isConnected && (
+                    {!isConnected && connectionType !== 'BROWSER' && (
                       <button
                         type="button"
-                        onClick={openBluetoothModal}
+                        onClick={connectionType === 'USB' ? openUsbModal : openBluetoothModal}
                         className="inline-flex items-center gap-1 text-[11px] font-semibold text-komazi-coral hover:underline shrink-0 ml-2 cursor-pointer"
                       >
-                        <Bluetooth className="w-3.5 h-3.5" />
+                        {connectionType === 'USB' ? <Usb className="w-3.5 h-3.5" /> : <Bluetooth className="w-3.5 h-3.5" />}
                         <span>Hubungkan</span>
                       </button>
                     )}
                   </div>
                 </div>
+
+                {/* Info jika diakses via HTTP non-localhost */}
+                {typeof window !== 'undefined' && window.isSecureContext === false && (connectionType === 'BLUETOOTH' || connectionType === 'USB') && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 flex items-start gap-2 leading-relaxed">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-semibold block">Akses via Jaringan HTTP (Non-Secure Context)</span>
+                      <span className="text-[10px] text-amber-400/90">
+                        Browser membatasi direct hardware di HTTP. Pilih <strong>Driver Sistem</strong> untuk langsung mencetak, atau buka POS di <code>localhost</code> / pasang <code>HTTPS</code>.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

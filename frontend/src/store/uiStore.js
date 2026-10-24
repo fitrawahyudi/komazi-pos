@@ -49,6 +49,10 @@ export const useUiStore = create(
       openBluetoothModal: () => set({ isBluetoothModalOpen: true }),
       closeBluetoothModal: () => set({ isBluetoothModalOpen: false }),
 
+      isUsbModalOpen: false,
+      openUsbModal: () => set({ isUsbModalOpen: true }),
+      closeUsbModal: () => set({ isUsbModalOpen: false }),
+
       // Top Progress Bar state with auto-timeout watchdog (max 8 seconds)
       isTopBarLoading: false,
       startTopBarLoading: () => {

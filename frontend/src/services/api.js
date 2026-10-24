@@ -1,5 +1,5 @@
-import { useUiStore } from '../store/uiStore';
-import { isNative } from './platform';
+import { useUiStore } from '../store/uiStore.js';
+import { isNative } from './platform.js';
 
 /**
  * Normalizes backend API base URL from VITE_API_URL or local fallback.
@@ -9,7 +9,7 @@ import { isNative } from './platform';
  */
 export function resolveApiBaseUrl() {
   const customUrl = typeof localStorage !== 'undefined' ? (localStorage.getItem('komazi_custom_api_url') || '').trim() : '';
-  const envUrl = (customUrl || import.meta.env.VITE_API_URL || '').trim();
+  const envUrl = (customUrl || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_URL) || '').trim();
   const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
   // In web browser loaded over HTTPS:

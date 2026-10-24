@@ -37,7 +37,7 @@ import { generateQrSvgString, DEFAULT_STATIC_QRIS } from '../utils/qris';
 import { isAndroid, isNative } from '../services/platform';
 
 export default function PrinterPage({ isEmbedded = false }) {
-  const { openBluetoothModal } = useUiStore();
+  const { openBluetoothModal, openUsbModal } = useUiStore();
   const {
     connectionType,
     paperWidth,
@@ -162,11 +162,7 @@ export default function PrinterPage({ isEmbedded = false }) {
 
   // Handle USB Click
   const handleUsbClick = async () => {
-    if (isConnected && connectionType === 'USB') {
-      await disconnectPrinter();
-      return;
-    }
-    await connectUsb();
+    openUsbModal();
   };
 
   // Handle Select Universal Browser Driver
@@ -433,9 +429,9 @@ export default function PrinterPage({ isEmbedded = false }) {
                 )}
               </div>
               <div>
-                <h3 className="font-bold text-sm text-komazi-text">USB Serial (Kabel)</h3>
+                <h3 className="font-bold text-sm text-komazi-text">Kabel USB (Thermal POS)</h3>
                 <p className="text-[11px] text-komazi-muted leading-relaxed">
-                  Printer thermal USB langsung ke komputer kasir (Chrome/Edge Web Serial COM Port).
+                  Printer thermal USB langsung atau port serial COM (Web Serial).
                 </p>
               </div>
             </div>
@@ -445,7 +441,7 @@ export default function PrinterPage({ isEmbedded = false }) {
                 Status:{' '}
                 <span className="font-semibold text-komazi-text">
                   {isConnected && connectionType === 'USB'
-                    ? connectedDeviceName || 'Port COM Aktif'
+                    ? connectedDeviceName || 'Printer USB Aktif'
                     : 'Belum Terhubung'}
                 </span>
               </div>
@@ -455,16 +451,19 @@ export default function PrinterPage({ isEmbedded = false }) {
                 disabled={isConnecting}
                 className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm ${
                   isConnected && connectionType === 'USB'
-                    ? 'bg-neutral-800 hover:bg-neutral-700 text-rose-400 border border-neutral-700'
+                    ? 'bg-neutral-800 hover:bg-neutral-700 text-komazi-teal-light border border-neutral-700'
                     : 'bg-komazi-coral hover:bg-komazi-coral-dark text-white'
                 }`}
               >
                 {isConnected && connectionType === 'USB' ? (
-                  <span>Putuskan USB</span>
+                  <>
+                    <Usb className="w-3.5 h-3.5 text-komazi-teal-light" />
+                    <span>Atur / Putuskan USB</span>
+                  </>
                 ) : (
                   <>
                     <Usb className="w-3.5 h-3.5" />
-                    <span>Sambungkan USB (COM)</span>
+                    <span>Sambungkan Kabel USB</span>
                   </>
                 )}
               </button>

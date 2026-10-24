@@ -265,6 +265,105 @@ ${recipeLines}
     }
   }
 
-  return sections.join('\n\n');
+  // Section 7: Pengeluaran & Estimasi Laba Bersih Bulan Ini (Hanya OWNER & MANAGER)
+  const expenses = businessContext?.expenses;
+  if ((role === 'OWNER' || role === 'MANAGER') && expenses) {
+    const catLines = (expenses.topCategories || []).slice(0, 5).map(
+      (c) => `  - ${c.category}: ${c.amountFormatted}`
+    ).join('\n');
+
+    let profitText = '';
+    if (role === 'OWNER' && businessContext.salesSummary?.netProfitEstimated) {
+      profitText = `\n• Estimasi Laba Bersih Bulan Ini (Omzet - Biaya Operasional): ${businessContext.salesSummary.netProfitEstimated.amountFormatted}`;
+    }
+
+    sections.push(`
+=== DATA PENGELUARAN & KEUANGAN BULAN INI ===
+• Total Pengeluaran Bulan Ini: ${expenses.totalMonthExpenseFormatted} (${expenses.expenseCount} pos pengeluaran)${profitText}
+• Kategori Pengeluaran Terbesar:
+${catLines || '  - Tidak ada data'}
+    `.trim());
+  }
+
+  // Section 8: Data Aset & Peralatan Kedai (Hanya OWNER & MANAGER)
+  const assets = businessContext?.assets;
+  if ((role === 'OWNER' || role === 'MANAGER') && assets && assets.totalAssetsCount > 0) {
+    const assetLines = (assets.topAssets || []).map(
+      (a) => `  - ${a.name} (${a.category}): Nilai buku ${a.currentValueFormatted}`
+    ).join('\n');
+    sections.push(`
+=== DATA ASET & PERALATAN KEDAI ===
+• Total Aset Terdata: ${assets.totalAssetsCount} item (Total Nilai Buku: ${assets.totalCurrentValueFormatted})
+• Peralatan Utama:
+${assetLines}
+    `.trim());
+  }
+
+  // Section 9: Audit Selisih Kas Laci Shift Kasir (Hanya OWNER & MANAGER)
+  const shiftAudit = businessContext?.shiftAudit;
+  if ((role === 'OWNER' || role === 'MANAGER') && shiftAudit && shiftAudit.length > 0) {
+    const auditLines = shiftAudit.map(
+      (s) => `  - Shift #${s.shiftId} (${s.cashierName}): Status ${s.status} (${s.differenceFormatted})`
+    ).join('\n');
+    sections.push(`
+=== AUDIT REKONSILIASI KAS SHIFT TERAKHIR ===
+${auditLines}
+    `.trim());
+  }
+
+  // Section 10: Data Member & Loyalitas Pelanggan (OWNER, MANAGER, CASHIER)
+  const memberSummary = businessContext?.customerMembersSummary;
+  if (memberSummary && (role === 'OWNER' || role === 'MANAGER' || role === 'CASHIER')) {
+    const topMembers = (memberSummary.topMembers || []).slice(0, 5).map(
+      (m, idx) => `  ${idx + 1}. ${m.name} (Tier ${m.tier || 'MEMBER'}, ${m.points || 0} poin, ${m.visitCount || 0}x kunjungan)`
+    ).join('\n');
+    sections.push(`
+=== DATA MEMBER & LOYALITAS PELANGGAN ===
+• Total Member Terdaftar: ${memberSummary.totalActiveMembers || 0} pelanggan
+• Pelanggan Paling Loyal:
+${topMembers || '  - Belum ada member'}
+    `.trim());
+  }
+
+  return redactSensitiveData(sections.join('\n\n'));
 }
+
+/**
+ * Sensor data sensitif (password, PIN, token, hash) sebelum dikirim ke AI.
+ * Mendukung pembersihan string teks maupun objek/array secara rekursif.
+ */
+export function redactSensitiveData(input) {
+  if (input === null || input === undefined) return input;
+
+  // Handle Objek / Array secara rekursif
+  if (typeof input === 'object') {
+    if (Array.isArray(input)) {
+      return input.map((item) => redactSensitiveData(item));
+    }
+    const sanitizedObj = {};
+    const sensitiveKeyPattern = /password|pin|token|secret|hash|credential/i;
+    for (const [key, val] of Object.entries(input)) {
+      if (sensitiveKeyPattern.test(key)) {
+        sanitizedObj[key] = '[REDACTED_SECRET]';
+      } else if (typeof val === 'object' && val !== null) {
+        sanitizedObj[key] = redactSensitiveData(val);
+      } else if (typeof val === 'string') {
+        sanitizedObj[key] = redactSensitiveData(val);
+      } else {
+        sanitizedObj[key] = val;
+      }
+    }
+    return sanitizedObj;
+  }
+
+  // Handle String
+  if (typeof input === 'string') {
+    return input
+      .replace(/(?:[\w-]*password[\w-]*|[\w-]*pin[\w-]*|[\w-]*secret[\w-]*|[\w-]*token[\w-]*|[\w-]*hash[\w-]*)\s*[:=]\s*['"]?[^\s,'"}]+['"]?/gi, '[REDACTED_SECRET]')
+      .replace(/\b\d{4,6}\b(?=.*(?:pin|supervisor|otorisasi))/gi, '[REDACTED_SECRET]');
+  }
+
+  return input;
+}
+
 

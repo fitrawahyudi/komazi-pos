@@ -1,5 +1,5 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
-import { WebPrinter } from './printer.web';
+import { WebPrinter } from './printer.web.js';
 
 export const KomaziPrinter = registerPlugin('KomaziPrinter');
 

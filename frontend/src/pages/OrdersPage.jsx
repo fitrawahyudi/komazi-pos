@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useOrdersStore } from '../store/ordersStore';
 import { useAuthStore } from '../store/authStore';
 import { useShiftStore } from '../store/shiftStore';
-import { formatRupiah, formatDateTime } from '../utils/format';
+import { formatRupiah, formatDateTime, getLocalDateString } from '../utils/format';
 import ThermalReceiptModal from '../components/pos/ThermalReceiptModal';
 import ShiftModal from '../components/shift/ShiftModal';
 import Pagination from '../components/ui/Pagination';
@@ -93,14 +93,65 @@ export default function OrdersPage() {
   // Check if there is an active shift running
   const hasActiveShift = Boolean(activeShift && !activeShift.isClosed);
 
-  // Filter States (Matching requested filter design)
+  // Filter States (Default: hari ini)
+  const todayStr = useMemo(() => getLocalDateString(new Date()), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = usePersistentState('orders_statusFilter', 'ALL'); // 'ALL' | 'PAID' | 'VOIDED' | 'REFUNDED'
   const [methodFilter, setMethodFilter] = usePersistentState('orders_methodFilter', 'ALL'); // 'ALL' | 'CASH' | 'QRIS' | 'TRANSFER'
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => getLocalDateString(new Date()));
+  const [endDate, setEndDate] = useState(() => getLocalDateString(new Date()));
   const [shiftFilter, setShiftFilter] = usePersistentState('orders_shiftFilter', 'ALL'); // 'ALL' | 'ACTIVE' | specific shiftId
   const [cashierFilter, setCashierFilter] = usePersistentState('orders_cashierFilter', 'ALL'); // 'ALL' | cashierName
+
+  // Preset Tanggal Aktif (TODAY | YESTERDAY | 7DAYS | THIS_MONTH | ALL | CUSTOM)
+  const activeDatePreset = useMemo(() => {
+    if (!startDate && !endDate) return 'ALL';
+    if (startDate === todayStr && endDate === todayStr) return 'TODAY';
+
+    const yDate = new Date();
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = getLocalDateString(yDate);
+    if (startDate === yStr && endDate === yStr) return 'YESTERDAY';
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const sevenStr = getLocalDateString(sevenDaysAgo);
+    if (startDate === sevenStr && endDate === todayStr) return '7DAYS';
+
+    const now = new Date();
+    const firstOfMonth = getLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
+    if (startDate === firstOfMonth && endDate === todayStr) return 'THIS_MONTH';
+
+    return 'CUSTOM';
+  }, [startDate, endDate, todayStr]);
+
+  const handleSelectDatePreset = (preset) => {
+    const now = new Date();
+    const tStr = getLocalDateString(now);
+
+    if (preset === 'TODAY') {
+      setStartDate(tStr);
+      setEndDate(tStr);
+    } else if (preset === 'YESTERDAY') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = getLocalDateString(y);
+      setStartDate(yStr);
+      setEndDate(yStr);
+    } else if (preset === '7DAYS') {
+      const past = new Date();
+      past.setDate(past.getDate() - 6);
+      setStartDate(getLocalDateString(past));
+      setEndDate(tStr);
+    } else if (preset === 'THIS_MONTH') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(getLocalDateString(start));
+      setEndDate(tStr);
+    } else if (preset === 'ALL') {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -196,7 +247,9 @@ export default function OrdersPage() {
 
       // 5. Date Range filter (startDate & endDate)
       if (startDate || endDate) {
+        if (!order.createdAt) return false;
         const localDate = new Date(order.createdAt);
+        if (isNaN(localDate.getTime())) return false;
         const y = localDate.getFullYear();
         const m = String(localDate.getMonth() + 1).padStart(2, '0');
         const d = String(localDate.getDate()).padStart(2, '0');
@@ -243,23 +296,24 @@ export default function OrdersPage() {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, methodFilter, startDate, endDate, shiftFilter, cashierFilter]);
 
-  // Status apakah ada filter yang sedang aktif
+  // Status apakah ada filter yang berbeda dari kondisi default (Hari Ini)
   const isFiltered = Boolean(
     searchQuery.trim() ||
     statusFilter !== 'ALL' ||
     methodFilter !== 'ALL' ||
-    startDate ||
-    endDate ||
     shiftFilter !== 'ALL' ||
-    cashierFilter !== 'ALL'
+    cashierFilter !== 'ALL' ||
+    startDate !== todayStr ||
+    endDate !== todayStr
   );
 
   const handleResetFilters = () => {
     setSearchQuery('');
     setStatusFilter('ALL');
     setMethodFilter('ALL');
-    setStartDate('');
-    setEndDate('');
+    const tStr = getLocalDateString(new Date());
+    setStartDate(tStr);
+    setEndDate(tStr);
     setShiftFilter('ALL');
     setCashierFilter('ALL');
     setCurrentPage(1);
@@ -382,7 +436,11 @@ export default function OrdersPage() {
 
     let dateRangeLabel = 'Semua Tanggal';
     if (startDate && endDate) {
-      dateRangeLabel = `${startDate} s/d ${endDate}`;
+      if (startDate === endDate) {
+        dateRangeLabel = startDate === todayStr ? `Hari Ini (${startDate})` : startDate;
+      } else {
+        dateRangeLabel = `${startDate} s/d ${endDate}`;
+      }
     } else if (startDate) {
       dateRangeLabel = `Mulai ${startDate}`;
     } else if (endDate) {
@@ -822,46 +880,112 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {/* Filter Opsi Shift & Kasir */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-komazi-border/50 text-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-1">
-            Opsi:
-          </span>
-
-          {/* Filter Shift */}
-          <div className="relative">
-            <select
-              value={shiftFilter}
-              onChange={(e) => setShiftFilter(e.target.value)}
-              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-              title="Filter berdasarkan shift"
+        {/* Preset Tanggal Cepat & Filter Opsi */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-komazi-border/50 text-xs">
+          {/* Quick Date Presets */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-0.5 flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-komazi-coral" />
+              <span>Waktu:</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => handleSelectDatePreset('TODAY')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                activeDatePreset === 'TODAY'
+                  ? 'bg-komazi-coral text-white shadow-sm'
+                  : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
+              }`}
             >
-              <option value="ALL">Semua Shift</option>
-              {shiftList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+              Hari Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectDatePreset('YESTERDAY')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                activeDatePreset === 'YESTERDAY'
+                  ? 'bg-komazi-coral text-white shadow-sm'
+                  : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
+              }`}
+            >
+              Kemarin
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectDatePreset('7DAYS')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                activeDatePreset === '7DAYS'
+                  ? 'bg-komazi-coral text-white shadow-sm'
+                  : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
+              }`}
+            >
+              7 Hari
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectDatePreset('THIS_MONTH')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                activeDatePreset === 'THIS_MONTH'
+                  ? 'bg-komazi-coral text-white shadow-sm'
+                  : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
+              }`}
+            >
+              Bulan Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectDatePreset('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                activeDatePreset === 'ALL'
+                  ? 'bg-komazi-coral text-white shadow-sm'
+                  : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
+              }`}
+            >
+              Semua
+            </button>
           </div>
 
-          {/* Filter Kasir */}
-          <div className="relative">
-            <select
-              value={cashierFilter}
-              onChange={(e) => setCashierFilter(e.target.value)}
-              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-              title="Filter berdasarkan kasir"
-            >
-              <option value="ALL">Semua Kasir</option>
-              {distinctCashiers.map((name) => (
-                <option key={name} value={name}>
-                  Kasir: {name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+          {/* Filter Opsi Shift & Kasir */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-0.5">
+              Opsi:
+            </span>
+
+            {/* Filter Shift */}
+            <div className="relative">
+              <select
+                value={shiftFilter}
+                onChange={(e) => setShiftFilter(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+                title="Filter berdasarkan shift"
+              >
+                <option value="ALL">Semua Shift</option>
+                {shiftList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+            </div>
+
+            {/* Filter Kasir */}
+            <div className="relative">
+              <select
+                value={cashierFilter}
+                onChange={(e) => setCashierFilter(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
+                title="Filter berdasarkan kasir"
+              >
+                <option value="ALL">Semua Kasir</option>
+                {distinctCashiers.map((name) => (
+                  <option key={name} value={name}>
+                    Kasir: {name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
+            </div>
           </div>
         </div>
       </div>
@@ -898,11 +1022,27 @@ export default function OrdersPage() {
                     >
                       <Receipt className="w-10 h-10 mx-auto text-komazi-muted/40" />
                       <p className="font-semibold text-sm text-komazi-text">
-                        Tidak ada transaksi yang sesuai kriteria filter.
+                        {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
+                          ? 'Belum ada transaksi untuk hari ini.'
+                          : 'Tidak ada transaksi yang sesuai kriteria filter.'}
                       </p>
-                      <p className="text-xs text-komazi-muted">
-                        Coba sesuaikan kata kunci pencarian, filter kasir, shift, atau rentang waktu di atas.
+                      <p className="text-xs text-komazi-muted max-w-md mx-auto">
+                        {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
+                          ? 'Gunakan tombol preset atau pilih rentang tanggal lain untuk melihat riwayat sebelumnya.'
+                          : 'Coba sesuaikan kata kunci pencarian, filter kasir, shift, atau rentang waktu di atas.'}
                       </p>
+                      {(activeDatePreset === 'TODAY' || isFiltered) && orders.length > 0 && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectDatePreset('ALL')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral/90 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>Lihat Semua Riwayat Transaksi</span>
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -1283,7 +1423,11 @@ export default function OrdersPage() {
           method: methodFilter,
           dateRange:
             startDate && endDate
-              ? `${startDate} s/d ${endDate}`
+              ? startDate === endDate
+                ? startDate === todayStr
+                  ? `Hari Ini (${startDate})`
+                  : startDate
+                : `${startDate} s/d ${endDate}`
               : startDate
               ? `Mulai ${startDate}`
               : endDate

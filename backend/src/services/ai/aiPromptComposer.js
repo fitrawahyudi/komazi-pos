@@ -129,42 +129,42 @@ export function classifyIntent(rawQuery = '') {
  * @param {string} params.query
  * @returns {object|null}
  */
-// export function resolveActionHint({ intent, matchedSop, query = '' } = {}) {
-//   // Prioritas 1: Action Hint bawaan dari entri SOP yang cocok
-//   if (matchedSop && matchedSop.actionHint) {
-//     return matchedSop.actionHint;
-//   }
+export function resolveActionHint({ intent, matchedSop, query = '' } = {}) {
+  // Prioritas 1: Action Hint bawaan dari entri SOP yang cocok
+  if (matchedSop && matchedSop.actionHint) {
+    return matchedSop.actionHint;
+  }
 
-//   const qLower = query.toLowerCase();
+  const qLower = query.toLowerCase();
 
-//   // Prioritas 2: Pemetaan berdasarkan kata kunci spesifik
-//   if (qLower.includes('printer') || qLower.includes('bluetooth') || qLower.includes('cetak struk')) {
-//     return { type: 'OPEN_MODAL', targetModal: 'PRINTER_MODAL', label: 'Buka Pengaturan Printer' };
-//   }
-//   if (qLower.includes('split') || qLower.includes('pisah tagihan')) {
-//     return { type: 'NAVIGATE', route: '/orders', targetModal: 'OPEN_BILLS', label: 'Buka Tagihan Aktif' };
-//   }
-//   if (qLower.includes('merge') || qLower.includes('gabung')) {
-//     return { type: 'NAVIGATE', route: '/orders', targetModal: 'MERGE_BILL', label: 'Buka Panel Gabung Bill' };
-//   }
-//   if (qLower.includes('shift') || qLower.includes('kasir') || qLower.includes('laci kas') || qLower.includes('modal awal')) {
-//     return { type: 'OPEN_MODAL', targetModal: 'SHIFT_MODAL', label: 'Buka Rekap Shift Kasir' };
-//   }
-//   if (qLower.includes('resep') || qLower.includes('takaran') || qLower.includes('komposisi')) {
-//     return { type: 'NAVIGATE', route: '/menu', targetModal: 'RECIPE_MODAL', label: 'Buka Manajemen Resep' };
-//   }
-//   if (qLower.includes('stok') || qLower.includes('bahan') || qLower.includes('kritis') || qLower.includes('menipis')) {
-//     return { type: 'NAVIGATE', route: '/stock', label: 'Buka Manajemen Stok' };
-//   }
-//   if (qLower.includes('workspace') || qLower.includes('coworking') || qLower.includes('sewa meja')) {
-//     return { type: 'NAVIGATE', route: '/workspace', label: 'Buka Manajemen Workspace' };
-//   }
-//   if (intent === AI_INTENT_TYPES.FINANCIAL_SALES || qLower.includes('kemarin')) {
-//     return { type: 'NAVIGATE', route: '/analytics', label: 'Buka Analisis Penjualan' };
-//   }
+  // Prioritas 2: Pemetaan berdasarkan kata kunci spesifik
+  if (qLower.includes('printer') || qLower.includes('bluetooth') || qLower.includes('cetak struk')) {
+    return { type: 'OPEN_MODAL', targetModal: 'PRINTER_MODAL', label: 'Buka Pengaturan Printer' };
+  }
+  if (qLower.includes('split') || qLower.includes('pisah tagihan')) {
+    return { type: 'NAVIGATE', route: '/orders', targetModal: 'OPEN_BILLS', label: 'Buka Tagihan Aktif' };
+  }
+  if (qLower.includes('merge') || qLower.includes('gabung')) {
+    return { type: 'NAVIGATE', route: '/orders', targetModal: 'MERGE_BILL', label: 'Buka Panel Gabung Bill' };
+  }
+  if (qLower.includes('shift') || qLower.includes('kasir') || qLower.includes('laci kas') || qLower.includes('modal awal')) {
+    return { type: 'OPEN_MODAL', targetModal: 'SHIFT_MODAL', label: 'Buka Rekap Shift Kasir' };
+  }
+  if (qLower.includes('resep') || qLower.includes('takaran') || qLower.includes('komposisi')) {
+    return { type: 'NAVIGATE', route: '/menu', targetModal: 'RECIPE_MODAL', label: 'Buka Manajemen Resep' };
+  }
+  if (qLower.includes('stok') || qLower.includes('bahan') || qLower.includes('kritis') || qLower.includes('menipis')) {
+    return { type: 'NAVIGATE', route: '/stock', label: 'Buka Manajemen Stok' };
+  }
+  if (qLower.includes('workspace') || qLower.includes('coworking') || qLower.includes('sewa meja')) {
+    return { type: 'NAVIGATE', route: '/workspace', label: 'Buka Manajemen Workspace' };
+  }
+  if (intent === AI_INTENT_TYPES.FINANCIAL_SALES || qLower.includes('kemarin')) {
+    return { type: 'NAVIGATE', route: '/analytics', label: 'Buka Analisis Penjualan' };
+  }
 
-//   return null;
-// }
+  return null;
+}
 
 /**
  * Menyusun prompt sistem terpadu (Unified System Prompt) yang ringkas, beridentitas kuat,

@@ -1,54 +1,41 @@
-# Task List: Preview Kertas Thermal & Toggle Cetak Otomatis Pesanan KDS
+# Task Breakdown Checklist: Komazi AI Upgrade
 
-## Phase 1: KDS Printer Modal Upgrade
+- [x] **Task 1: Isolasi Riwayat Chat Komazi AI per-Role (Frontend)**
+  - [x] Update `aiAnalyticsStore.js` to store `messagesByRole: { OWNER: [], MANAGER: [], CASHIER: [], BARISTA: [], KITCHEN: [] }`
+  - [x] Ensure switching accounts or opening modal loads role-specific conversation
+  - [x] Scope `clearChat` to current active role only
+  - [x] Update persistence partializer in `aiAnalyticsStore.js` with versioned key `komazi-ai-chat-history-v2`
+- [x] **Task 2: Ekstensi Konteks Database Komazi AI & Sensor Data Sensitif (Backend)**
+  - [x] Extend `komaziAiContextAggregator.js` and `salesAnalyticsEngine.js` to aggregate Expenses, Fixed Assets, Shift Cash Audits, CRM Loyalty Members, Recipes, Workspace
+  - [x] Add recursive redaction filter (`redactSensitiveData`) for sensitive fields (passwords, hashes, supervisor PINs, tokens)
+  - [x] Enforce role-based visibility rules (Owner/Manager vs Cashier/Barista/Kitchen)
+- [x] **Task 3: Integrasi Eksekusi Cron Job via Chatbot AI (Backend)**
+  - [x] Add scheduling & cron job intent detection in `aiPromptComposer.js` & `aiAnalyticsController.js`
+  - [x] Connect `aiAnalyticsController.js` to `universalSchedulerAgent` & `jobRegistryService`
+  - [x] Implement natural language cron parsing for recurring reports and reminders
+  - [x] Enforce authorization (only OWNER/MANAGER can create/manage cron jobs, polite refusal for Cashier)
+- [x] **Task 4: Pengujian & Verifikasi End-to-End**
+  - [x] Add frontend unit test 17 for role-based chat isolation & greeting (`frontend/tests/frontend.test.js`)
+  - [x] Run backend verification tests for AI cron job creation, sensitive data redaction, and database context (`backend/tests/test-ai-role-isolation-and-cron.js`)
+  - [x] Run full frontend test suite (17/17 PASS) & production Vite build (SUCCESS)
 
-### Task 1: Add Paper Preview Tab & Auto-Print Toggle in `KdsPrinterModal.jsx`
-**Description:** Menambahkan tab Pratinjau Kertas (visual thermal receipt & kitchen ticket dengan pilihan 58mm/80mm) dan toggle Cetak Otomatis Pesanan Baru di dalam `KdsPrinterModal.jsx`.
-**Acceptance criteria:**
-- [x] Tab ke-3 "Pratinjau Kertas" tersedia dengan navigasi mulus.
-- [x] Pratinjau kertas menampilkan simulasi visual kertas thermal realistis (background putih, font mono, pembatas putus-putus, dan efek tepi sobekan kertas).
-- [x] Pratinjau mendukung toggle jenis dokumen: Tiket Dapur/Bar vs Struk Pembayaran, serta ukuran 58mm vs 80mm.
-- [x] Tab pengaturan memiliki toggle "Cetak Otomatis saat Pesanan Masuk (Auto-Print)" yang terikat ke `autoPrintKitchenOnCheckout` di `printerStore`.
-- [x] Tersedia tombol "Cetak Contoh Preview" yang mengirim dokumen simulasi ke printer Bluetooth terhubung.
-**Verification:**
-- [x] Buka modal printer di KDS, buka tab Pratinjau Kertas, uji ganti 58mm/80mm dan template tiket/struk.
-- [x] Ubah toggle cetak otomatis dan pastikan state tersimpan.
-**Dependencies:** None
-**Files touched:**
-- `frontend/src/components/kds/KdsPrinterModal.jsx`
-**Scope:** Complete
+# Task Breakdown Checklist: Perbaikan Koneksi Kabel Printer Thermal (USB & Serial)
 
----
-
-## Phase 2: Realtime Auto-Print Trigger
-
-### Task 2: Wire Auto-Print on `onOrderNew` in `KdsStandaloneScreen.jsx` and `KdsPage.jsx`
-**Description:** Memastikan saat ada pesanan baru yang masuk melalui socket realtime (`onOrderNew`), jika toggle auto-print aktif dan printer terhubung, tiket dapur langsung dicetak otomatis.
-**Acceptance criteria:**
-- [x] `KdsStandaloneScreen.jsx` memeriksa `autoPrintKitchenOnCheckout` & `isConnected`, lalu memicu `printKitchenTicketForOrder`.
-- [x] `KdsPage.jsx` juga memeriksa dan memicu pencetakan otomatis jika memenuhi kriteria.
-- [x] Filter item sesuai stasiun aktif (Barista hanya cetak minuman, Dapur hanya cetak makanan, Semua cetak seluruh item).
-**Verification:**
-- [x] Simulasi `onOrderNew` memicu pengiriman payload tiket ke `printKitchenTicketForOrder`.
-**Dependencies:** Task 1
-**Files touched:**
-- `frontend/src/pages/KdsStandaloneScreen.jsx`
-- `frontend/src/pages/KdsPage.jsx`
-**Scope:** Complete
-
----
-
-## Phase 3: Verification & Build Check
-
-### Task 3: Unit Tests & Production Build Verification
-**Description:** Menjalankan unit tests dan build bundle Vite untuk memastikan kode bebas error syntax, import, dan regresi.
-**Acceptance criteria:**
-- [x] `npm test` lulus tanpa error (12/12 passing tests).
-- [x] `npm run build` lulus tanpa error (exit code 0).
-**Verification:**
-- [x] Output terminal tests dan build exit code 0.
-**Dependencies:** Task 1, Task 2
-**Files touched:**
-- `frontend/tests/frontend.test.js`
-**Scope:** Complete
-
+- [x] **Task 1: Dual Mode WebUSB (Direct) & Web Serial (COM Port)**
+  - [x] Implementasi Direct WebUSB (`navigator.usb`) untuk printer POS-58/POS-80 (Epson, Panda, Xprinter, Iware) tanpa perlu driver virtual COM
+  - [x] Implementasi Web Serial (`navigator.serial`) dengan pilihan baud rate (9600, 19200, 38400, 57600, 115200) untuk konverter CH340 / CP2102 / PL2303
+  - [x] Mengatasi stream writer lock leak dengan `try ... finally { writer.releaseLock(); }`
+  - [x] Chunking transfer data (1024 bytes WebUSB, 512 bytes Web Serial) mencegah buffer overrun
+- [x] **Task 2: Integrasi UI & Modal Koneksi Kabel**
+  - [x] Buat komponen modal mandiri `UsbModal.jsx` dengan tab Direct WebUSB & Serial COM, tombol Test Print, Feed Paper, dan Buka Laci Kasir (RJ-11)
+  - [x] Hubungkan Sidebar (`openUsbModal`), PrinterPage, dan ThermalReceiptModal
+  - [x] Terapkan arsitektur anti-double UI (modal di-mount tunggal di `Layout.jsx`)
+- [x] **Task 3: Pemulihan Koneksi Otomatis & Event Disconnect**
+  - [x] Event listener `disconnect` pada `navigator.usb` & `navigator.serial` untuk deteksi kabel dicabut seketika
+  - [x] Auto-reconnect saat reload halaman via `navigator.usb.getDevices()` & `navigator.serial.getPorts()`
+  - [x] Perbaiki `printer.web.js` agar `connectionType === 'USB'` langsung memproses ESC/POS (bukan bypass ke dialog print browser)
+- [x] **Task 4: Verifikasi & Testing Unit**
+  - [x] Test 18: USB error sanitization & Windows driver claim detection
+  - [x] Test 19: WebUSB bulk endpoint detection & Serial baud rate setup
+  - [x] Test 20: USB receipt ESC/POS routing & RJ-11 cash drawer kick pulse
+  - [x] 20/20 test frontend pass, build Vite sukses

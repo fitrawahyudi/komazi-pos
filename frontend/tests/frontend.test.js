@@ -578,9 +578,265 @@ test('15. Strict Kitchen vs Barista Isolation in Ticket Generation: ensures bari
   assert.ok(!baristaText.includes('Kentang Goreng'), 'Barista ticket must NEVER include Kentang Goreng');
 });
 
+test('16. Order History Date Filter: verifies getLocalDateString format and today-default filtering logic', async () => {
+  const { getLocalDateString } = await import('../src/utils/format.js');
 
+  const testDate = new Date(2026, 9, 24); // Oct 24, 2026 (month is 0-indexed)
+  assert.equal(getLocalDateString(testDate), '2026-10-24');
+  assert.equal(getLocalDateString(null), '');
+  assert.equal(getLocalDateString('invalid-date'), '');
 
+  const todayStr = getLocalDateString(new Date());
+  assert.match(todayStr, /^\d{4}-\d{2}-\d{2}$/);
 
+  // Sample orders
+  const sampleOrders = [
+    { id: 1, invoiceNo: 'KMZ-TODAY-001', createdAt: new Date().toISOString() },
+    { id: 2, invoiceNo: 'KMZ-PAST-001', createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+    { id: 3, invoiceNo: 'KMZ-OLD-001', createdAt: '2026-01-01T10:00:00Z' },
+  ];
 
+  // Filter with startDate = todayStr and endDate = todayStr (default filter behavior)
+  const startDate = todayStr;
+  const endDate = todayStr;
+
+  const todayOrders = sampleOrders.filter((order) => {
+    if (!order.createdAt) return false;
+    const localDate = new Date(order.createdAt);
+    if (isNaN(localDate.getTime())) return false;
+    const orderDateStr = getLocalDateString(localDate);
+
+    if (startDate && orderDateStr < startDate) return false;
+    if (endDate && orderDateStr > endDate) return false;
+    return true;
+  });
+
+  assert.equal(todayOrders.length, 1);
+  assert.equal(todayOrders[0].id, 1);
+});
+
+test('17. Komazi AI Role Chat History Isolation: ensures complete separation of conversation history per role and tailored greetings', async () => {
+  const { getRoleWelcomeMessage, syncRoleChatHistory } = await import('../src/utils/aiRoleHelpers.js');
+
+  // 1. Role-Tailored Welcome Messages
+  const ownerWelcome = getRoleWelcomeMessage('OWNER', 'Budi');
+  assert.ok(ownerWelcome.text.includes('Kak Budi'));
+  assert.ok(ownerWelcome.text.includes('Asisten Eksekutif Bisnis'));
+  assert.ok(ownerWelcome.followUps.some((q) => q.includes('omset') || q.includes('selisih kas')));
+
+  const managerWelcome = getRoleWelcomeMessage('MANAGER', 'Dewi');
+  assert.ok(managerWelcome.text.includes('Asisten Operasional'));
+  assert.ok(managerWelcome.followUps.some((q) => q.includes('stok') || q.includes('shift')));
+
+  const baristaWelcome = getRoleWelcomeMessage('BARISTA', 'Andi');
+  assert.ok(baristaWelcome.text.includes('Asisten Bar Minuman'));
+  assert.ok(baristaWelcome.followUps.some((q) => q.includes('Vanilla Latte') || q.includes('Fresh Milk')));
+
+  const kitchenWelcome = getRoleWelcomeMessage('KITCHEN', 'Chef Doni');
+  assert.ok(kitchenWelcome.text.includes('Asisten Dapur Makanan'));
+  assert.ok(kitchenWelcome.followUps.some((q) => q.includes('pastry') || q.includes('dapur')));
+
+  const cashierWelcome = getRoleWelcomeMessage('CASHIER', 'Rina');
+  assert.ok(cashierWelcome.text.includes('Asisten POS & Layanan Pelanggan'));
+  assert.ok(cashierWelcome.followUps.some((q) => q.includes('split bill') || q.includes('printer thermal')));
+
+  // 2. Chat Isolation State Transition
+  // Simulasikan state awal kosong
+  let chatStore = {
+    messagesByRole: {
+      OWNER: [],
+      MANAGER: [],
+      CASHIER: [],
+      BARISTA: [],
+      KITCHEN: [],
+    },
+  };
+
+  // Skenario A: Owner login dan berdiskusi seputar metrik finansial sensitif
+  const ownerSync = syncRoleChatHistory({
+    messagesByRole: chatStore.messagesByRole,
+    targetRole: 'OWNER',
+    targetName: 'Pak Boss',
+  });
+
+  // Tambahkan obrolan percakapan finansial rahasia ke role OWNER
+  const ownerMessagesWithChat = [
+    ...ownerSync.activeMessages,
+    { id: 'msg_user_1', role: 'user', text: 'Berapa laba bersih dan pengeluaran bulan ini?' },
+    { id: 'msg_ai_1', role: 'assistant', text: 'Estimasi laba bersih kedai bulan ini adalah Rp 18.500.000 dengan pengeluaran Rp 7.200.000.' },
+  ];
+
+  chatStore.messagesByRole = {
+    ...ownerSync.updatedMessagesByRole,
+    OWNER: ownerMessagesWithChat,
+  };
+
+  assert.equal(chatStore.messagesByRole.OWNER.length, 3);
+  assert.ok(chatStore.messagesByRole.OWNER[1].text.includes('laba bersih'));
+
+  // Skenario B: Kasir login di browser yang sama
+  const cashierSync = syncRoleChatHistory({
+    messagesByRole: chatStore.messagesByRole,
+    targetRole: 'CASHIER',
+    targetName: 'Rina Kasir',
+  });
+
+  // Verifikasi 100% isolasi: Kasir TIDAK BOLEH melihat obrolan Owner
+  assert.equal(cashierSync.activeRole, 'CASHIER');
+  assert.equal(cashierSync.activeMessages.length, 1);
+  assert.equal(cashierSync.activeMessages[0].id, 'welcome_CASHIER');
+  assert.ok(cashierSync.activeMessages[0].text.includes('Asisten POS & Layanan Pelanggan'));
+
+  // Periksa bahwa tidak ada kebocoran kata 'laba bersih' atau chat owner ke kasir
+  const cashierHasLeak = cashierSync.activeMessages.some(
+    (m) => m.text.includes('laba bersih') || m.text.includes('18.500.000')
+  );
+  assert.equal(cashierHasLeak, false, 'Obrolan Owner TIDAK BOLEH bocor ke Kasir');
+
+  // Skenario C: Kasir bertanya tentang Split Bill
+  const cashierMessagesWithChat = [
+    ...cashierSync.activeMessages,
+    { id: 'msg_user_cashier_1', role: 'user', text: 'Bagaimana cara split bill meja 4?' },
+    { id: 'msg_ai_cashier_1', role: 'assistant', text: 'Untuk split bill, buka menu Pesanan Aktif lalu pilih pisah bill.' },
+  ];
+
+  chatStore.messagesByRole = {
+    ...cashierSync.updatedMessagesByRole,
+    CASHIER: cashierMessagesWithChat,
+  };
+
+  // Skenario D: Owner kembali login
+  const ownerReturnSync = syncRoleChatHistory({
+    messagesByRole: chatStore.messagesByRole,
+    targetRole: 'OWNER',
+    targetName: 'Pak Boss',
+  });
+
+  // Riwayat Owner tetap utuh dan tersimpan
+  assert.equal(ownerReturnSync.activeRole, 'OWNER');
+  assert.equal(ownerReturnSync.activeMessages.length, 3);
+  assert.equal(ownerReturnSync.activeMessages[1].text, 'Berapa laba bersih dan pengeluaran bulan ini?');
+  assert.ok(ownerReturnSync.activeMessages[2].text.includes('18.500.000'));
+
+  // Riwayat Kasir juga tetap tersimpan terpisah di slot CASHIER
+  assert.equal(chatStore.messagesByRole.CASHIER.length, 3);
+  assert.equal(chatStore.messagesByRole.CASHIER[1].text, 'Bagaimana cara split bill meja 4?');
+});
+
+test('18. USB Thermal Printer Error Sanitizer: validates user-friendly Indonesian messages for USB claim, transfer, and cancellation', async () => {
+  const { formatFriendlyPrinterError } = await import('../src/store/printerStore.js');
+
+  // Case 1: User cancellation
+  const cancelErr = new Error('No device selected by the user');
+  cancelErr.name = 'NotFoundError';
+  assert.equal(formatFriendlyPrinterError(cancelErr), 'Pemilihan perangkat printer dibatalkan.');
+
+  // Case 2: Windows driver claims the USB interface
+  const claimErr = new Error('Unable to claim interface: SecurityError');
+  assert.ok(
+    formatFriendlyPrinterError(claimErr).includes('Akses antarmuka printer USB diklaim oleh driver OS'),
+    'Should guide user to Windows Driver or COM mode when claimed'
+  );
+
+  // Case 3: USB transfer failure (loose cable)
+  const transferErr = new Error('transferOut failed: device disconnected');
+  assert.ok(
+    formatFriendlyPrinterError(transferErr).includes('Gagal mentransfer data ke printer USB'),
+    'Should guide user when transfer fails'
+  );
+});
+
+test('19. WebUSB & Web Serial Setup: verifies OUT endpoint resolution, interface claim, and serial baud rate setup', async () => {
+  const { setupWebUsbDevice, setupWebSerialPort } = await import('../src/store/printerStore.js');
+
+  // Mock USB Device with OUT endpoint
+  let claimedInterface = null;
+  const mockUsbDevice = {
+    opened: false,
+    configuration: null,
+    open: async function () {
+      this.opened = true;
+    },
+    selectConfiguration: async function (cfg) {
+      this.configuration = {
+        interfaces: [
+          {
+            interfaceNumber: 0,
+            alternates: [
+              {
+                endpoints: [
+                  { endpointNumber: 1, direction: 'out', type: 'bulk' },
+                  { endpointNumber: 2, direction: 'in', type: 'bulk' },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    },
+    claimInterface: async function (ifaceNum) {
+      claimedInterface = ifaceNum;
+    },
+  };
+
+  const usbSetup = await setupWebUsbDevice(mockUsbDevice);
+  assert.equal(mockUsbDevice.opened, true, 'Device must be opened');
+  assert.equal(claimedInterface, 0, 'Interface 0 must be claimed');
+  assert.equal(usbSetup.endpointNumber, 1, 'OUT endpoint number 1 must be resolved');
+
+  // Mock Web Serial Port
+  let openOptions = null;
+  const mockSerialPort = {
+    open: async function (options) {
+      openOptions = options;
+    },
+  };
+
+  await setupWebSerialPort(mockSerialPort, 115200);
+  assert.equal(openOptions?.baudRate, 115200, 'Custom baud rate 115200 must be passed to port.open');
+  assert.equal(openOptions?.dataBits, 8);
+  assert.equal(openOptions?.stopBits, 1);
+});
+
+test('20. USB Thermal Receipt & Cash Drawer Pulse: verifies RJ-11 cash drawer kick and WebPrinter routing for USB', async () => {
+  const { usePrinterStore } = await import('../src/store/printerStore.js');
+  const { WebPrinter } = await import('../src/adapters/printer/printer.web.js');
+
+  // Mock store state for USB
+  let lastSentBytes = null;
+  usePrinterStore.setState({
+    connectionType: 'USB',
+    isConnected: true,
+    usbSubtype: 'DIRECT',
+    sendRawData: async (bytes) => {
+      lastSentBytes = bytes;
+      return true;
+    },
+  });
+
+  // 1. Test openCashDrawer
+  const drawerRes = await usePrinterStore.getState().openCashDrawer();
+  assert.equal(drawerRes, true, 'openCashDrawer should return true on success');
+  assert.ok(lastSentBytes instanceof Uint8Array, 'Sent bytes should be Uint8Array');
+  // Verify ESC p pulse: [0x1B, 0x70, 0x00, 0x19, 0xFA]
+  assert.equal(lastSentBytes[0], 0x1b, 'ESC');
+  assert.equal(lastSentBytes[1], 0x70, 'p');
+  assert.equal(lastSentBytes[2], 0x00, 'm = pin 2');
+
+  // 2. Test WebPrinter.print with USB connection
+  const sampleReceipt = {
+    storeName: 'KOMAZI COFFEE TEST',
+    orderNumber: 'TEST-USB-101',
+    cashier: 'Tester Kasir',
+    type: 'DINE IN',
+    items: [{ qty: 1, name: 'Kopi Susu Aren', price: 20000, subtotal: 20000 }],
+    total: 20000,
+  };
+
+  const printRes = await WebPrinter.print(sampleReceipt);
+  assert.equal(printRes.success, true);
+  assert.equal(printRes.method, 'USB_ESC_POS', 'WebPrinter must use USB_ESC_POS when connectionType is USB');
+  assert.ok(lastSentBytes.length > 20, 'Raw ESC/POS bytes should be transmitted to USB printer');
+});
 
 

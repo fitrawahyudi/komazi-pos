@@ -602,21 +602,21 @@ export default function EditProfileModal({
                 {/* Hak Akses / Role (Read-only) */}
                 <div>
                   <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                    Hak Akses / Peran Akun
+                    Hak Akses
                   </label>
                   <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <Shield className="w-4 h-4 text-komazi-teal-light" />
                       <span className="text-komazi-text font-bold">
                         {user?.role === 'OWNER'
-                          ? 'Pemilik Usaha (Owner)'
+                          ? 'Pemilik Usaha'
                           : user?.role === 'MANAGER'
-                            ? 'Supervisor / Manager'
+                            ? 'Manager'
                             : user?.role === 'BARISTA'
-                              ? 'Barista (KDS Minuman)'
+                              ? 'Barista'
                               : user?.role === 'KITCHEN'
-                                ? 'Kitchen (KDS Makanan)'
-                                : 'Kasir (Cashier)'}
+                                ? 'Kitchen'
+                                : 'Kasir'}
                       </span>
                     </div>
                     <span

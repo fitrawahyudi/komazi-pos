@@ -25,11 +25,19 @@ export default function AiSalesAssistantModal() {
     isLoading,
     askQuestion,
     clearChat,
+    syncRoleMessages,
   } = useAiAnalyticsStore();
 
   const [inputQuery, setInputQuery] = useState('');
   const chatBottomRef = useRef(null);
   const navigate = useNavigate();
+
+  // Pastikan percakapan AI tersinkronisasi murni dengan role pengguna saat ini
+  useEffect(() => {
+    if (isAssistantOpen) {
+      syncRoleMessages?.(role, user?.name);
+    }
+  }, [role, isAssistantOpen, user?.name]);
 
   const handleActionHint = (hint) => {
     if (!hint) return;

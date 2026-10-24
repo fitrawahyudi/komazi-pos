@@ -13,10 +13,12 @@ import {
 } from '../services/aiProactiveScheduler.js';
 import {
   classifyIntent,
-  // resolveActionHint,
+  resolveActionHint,
   composeUnifiedSystemPrompt,
 } from '../services/ai/aiPromptComposer.js';
 import { getUnifiedAiContext } from '../services/ai/komaziAiContextAggregator.js';
+import { universalSchedulerAgent } from '../services/ai/universalSchedulerAgent.js';
+import { parseNaturalScheduleText } from '../services/cron/naturalScheduleParser.js';
 
 // In-memory cache: queryKey -> { data, timestamp }
 const analyticsCache = new Map();
@@ -56,13 +58,112 @@ export async function askAi(req, res) {
       }
     }
 
-    // 2. Klasifikasi intent pertanyaan dan pemetaan Action Hint
+    // 2. Pemeriksaan Penjadwalan & Perintah Cron Job via Percakapan AI
+    const qLower = (query || '').toLowerCase().trim();
+    const isScheduleQuery =
+      qLower.includes('jadwal') ||
+      qLower.includes('cron') ||
+      qLower.includes('ingatkan') ||
+      qLower.includes('reminder') ||
+      qLower.includes('setiap jam') ||
+      qLower.includes('tiap jam') ||
+      qLower.includes('setiap hari') ||
+      qLower.includes('tiap hari');
+
+    if (isScheduleQuery) {
+      const isManagerOrOwner = userRole === 'OWNER' || userRole === 'MANAGER';
+      if (!isManagerOrOwner) {
+        return successResponse(
+          res,
+          {
+            query,
+            answer: `Maaf ${userName ? `Kak ${userName}` : 'Rekan Kasir'}, pembuatan tugas otomatis dan pengaturan cron job memerlukan otorisasi **Owner** atau **Manager**. Silakan hubungi Owner/Manager untuk mengatur jadwal ini ya.`,
+            roleScope: userRole,
+            provider: 'SCHEDULE_SECURITY',
+            model: 'Komazi AI',
+            latencyTier: 'Zero-Latency Guard',
+            intent: 'SCHEDULE_FORBIDDEN',
+            generatedAt: new Date().toISOString(),
+          },
+          'Otorisasi jadwal ditolak untuk role non-manajerial'
+        );
+      }
+
+      // Kasus A: Permintaan melihat daftar jadwal aktif
+      if (
+        qLower.includes('daftar jadwal') ||
+        qLower.includes('list jadwal') ||
+        qLower.includes('jadwal aktif') ||
+        qLower.includes('cron job aktif') ||
+        qLower.includes('apa saja jadwal') ||
+        qLower.includes('lihat jadwal') ||
+        qLower.includes('jadwal saya')
+      ) {
+        const listText = await universalSchedulerAgent.listActiveSchedulesNatural({
+          id: userId,
+          role: userRole,
+          name: userName,
+        });
+        const cleanMarkdown = listText
+          .replace(/<b>/g, '**')
+          .replace(/<\/b>/g, '**')
+          .replace(/<i>/g, '*')
+          .replace(/<\/i>/g, '*');
+
+        return successResponse(
+          res,
+          {
+            query,
+            answer: cleanMarkdown,
+            roleScope: userRole,
+            provider: 'UNIVERSAL_SCHEDULER',
+            model: 'Komazi AI',
+            latencyTier: 'Direct DB Agent',
+            intent: 'LIST_SCHEDULES',
+            generatedAt: new Date().toISOString(),
+          },
+          'Daftar jadwal aktif berhasil dimuat'
+        );
+      }
+
+      // Kasus B: Pembuatan / Penjadwalan Cron Job Otomatis
+      const parsedSchedule = parseNaturalScheduleText(query);
+      if (parsedSchedule) {
+        const scheduleResult = await universalSchedulerAgent.executeSchedule(
+          parsedSchedule,
+          { id: userId, role: userRole, name: userName }
+        );
+        const cleanMarkdown = (scheduleResult.message || '')
+          .replace(/<b>/g, '**')
+          .replace(/<\/b>/g, '**')
+          .replace(/<i>/g, '*')
+          .replace(/<\/i>/g, '*');
+
+        return successResponse(
+          res,
+          {
+            query,
+            answer: cleanMarkdown,
+            roleScope: userRole,
+            provider: 'UNIVERSAL_SCHEDULER',
+            model: 'Komazi AI',
+            latencyTier: 'Direct Action Agent',
+            intent: 'CREATE_SCHEDULE',
+            data: scheduleResult.data,
+            generatedAt: new Date().toISOString(),
+          },
+          'Jadwal otomatis berhasil diproses'
+        );
+      }
+    }
+
+    // 3. Klasifikasi intent pertanyaan dan pemetaan Action Hint
     const classification = classifyIntent(query);
-    // const actionHint = resolveActionHint({
-    //   intent: classification.intent,
-    //   matchedSop: classification.matchedSop,
-    //   query,
-    // });
+    const actionHint = resolveActionHint({
+      intent: classification.intent,
+      matchedSop: classification.matchedSop,
+      query,
+    });
 
     // 3. Ambil data konteks operasional terpadu (Role-Scoped Zero Data Leakage)
     const unifiedContext = await getUnifiedAiContext({
@@ -104,7 +205,7 @@ export async function askAi(req, res) {
       latencyTier: aiResult.latencyTier || 'Komazi AI',
       intent: classification.intent,
       intentMeta: classification.meta,
-      // actionHint: actionHint || null,
+      actionHint: actionHint || null,
       matchedSop: classification.matchedSop
         ? { id: classification.matchedSop.id, title: classification.matchedSop.title }
         : null,

@@ -1,5 +1,5 @@
-import { usePrinterStore } from '../../store/printerStore';
-import { formatCurrency, formatDateTime } from '../../utils/format';
+import { usePrinterStore } from '../../store/printerStore.js';
+import { formatCurrency, formatDateTime } from '../../utils/format.js';
 
 /**
  * Web Printer Adapter
@@ -39,8 +39,8 @@ export const WebPrinter = {
   async print(receipt) {
     const store = usePrinterStore.getState();
 
-    // Jalur A: Jika Bluetooth terhubung di web, kirim data ESC/POS via printer store
-    if (store.isConnected && store.connectionType === 'BLUETOOTH') {
+    // Jalur A: Jika Bluetooth atau USB terhubung di web, kirim data ESC/POS via printer store
+    if (store.isConnected && (store.connectionType === 'BLUETOOTH' || store.connectionType === 'USB')) {
       try {
         // Render via print receipt helper dari store jika ada
         return await this.printViaEscPos(receipt);
@@ -196,7 +196,10 @@ export const WebPrinter = {
       const result = enc.encode();
       const store = usePrinterStore.getState();
       await store.sendRawData(result);
-      return { success: true, method: 'BLUETOOTH_ESC_POS' };
+      return {
+        success: true,
+        method: store.connectionType === 'USB' ? 'USB_ESC_POS' : 'BLUETOOTH_ESC_POS',
+      };
     } catch (err) {
       console.warn('[WebPrinter] ESC/POS encoding error:', err);
       return this.printViaBrowser(receipt);

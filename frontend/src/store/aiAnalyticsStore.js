@@ -1,72 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../services/api';
-import { useOrdersStore } from './ordersStore';
-import { useStockStore } from './stockStore';
-import { formatRupiah } from '../utils/format';
-
 import { useAuthStore } from './authStore';
+import { getRoleWelcomeMessage, syncRoleChatHistory } from '../utils/aiRoleHelpers';
 
-export function getRoleWelcomeMessage(role = 'CASHIER', name = '') {
-  const normalized = (role || 'CASHIER').toUpperCase();
-  const trimmedName = (name || '').trim();
-  const greeting = trimmedName ? `Halo Kak ${trimmedName}!` : 'Halo Rekan Komazi!';
-
-  if (normalized === 'OWNER') {
-    return {
-      text: `${greeting} Saya **Komazi AI — Asisten Eksekutif Bisnis** ☕\n\nSelamat bertugas! Saya dapat menyajikan seluruh laporan omset komparatif, margin HPP bahan baku, audit selisih kas kasir, serta performa bisnis kedai secara komprehensif. Silakan tanyakan hal strategis seputar kedai!`,
-      followUps: [
-        'Bagaimana perbandingan omset hari ini vs kemarin?',
-        'Menu apa yang menyumbang pendapatan terbesar?',
-        'Apakah ada selisih kas pada shift kasir?',
-      ],
-    };
-  }
-
-  if (normalized === 'MANAGER') {
-    return {
-      text: `${greeting} Saya **Komazi AI — Asisten Operasional** ☕\n\nSelamat bertugas! Saya memantau volume transaksi operasional harian, peringatan bahan baku menipis, status shift kasir, dan kapasitas workspace aktif. Silakan tanyakan seputar operasional harian kedai!`,
-      followUps: [
-        'Bahan baku apa yang stoknya di bawah batas minimum?',
-        'Siapa kasir yang sedang shift aktif sekarang?',
-        'Bagaimana cara tutup shift dan hitung selisih kas?',
-      ],
-    };
-  }
-
-  if (normalized === 'BARISTA') {
-    return {
-      text: `${greeting} Saya **Komazi AI — Asisten Bar Minuman** ☕\n\nSemangat menyeduh hari ini! Saya memantau ketersediaan bahan kopi, fresh milk, oat milk, sirup, serta pesanan minuman terlaris untuk persiapan bar Anda. Silakan tanyakan seputar stok bar & menu minuman!`,
-      followUps: [
-        'Apa resep dan takaran Vanilla Latte?',
-        'Berapa sisa stok Fresh Milk dan Biji Kopi?',
-        'Minuman kopi apa yang paling banyak dipesan hari ini?',
-      ],
-    };
-  }
-
-  if (normalized === 'KITCHEN') {
-    return {
-      text: `${greeting} Saya **Komazi AI — Asisten Dapur Makanan** 🥐\n\nSemangat di dapur hari ini! Saya memantau ketersediaan bahan pastry, croissant, butter, bahan dapur, serta pesanan makanan terlaris untuk persiapan dapur Anda. Silakan tanyakan seputar stok & menu dapur!`,
-      followUps: [
-        'Bahan dapur apa yang stoknya paling sedikit saat ini?',
-        'Makanan atau pastry apa yang paling laku hari ini?',
-        'Bagaimana cara mengatur resep menu di sistem?',
-      ],
-    };
-  }
-
-  // CASHIER (Default)
-  return {
-    text: `${greeting} Saya **Komazi AI — Asisten POS & Layanan Pelanggan** ☕\n\nSelamat bertugas di kasir! Saya siap membantu memeriksa SOP kasir (split bill, printer thermal, shift), rekomendasi menu pelanggan, peringatan bahan habis/kritis, serta ketersediaan meja workspace. Silakan tanyakan!`,
-    followUps: [
-      'Bagaimana cara split bill pesanan meja?',
-      'Cara pasang printer thermal bluetooth?',
-      'Bagaimana cara tutup shift kasir?',
-      'Menu apa yang paling laku untuk rekomendasi pelanggan?',
-    ],
-  };
-}
+export { getRoleWelcomeMessage };
 
 export const useAiAnalyticsStore = create(
   persist(
@@ -75,6 +13,14 @@ export const useAiAnalyticsStore = create(
   isLoading: false,
   isQuickInsightLoading: false,
   quickInsight: null,
+  currentRole: 'CASHIER',
+  messagesByRole: {
+    OWNER: [],
+    MANAGER: [],
+    CASHIER: [],
+    BARISTA: [],
+    KITCHEN: [],
+  },
   messages: [
     {
       id: 'welcome_1',
@@ -88,34 +34,35 @@ export const useAiAnalyticsStore = create(
   ],
 
   /**
-   * Buka modal asisten dan perbarui pesan pembuka dengan sapaan nama jika belum ada percakapan pengguna
+   * Sinkronisasi riwayat pesan aktif sesuai hak akses role yang sedang aktif
+   */
+  syncRoleMessages: (targetRole, targetName) => {
+    const user = useAuthStore.getState().user;
+    const role = (targetRole || user?.role || get().currentRole || 'CASHIER').toUpperCase();
+    const name = targetName !== undefined ? targetName : (user?.name || user?.username || '');
+    const currentMap = get().messagesByRole || {};
+    const { activeRole, activeMessages, updatedMessagesByRole } = syncRoleChatHistory({
+      messagesByRole: currentMap,
+      targetRole: role,
+      targetName: name,
+    });
+
+    set({
+      currentRole: activeRole,
+      messages: activeMessages,
+      messagesByRole: updatedMessagesByRole,
+    });
+  },
+
+  /**
+   * Buka modal asisten dan sinkronkan obrolan sesuai role yang sedang login
    */
   openAssistant: () => {
     const user = useAuthStore.getState().user;
-    const userRole = user?.role || 'CASHIER';
+    const userRole = (user?.role || 'CASHIER').toUpperCase();
     const userName = user?.name || user?.username || '';
-    const currentMessages = get().messages || [];
-    const hasUserInteracted = currentMessages.some((m) => m.role === 'user');
-
-    if (!hasUserInteracted) {
-      const welcome = getRoleWelcomeMessage(userRole, userName);
-      set({
-        isAssistantOpen: true,
-        messages: [
-          {
-            id: 'welcome_1',
-            role: 'assistant',
-            text: welcome.text,
-            provider: 'SYSTEM',
-            model: 'Komazi AI',
-            timestamp: new Date().toISOString(),
-            followUps: welcome.followUps,
-          },
-        ],
-      });
-    } else {
-      set({ isAssistantOpen: true });
-    }
+    get().syncRoleMessages(userRole, userName);
+    set({ isAssistantOpen: true });
   },
 
   closeAssistant: () => {
@@ -124,22 +71,28 @@ export const useAiAnalyticsStore = create(
 
   clearChat: () => {
     const user = useAuthStore.getState().user;
-    const userRole = user?.role || 'CASHIER';
+    const role = (user?.role || get().currentRole || 'CASHIER').toUpperCase();
     const userName = user?.name || user?.username || '';
-    const welcome = getRoleWelcomeMessage(userRole, userName);
-    set({
-      messages: [
-        {
-          id: `welcome_${Date.now()}`,
-          role: 'assistant',
-          text: welcome.text,
-          provider: 'SYSTEM',
-          model: 'Komazi AI',
-          timestamp: new Date().toISOString(),
-          followUps: welcome.followUps,
-        },
-      ],
-    });
+    const welcome = getRoleWelcomeMessage(role, userName);
+    const newWelcome = [
+      {
+        id: `welcome_${role}_${Date.now()}`,
+        role: 'assistant',
+        text: welcome.text,
+        provider: 'SYSTEM',
+        model: 'Komazi AI',
+        timestamp: new Date().toISOString(),
+        followUps: welcome.followUps,
+      },
+    ];
+
+    set((state) => ({
+      messages: newWelcome,
+      messagesByRole: {
+        ...(state.messagesByRole || {}),
+        [role]: newWelcome,
+      },
+    }));
   },
 
   /**
@@ -154,19 +107,27 @@ export const useAiAnalyticsStore = create(
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.text && m.id !== 'welcome_1')
       .map((m) => ({ role: m.role, text: m.text }));
 
-    // Tambahkan pesan user ke riwayat
-    set((state) => ({
-      isLoading: true,
-      messages: [
-        ...state.messages,
+    // Tambahkan pesan user ke riwayat role aktif
+    set((state) => {
+      const activeRole = (state.currentRole || useAuthStore.getState().user?.role || 'CASHIER').toUpperCase();
+      const updatedMessages = [
+        ...(state.messages || []),
         {
           id: userMsgId,
           role: 'user',
           text: query,
           timestamp: new Date().toISOString(),
         },
-      ],
-    }));
+      ];
+      return {
+        isLoading: true,
+        messages: updatedMessages,
+        messagesByRole: {
+          ...(state.messagesByRole || {}),
+          [activeRole]: updatedMessages,
+        },
+      };
+    });
 
     try {
       const user = useAuthStore.getState().user;
@@ -192,10 +153,18 @@ export const useAiAnalyticsStore = create(
           timestamp: d.generatedAt || new Date().toISOString(),
         };
 
-        set((state) => ({
-          messages: [...state.messages, assistantMsg],
-          isLoading: false,
-        }));
+        set((state) => {
+          const activeRole = (state.currentRole || useAuthStore.getState().user?.role || 'CASHIER').toUpperCase();
+          const updatedMessages = [...(state.messages || []), assistantMsg];
+          return {
+            messages: updatedMessages,
+            messagesByRole: {
+              ...(state.messagesByRole || {}),
+              [activeRole]: updatedMessages,
+            },
+            isLoading: false,
+          };
+        });
         return;
       }
     } catch (err) {
@@ -384,14 +353,23 @@ export const useAiAnalyticsStore = create(
         timestamp: new Date().toISOString(),
       };
 
-      set((state) => ({
-        messages: [...state.messages, clientFallbackMsg],
-        isLoading: false,
-      }));
+      set((state) => {
+        const activeRole = (state.currentRole || useAuthStore.getState().user?.role || 'CASHIER').toUpperCase();
+        const updatedMessages = [...(state.messages || []), clientFallbackMsg];
+        return {
+          messages: updatedMessages,
+          messagesByRole: {
+            ...(state.messagesByRole || {}),
+            [activeRole]: updatedMessages,
+          },
+          isLoading: false,
+        };
+      });
     } catch (e) {
-      set((state) => ({
-        messages: [
-          ...state.messages,
+      set((state) => {
+        const activeRole = (state.currentRole || useAuthStore.getState().user?.role || 'CASHIER').toUpperCase();
+        const updatedMessages = [
+          ...(state.messages || []),
           {
             id: `err_${Date.now()}`,
             role: 'assistant',
@@ -400,9 +378,16 @@ export const useAiAnalyticsStore = create(
             model: 'Komazi AI',
             timestamp: new Date().toISOString(),
           },
-        ],
-        isLoading: false,
-      }));
+        ];
+        return {
+          messages: updatedMessages,
+          messagesByRole: {
+            ...(state.messagesByRole || {}),
+            [activeRole]: updatedMessages,
+          },
+          isLoading: false,
+        };
+      });
     }
   },
 
@@ -468,10 +453,15 @@ export const useAiAnalyticsStore = create(
   },
 }),
   {
-    name: 'komazi-ai-chat-history',
+    name: 'komazi-ai-chat-history-v2',
     partialize: (state) => ({
-      messages: state.messages,
+      messagesByRole: state.messagesByRole,
     }),
+    onRehydrateStorage: () => (state) => {
+      if (state) {
+        state.syncRoleMessages?.();
+      }
+    },
   }
 )
 );

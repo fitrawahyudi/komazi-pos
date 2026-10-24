@@ -20,12 +20,13 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useUiStore } from '../../store/uiStore';
 import { HardwareService } from '../../services/hardware.service';
 import TestReceiptModal from './TestReceiptModal';
-import BluetoothModal from '../pos/BluetoothModal';
 import { isAndroid, isNative } from '../../services/platform';
 
 export default function PrinterSettingsCard() {
+  const { openBluetoothModal, openUsbModal } = useUiStore();
   const {
     connectionType,
     paperWidth,
@@ -50,17 +51,16 @@ export default function PrinterSettingsCard() {
   const { settings } = useSettingsStore();
 
   const [showTestModal, setShowTestModal] = useState(false);
-  const [showBluetoothModal, setShowBluetoothModal] = useState(false);
   const [isTroubleshootingOpen, setIsTroubleshootingOpen] = useState(false);
   const [hardwareInfo, setHardwareInfo] = useState(null);
 
   const handleBluetoothClick = async () => {
     if (isAndroid || isNative) {
-      setShowBluetoothModal(true);
+      openBluetoothModal();
     } else {
       const res = await connectBluetooth();
       if (res?.needSelectDevice) {
-        setShowBluetoothModal(true);
+        openBluetoothModal();
       }
     }
   };
@@ -237,12 +237,12 @@ export default function PrinterSettingsCard() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
                     <Usb className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xs text-komazi-text">Kabel USB (Serial)</h3>
-                    <p className="text-[10px] text-komazi-muted">Kabel USB langsung ke POS</p>
+                    <h3 className="font-bold text-xs text-komazi-text">Kabel USB (Thermal)</h3>
+                    <p className="text-[10px] text-komazi-muted">Direct USB &amp; Serial COM</p>
                   </div>
                 </div>
               </div>
@@ -253,23 +253,32 @@ export default function PrinterSettingsCard() {
                     <span className="truncate">{connectedDeviceName || 'Printer USB'}</span>
                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                   </div>
-                  <button
-                    type="button"
-                    onClick={disconnectPrinter}
-                    className="w-full py-1.5 rounded-lg border border-danger/40 text-danger hover:bg-danger/10 text-[11px] font-bold transition-colors"
-                  >
-                    Putus Sambungan
-                  </button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={openUsbModal}
+                      className="py-1.5 rounded-lg border border-komazi-border hover:bg-komazi-surface text-komazi-text text-[11px] font-bold transition-colors"
+                    >
+                      Kelola
+                    </button>
+                    <button
+                      type="button"
+                      onClick={disconnectPrinter}
+                      className="py-1.5 rounded-lg border border-danger/40 text-danger hover:bg-danger/10 text-[11px] font-bold transition-colors"
+                    >
+                      Putus
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
                   type="button"
-                  onClick={connectUsb}
+                  onClick={openUsbModal}
                   disabled={isConnecting}
-                  className="w-full py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  className="w-full py-2 rounded-lg bg-komazi-coral hover:bg-komazi-coral-dark disabled:opacity-50 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
                 >
                   <Usb className="w-3.5 h-3.5" />
-                  <span>{isConnecting ? 'Membuka Port...' : 'Pilih Port USB'}</span>
+                  <span>Sambungkan Kabel USB</span>
                 </button>
               )}
             </div>
@@ -444,7 +453,6 @@ export default function PrinterSettingsCard() {
 
       {/* Modals */}
       {showTestModal && <TestReceiptModal onClose={() => setShowTestModal(false)} />}
-      {showBluetoothModal && <BluetoothModal onClose={() => setShowBluetoothModal(false)} />}
     </>
   );
 }

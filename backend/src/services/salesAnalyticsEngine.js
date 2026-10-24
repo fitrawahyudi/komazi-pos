@@ -497,6 +497,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
       customerMembers,
       publicSettings,
       pendingApprovalsCount,
+      monthExpenses,
+      assetsList,
+      recentShiftDifferences,
     ] = await Promise.all([
       // 1. Metrik penjualan hari ini (top produk & peringatan bahan)
       getTodayTopSellingData(10),
@@ -697,6 +700,65 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
             })
             .catch(() => 0)
         : Promise.resolve(0),
+
+      // 16. Pengeluaran bulan ini (Hanya OWNER & MANAGER)
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
+        ? prisma.expense
+            .findMany({
+              where: {
+                isCancelled: false,
+                date: { gte: startOfMonth, lte: endOfToday },
+              },
+              select: {
+                id: true,
+                description: true,
+                amount: true,
+                category: { select: { name: true } },
+                date: true,
+              },
+              orderBy: { date: 'desc' },
+              take: 50,
+            })
+            .catch(() => [])
+        : Promise.resolve([]),
+
+      // 17. Aset fisik kedai & nilai buku (Hanya OWNER & MANAGER)
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
+        ? (prisma.fixedAsset
+            ? prisma.fixedAsset
+                .findMany({
+                  select: {
+                    id: true,
+                    name: true,
+                    category: true,
+                    purchasePrice: true,
+                    bookValue: true,
+                    status: true,
+                  },
+                  take: 20,
+                })
+                .catch(() => [])
+            : Promise.resolve([]))
+        : Promise.resolve([]),
+
+      // 18. Audit riwayat selisih kas shift terakhir (Hanya OWNER & MANAGER)
+      (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER')
+        ? prisma.shift
+            .findMany({
+              where: { closedAt: { not: null } },
+              select: {
+                id: true,
+                cashier: { select: { name: true } },
+                difference: true,
+                expectedCash: true,
+                closingCash: true,
+                closedAt: true,
+              },
+              orderBy: { closedAt: 'desc' },
+              take: 5,
+            })
+            .catch(() => [])
+        : Promise.resolve([]),
     ]);
 
     // Format Ingredients
@@ -777,6 +839,58 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
         storeProfileObj[s.key] = s.value;
       });
     }
+
+    // Format Pengeluaran & Estimasi Laba Bersih (Hanya OWNER & MANAGER)
+    let expensesSummary = null;
+    if (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER') {
+      const totalExpense = (monthExpenses || []).reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+      const categoryMap = {};
+      (monthExpenses || []).forEach((e) => {
+        const cat = e.category?.name || 'Lain-lain';
+        categoryMap[cat] = (categoryMap[cat] || 0) + parseFloat(e.amount || 0);
+      });
+      const topCategories = Object.entries(categoryMap)
+        .map(([category, amount]) => ({ category, amount, amountFormatted: formatRupiah(amount) }))
+        .sort((a, b) => b.amount - a.amount);
+
+      expensesSummary = {
+        totalMonthExpense: totalExpense,
+        totalMonthExpenseFormatted: formatRupiah(totalExpense),
+        expenseCount: (monthExpenses || []).length,
+        topCategories,
+        recentExpenses: (monthExpenses || []).slice(0, 5).map((e) => ({
+          title: e.description || e.title || 'Pengeluaran',
+          amountFormatted: formatRupiah(parseFloat(e.amount || 0)),
+          category: e.category?.name || 'Umum',
+        })),
+      };
+    }
+
+    // Format Aset & Fasilitas Kedai
+    const assetsSummary = (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER') && Array.isArray(assetsList)
+      ? {
+          totalAssetsCount: assetsList.length,
+          totalPurchaseCostFormatted: formatRupiah(assetsList.reduce((sum, a) => sum + parseFloat(a.purchasePrice || a.purchaseCost || 0), 0)),
+          totalCurrentValueFormatted: formatRupiah(assetsList.reduce((sum, a) => sum + parseFloat(a.bookValue || a.currentValue || 0), 0)),
+          topAssets: assetsList.slice(0, 5).map((a) => ({
+            name: a.name,
+            currentValueFormatted: formatRupiah(parseFloat(a.bookValue || a.currentValue || 0)),
+            category: a.category,
+          })),
+        }
+      : null;
+
+    // Format Audit Selisih Shift Kasir
+    const shiftAuditSummary = (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER') && Array.isArray(recentShiftDifferences)
+      ? recentShiftDifferences.map((s) => ({
+          shiftId: s.id,
+          cashierName: s.cashier?.name || 'Kasir',
+          difference: parseFloat(s.difference || 0),
+          differenceFormatted: (parseFloat(s.difference || 0) >= 0 ? '+' : '') + formatRupiah(parseFloat(s.difference || 0)),
+          status: parseFloat(s.difference || 0) === 0 ? 'PAS' : parseFloat(s.difference || 0) > 0 ? 'SURPLUS' : 'DEFISIT',
+          closedAt: s.closedAt,
+        }))
+      : null;
 
     // ─────────────────────────────────────────────────────────────────────────────
     // PEMBAGIAN KONTEKS DATA SESUAI ROLE (RBAC-AI)
@@ -1005,6 +1119,9 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
           totalActiveStaff: staffMembers.length,
           staffList: staffMembers.map((u) => `${u.name} (${u.role})`),
         },
+        expenses: expensesSummary,
+        assets: assetsSummary,
+        shiftAudit: shiftAuditSummary,
         customerMembersSummary: customerSummary,
         storeProfile: storeProfileObj,
         pendingApprovalsCount,
@@ -1055,8 +1172,15 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
           totalOrders: monthOrders._count.id || 0,
           totalRevenueFormatted: formatRupiah(monthRevenue),
         },
+        netProfitEstimated: {
+          amount: monthRevenue - (expensesSummary?.totalMonthExpense || 0),
+          amountFormatted: formatRupiah(monthRevenue - (expensesSummary?.totalMonthExpense || 0)),
+        },
         paymentMethodsToday: paymentBreakdown,
       },
+      expenses: expensesSummary,
+      assets: assetsSummary,
+      shiftAudit: shiftAuditSummary,
       inventory: {
         totalIngredientsCount: formattedIngredients.length,
         criticalLowStockCount: lowStockIngredients.length,

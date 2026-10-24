@@ -8,9 +8,17 @@ import PageFallbackSkeleton from '../ui/loading/skeletons/PageFallbackSkeleton';
 import { useUiStore } from '../../store/uiStore';
 
 const BluetoothModal = React.lazy(() => import('../pos/BluetoothModal'));
+const UsbModal = React.lazy(() => import('../pos/UsbModal'));
 
 export default function Layout() {
-  const { isBluetoothModalOpen, closeBluetoothModal, globalOverlay, hideActionOverlay } = useUiStore();
+  const {
+    isBluetoothModalOpen,
+    closeBluetoothModal,
+    isUsbModalOpen,
+    closeUsbModal,
+    globalOverlay,
+    hideActionOverlay,
+  } = useUiStore();
 
   return (
     <div className="flex flex-col h-[100dvh] min-h-[100dvh] w-screen overflow-hidden bg-komazi-black text-komazi-text">
@@ -35,6 +43,13 @@ export default function Layout() {
       {isBluetoothModalOpen && (
         <Suspense fallback={null}>
           <BluetoothModal onClose={closeBluetoothModal} />
+        </Suspense>
+      )}
+
+      {/* Global USB Connection Modal (Single Instance - Anti Double UI) */}
+      {isUsbModalOpen && (
+        <Suspense fallback={null}>
+          <UsbModal onClose={closeUsbModal} />
         </Suspense>
       )}
 
