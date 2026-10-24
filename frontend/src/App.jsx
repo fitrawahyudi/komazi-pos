@@ -504,6 +504,8 @@ export default function App() {
           <Route path="stock" element={<Navigate to="/inventory/sources" replace />} />
 
           {/* Reports & Analytics (Manager+) */}
+          <Route path="analytics" element={<Navigate to="/reports/sales" replace />} />
+          <Route path="analytics/sales" element={<Navigate to="/reports/sales" replace />} />
           <Route path="reports" element={<Navigate to="/reports/sales" replace />} />
           <Route
             path="reports/sales"

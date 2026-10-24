@@ -126,3 +126,125 @@ export async function deleteImage(req, res) {
     return errorResponse(res, err.message, 500);
   }
 }
+
+/**
+ * Generate AI food/beverage photo for menu items and optionally persist to Cloudinary
+ */
+export async function generateAiMenuImage(req, res) {
+  try {
+    const { productName, categoryName, customPrompt, saveToCloudinary, imageUrl: existingImageUrl } = req.body || {};
+
+    // 1. If client asks to persist a previewed image URL to Cloudinary
+    if (saveToCloudinary && existingImageUrl) {
+      if (!isCloudinaryConfigured()) {
+        return errorResponse(res, 'Kredensial Cloudinary belum dikonfigurasi di server (.env)', 500);
+      }
+      if (!isSafeExternalUrl(existingImageUrl)) {
+        return errorResponse(res, 'URL gambar tidak valid atau tidak diizinkan untuk alasan keamanan', 400);
+      }
+
+      const uploadResult = await cloudinary.uploader.upload(existingImageUrl, {
+        folder: 'komazi-pos/menu',
+        resource_type: 'image',
+        transformation: [
+          { quality: 'auto:good' },
+          { fetch_format: 'auto' },
+        ],
+      });
+
+      return successResponse(
+        res,
+        {
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+          isSaved: true,
+        },
+        'Foto produk berhasil disimpan permanen ke Cloudinary'
+      );
+    }
+
+    // 2. Validate product name for generation
+    if (!productName || typeof productName !== 'string' || !productName.trim()) {
+      return errorResponse(res, 'Nama menu wajib diisi untuk menghasilkan foto AI', 400);
+    }
+
+    const cleanName = productName.trim();
+    const cleanCat = (categoryName || '').toLowerCase().trim();
+
+    // Check if item is beverage or food/pastry
+    const isDrink =
+      cleanCat.includes('kopi') ||
+      cleanCat.includes('coffee') ||
+      cleanCat.includes('minum') ||
+      cleanCat.includes('drink') ||
+      cleanCat.includes('beverage') ||
+      cleanCat.includes('tea') ||
+      cleanCat.includes('teh') ||
+      cleanCat.includes('boba') ||
+      cleanCat.includes('juice') ||
+      cleanCat.includes('jus') ||
+      cleanCat.includes('latte') ||
+      cleanCat.includes('mocktail') ||
+      cleanCat.includes('smoothie') ||
+      /^(kopi|iced|ice|es|hot|tea|teh|latte|americano|cappuccino|matcha|boba|espresso)/i.test(cleanName);
+
+    let promptText = '';
+    if (isDrink) {
+      promptText = `Professional commercial beverage photography of ${cleanName}, served in an aesthetic clean modern glass, cafe ambiance on a rustic wooden table, soft warm cafe lighting, shallow depth of field, high-end cafe aesthetic, garnished, appetizing, 8k resolution, photorealistic`;
+    } else {
+      promptText = `Professional commercial food photography of ${cleanName}, beautifully plated on an elegant ceramic dish, cafe table setting, appetizing presentation with garnish, warm ambient lighting, shallow depth of field, 8k resolution, photorealistic, culinary food magazine style`;
+    }
+
+    if (customPrompt && typeof customPrompt === 'string' && customPrompt.trim()) {
+      promptText += `, ${customPrompt.trim()}`;
+    }
+
+    const seed = Math.floor(Math.random() * 900000) + 100000;
+    const encodedPrompt = encodeURIComponent(promptText);
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=800&model=flux&seed=${seed}&nologo=true`;
+
+    // 3. If direct save requested immediately
+    if (saveToCloudinary) {
+      if (!isCloudinaryConfigured()) {
+        return errorResponse(res, 'Kredensial Cloudinary belum dikonfigurasi di server (.env)', 500);
+      }
+
+      const uploadResult = await cloudinary.uploader.upload(pollinationsUrl, {
+        folder: 'komazi-pos/menu',
+        resource_type: 'image',
+        transformation: [
+          { quality: 'auto:good' },
+          { fetch_format: 'auto' },
+        ],
+      });
+
+      return successResponse(
+        res,
+        {
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+          prompt: promptText,
+          seed,
+          isSaved: true,
+        },
+        'Foto menu berhasil dibuat dan disimpan ke Cloudinary'
+      );
+    }
+
+    // 4. Default: Return preview URL so user can review/regenerate before persisting
+    return successResponse(
+      res,
+      {
+        imageUrl: pollinationsUrl,
+        prompt: promptText,
+        seed,
+        isSaved: false,
+      },
+      'Foto AI berhasil dibuat. Silakan pratinjau sebelum menyimpan.'
+    );
+  } catch (err) {
+    console.error('[AI Menu Image Error]', err);
+    return errorResponse(res, `Gagal membuat foto AI: ${err.message}`, 500);
+  }
+}
+

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAiAnalyticsStore } from '../../store/aiAnalyticsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useUiStore } from '../../store/uiStore';
+import { toast } from '../../store/toastStore';
 import {
   Sparkles,
   X,
@@ -43,6 +44,7 @@ export default function AiSalesAssistantModal() {
     if (!hint) return;
     closeAssistant();
 
+    // 1. Printer Modal
     if (hint.targetModal === 'PRINTER_MODAL') {
       try {
         useUiStore.getState().openBluetoothModal();
@@ -52,8 +54,54 @@ export default function AiSalesAssistantModal() {
       return;
     }
 
-    if (hint.route) {
-      navigate(hint.route);
+    // 2. Normalisasi route: /analytics atau laporan penjualan -> /reports/sales
+    let targetRoute = hint.route;
+    const labelLower = (hint.label || '').toLowerCase();
+    if (
+      !targetRoute ||
+      targetRoute === '/analytics' ||
+      targetRoute === '/reports' ||
+      targetRoute === '/analytics/sales' ||
+      labelLower.includes('analisis') ||
+      labelLower.includes('penjualan')
+    ) {
+      if (
+        labelLower.includes('analisis') ||
+        labelLower.includes('penjualan') ||
+        targetRoute === '/analytics' ||
+        targetRoute === '/reports'
+      ) {
+        targetRoute = '/reports/sales';
+      }
+    }
+
+    // 3. Shift Modal (Rekap Shift Kasir)
+    if (hint.targetModal === 'SHIFT_MODAL') {
+      targetRoute = targetRoute || '/cash-session';
+    }
+
+    // 4. Open Bills / Merge Bill / Order Detail
+    if (
+      hint.targetModal === 'OPEN_BILLS' ||
+      hint.targetModal === 'MERGE_BILL' ||
+      hint.targetModal === 'ORDER_DETAIL'
+    ) {
+      targetRoute = targetRoute || '/orders';
+    }
+
+    // 5. Recipe Modal
+    if (hint.targetModal === 'RECIPE_MODAL') {
+      targetRoute = targetRoute || '/menu';
+    }
+
+    // 6. Validasi otorisasi jika role non-manager mencoba membuka laporan keuangan
+    if (targetRoute?.startsWith('/reports') && !['OWNER', 'MANAGER'].includes(role)) {
+      toast.warning('Halaman Analisis & Laporan Penjualan hanya dapat diakses oleh Manager atau Owner.', 'Akses Terbatas');
+      return;
+    }
+
+    if (targetRoute) {
+      navigate(targetRoute);
     }
   };
 
@@ -570,8 +618,12 @@ export default function AiSalesAssistantModal() {
                           <div className="mt-3 pt-2.5 border-t border-komazi-border/50">
                             <button
                               type="button"
-                              onClick={() => handleActionHint(msg.actionHint)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-komazi-primary/20 hover:bg-komazi-primary/30 text-komazi-primary border border-komazi-primary/40 transition-all shadow-xs cursor-pointer group"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleActionHint(msg.actionHint);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-komazi-primary/20 hover:bg-komazi-primary/30 active:scale-95 text-komazi-primary border border-komazi-primary/40 transition-all shadow-xs cursor-pointer group"
                             >
                               <span>{msg.actionHint.label || 'Buka Menu Terkait'}</span>
                               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />

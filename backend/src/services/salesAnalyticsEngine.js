@@ -749,7 +749,6 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
               select: {
                 id: true,
                 cashier: { select: { name: true } },
-                difference: true,
                 expectedCash: true,
                 closingCash: true,
                 closedAt: true,
@@ -882,14 +881,19 @@ export async function getRoleScopedBusinessContext({ role = 'OWNER', userId = nu
 
     // Format Audit Selisih Shift Kasir
     const shiftAuditSummary = (normalizedRole === 'OWNER' || normalizedRole === 'MANAGER') && Array.isArray(recentShiftDifferences)
-      ? recentShiftDifferences.map((s) => ({
-          shiftId: s.id,
-          cashierName: s.cashier?.name || 'Kasir',
-          difference: parseFloat(s.difference || 0),
-          differenceFormatted: (parseFloat(s.difference || 0) >= 0 ? '+' : '') + formatRupiah(parseFloat(s.difference || 0)),
-          status: parseFloat(s.difference || 0) === 0 ? 'PAS' : parseFloat(s.difference || 0) > 0 ? 'SURPLUS' : 'DEFISIT',
-          closedAt: s.closedAt,
-        }))
+      ? recentShiftDifferences.map((s) => {
+          const closing = parseFloat(s.closingCash || 0);
+          const expected = parseFloat(s.expectedCash || 0);
+          const diff = s.closingCash !== null && s.closingCash !== undefined ? closing - expected : 0;
+          return {
+            shiftId: s.id,
+            cashierName: s.cashier?.name || 'Kasir',
+            difference: diff,
+            differenceFormatted: (diff >= 0 ? '+' : '') + formatRupiah(diff),
+            status: diff === 0 ? 'PAS' : diff > 0 ? 'SURPLUS' : 'DEFISIT',
+            closedAt: s.closedAt,
+          };
+        })
       : null;
 
     // ─────────────────────────────────────────────────────────────────────────────

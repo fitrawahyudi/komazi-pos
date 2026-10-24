@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadImage, deleteImage } from '../controllers/uploadController.js';
+import { uploadImage, deleteImage, generateAiMenuImage } from '../controllers/uploadController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { requireRole } from '../middlewares/role.js';
 
@@ -37,6 +37,9 @@ const uploadAnyImage = (req, res, next) => {
 };
 
 const router = Router();
+
+// Endpoint generate foto menu produk berbasis AI (khusus Owner & Manager)
+router.post('/generate-ai-image', authenticate, requireRole(['OWNER', 'MANAGER']), generateAiMenuImage);
 
 // Endpoint upload gambar ke Cloudinary
 router.post('/', authenticate, uploadAnyImage, uploadImage);

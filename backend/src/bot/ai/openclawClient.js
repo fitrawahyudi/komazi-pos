@@ -123,12 +123,12 @@ export async function sendOpenClawChat({ messages = [], userId = null }) {
       throw err;
     }
 
-    // Network / Socket error -> Coba fallback otomatis ke Native Cloud AI (Groq/Gemini/OpenRouter)
-    logger.telegram.warn(`[Komazi AI Network Error] ${err.message}. Mencoba fallback ke Groq/Gemini Cloud AI...`);
+    // Network / Socket error -> Coba fallback otomatis ke Native Cloud AI (Groq/Gemini/Ezkielyna/OpenRouter)
+    logger.telegram.warn(`[Komazi AI Network Error] ${err.message}. Mencoba fallback ke Cloud AI...`);
 
     try {
       const aiSettings = await getAiSettings();
-      if (aiSettings.groqApiKey || aiSettings.geminiApiKey || aiSettings.openrouterApiKey) {
+      if (aiSettings.groqApiKey || aiSettings.geminiApiKey || aiSettings.ezkielynaApiKey || aiSettings.openrouterApiKey) {
         const userMsg = messages.filter((m) => m.role === 'user').pop()?.content || '';
         const systemMsg = messages.find((m) => m.role === 'system')?.content || '';
         const historyMsgs = messages
@@ -200,7 +200,7 @@ export async function pingOpenClawGateway() {
     }
   }
 
-  // 2. Periksa ketersediaan Cloud AI (Groq, Gemini, OpenRouter)
+  // 2. Periksa ketersediaan Cloud AI (Groq, Gemini, Ezkielyna, OpenRouter)
   try {
     const aiSettings = await getAiSettings();
     if (aiSettings.groqApiKey) {
@@ -208,6 +208,9 @@ export async function pingOpenClawGateway() {
     }
     if (aiSettings.geminiApiKey) {
       return { ok: true, provider: 'GEMINI', detail: 'Gemini Cloud Active' };
+    }
+    if (aiSettings.ezkielynaApiKey) {
+      return { ok: true, provider: 'EZKIELYNA', detail: 'Ezkielyna Cloud Active' };
     }
     if (aiSettings.openrouterApiKey) {
       return { ok: true, provider: 'OPENROUTER', detail: 'OpenRouter Cloud Active' };

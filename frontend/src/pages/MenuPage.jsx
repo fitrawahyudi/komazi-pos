@@ -1397,7 +1397,7 @@ export default function MenuPage() {
                           {(() => {
                             const curStation = stations.find((s) => String(s.id) === String(formData.stationId));
                             if (curStation) {
-                              return curStation.type === 'BAR' ? '☕ Barista (Bar)' : '🍳 Dapur (Kitchen)';
+                              return curStation.type === 'BAR' ? '☕ Barista' : '🍳 Dapur';
                             }
                             const selCat = categories.find((c) => String(c.id) === String(formData.categoryId));
                             const isDrink = isDrinkItem({ name: formData.name, categoryName: selCat?.name });
@@ -1438,7 +1438,7 @@ export default function MenuPage() {
                                   <Coffee className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="font-bold text-xs">Barista (Bar)</p>
+                                  <p className="font-bold text-xs">Barista</p>
                                   <p className="text-[10px] text-komazi-muted truncate">Kopi & Minuman</p>
                                 </div>
                               </button>
@@ -1460,7 +1460,7 @@ export default function MenuPage() {
                                   <ChefHat className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="font-bold text-xs">Dapur (Kitchen)</p>
+                                  <p className="font-bold text-xs">Dapur</p>
                                   <p className="text-[10px] text-komazi-muted truncate">Makanan & Snack</p>
                                 </div>
                               </button>
@@ -1568,6 +1568,8 @@ export default function MenuPage() {
                       onChange={(url) => setFormData({ ...formData, imageUrl: url })}
                       label="Foto / Gambar Produk"
                       aspectRatio="aspect-video"
+                      productName={formData.name}
+                      categoryName={categories.find((c) => String(c.id) === String(formData.categoryId))?.name}
                     />
 
                     <div>

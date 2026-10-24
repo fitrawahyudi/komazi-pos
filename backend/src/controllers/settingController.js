@@ -23,6 +23,8 @@ function sanitizeSettingsMap(map) {
   map.aiGroqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
   map.aiGeminiConfigured = Boolean(process.env.GEMINI_API_KEY);
   map.aiGeminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  map.aiEzkielynaConfigured = Boolean(process.env.EZKIELYNA_API_KEY);
+  map.aiEzkielynaModel = process.env.EZKIELYNA_MODEL || 'deepseek-v4.1-flash';
   map.aiOpenRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
   map.aiOpenRouterModel = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
   map.aiPrimaryProvider = process.env.AI_PRIMARY_PROVIDER || 'groq';

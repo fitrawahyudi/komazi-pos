@@ -431,7 +431,7 @@ export default function OrdersPage() {
       shiftLabel = activeShift ? `Shift Aktif (${activeShift.cashierName})` : 'Shift Aktif';
     } else if (shiftFilter !== 'ALL') {
       const found = (shiftHistory || []).find((s) => String(s.id) === String(shiftFilter));
-      shiftLabel = found ? `Shift #${found.id} - ${found.cashierName}` : `Shift #${shiftFilter}`;
+      shiftLabel = found ? `- ${found.cashierName}` : `Shift #${shiftFilter}`;
     }
 
     let dateRangeLabel = 'Semua Tanggal';
@@ -886,7 +886,7 @@ export default function OrdersPage() {
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-0.5 flex items-center gap-1">
               <Calendar className="w-3 h-3 text-komazi-coral" />
-              <span>Waktu:</span>
+              <span>Waktu</span>
             </span>
             <button
               type="button"
@@ -945,48 +945,6 @@ export default function OrdersPage() {
             </button>
           </div>
 
-          {/* Filter Opsi Shift & Kasir */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-komazi-muted/80 mr-0.5">
-              Opsi:
-            </span>
-
-            {/* Filter Shift */}
-            <div className="relative">
-              <select
-                value={shiftFilter}
-                onChange={(e) => setShiftFilter(e.target.value)}
-                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan shift"
-              >
-                <option value="ALL">Semua Shift</option>
-                {shiftList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
-            </div>
-
-            {/* Filter Kasir */}
-            <div className="relative">
-              <select
-                value={cashierFilter}
-                onChange={(e) => setCashierFilter(e.target.value)}
-                className="appearance-none pl-3 pr-7 py-1.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-[11px] text-komazi-text font-semibold focus:border-komazi-coral outline-none cursor-pointer"
-                title="Filter berdasarkan kasir"
-              >
-                <option value="ALL">Semua Kasir</option>
-                {distinctCashiers.map((name) => (
-                  <option key={name} value={name}>
-                    Kasir: {name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3 h-3 text-komazi-muted absolute right-2 top-2.5 pointer-events-none" />
-            </div>
-          </div>
         </div>
       </div>
 

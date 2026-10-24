@@ -508,6 +508,13 @@ export const api = {
   deleteUpload: (publicId) => {
     return request(`/upload/${encodeURIComponent(publicId)}`, { method: 'DELETE' });
   },
+  generateAiMenuImage: (payload) => {
+    return request('/upload/generate-ai-image', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeout: 35000,
+    });
+  },
   payments: {
     checkStatus: (invoiceNo, amount) =>
       request(`/payments/status/${invoiceNo || 'unknown'}${amount ? `?amount=${amount}` : ''}`),

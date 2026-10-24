@@ -159,8 +159,17 @@ export function resolveActionHint({ intent, matchedSop, query = '' } = {}) {
   if (qLower.includes('workspace') || qLower.includes('coworking') || qLower.includes('sewa meja')) {
     return { type: 'NAVIGATE', route: '/workspace', label: 'Buka Manajemen Workspace' };
   }
-  if (intent === AI_INTENT_TYPES.FINANCIAL_SALES || qLower.includes('kemarin')) {
-    return { type: 'NAVIGATE', route: '/analytics', label: 'Buka Analisis Penjualan' };
+  if (
+    intent === AI_INTENT_TYPES.FINANCIAL_SALES ||
+    qLower.includes('kemarin') ||
+    qLower.includes('analisis') ||
+    qLower.includes('penjualan') ||
+    qLower.includes('omset') ||
+    qLower.includes('omzet') ||
+    qLower.includes('laporan') ||
+    qLower.includes('grafik')
+  ) {
+    return { type: 'NAVIGATE', route: '/reports/sales', label: 'Buka Analisis Penjualan' };
   }
 
   return null;

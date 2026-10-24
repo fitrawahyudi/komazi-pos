@@ -16,13 +16,13 @@ export function formatBotInfoCaption(data, callerName, callerRole, telegramId) {
   return `
 🤖 <b>STATUS &amp; PERFORMA ASISTEN KOMAZI</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 <b>Status Sistem:</b> ONLINE (Lancar)
+🟢 <b>Status Sistem:</b> ONLINE
 ⏱ <b>Waktu Aktif:</b> <b>${esc(data.bot.uptime)}</b>
 ⚡ <b>Mode Layanan:</b> ${esc(data.bot.mode)}
 🧠 <b>Penggunaan Memori:</b> ${esc(data.bot.memory.heapUsed)}
 
-🗄️ <b>Penyimpanan Data (Database)</b>
-• Status: <b>${data.database.status === 'CONNECTED' ? '🟢 Terhubung Lancar' : '🔴 Gangguan'}</b> (${esc(data.database.latency)})
+🗄️ <b>Penyimpanan</b>
+• Status: <b>${data.database.status === 'CONNECTED' ? '🟢 Terhubung' : '🔴 Gangguan'}</b> (${esc(data.database.latency)})
 
 👥 <b>Akun Staf Terhubung</b>
 • Terhubung: <b>${data.staff.linked} dari ${data.staff.total} Staf</b>

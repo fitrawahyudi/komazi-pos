@@ -17,6 +17,7 @@
     "test:unit": "node --test tests/*.test.js",
     "test:cron": "node tests/test-cronjob-e2e.js",
     "test:bot": "node tests/test-telegram-bot-e2e.js",
+    "test:ezkielyna": "node tests/test-ezkielyna.js",
     "test": "node --test tests/*.test.js",
     "reset-owner": "node scripts/reset-owner.js"
   },

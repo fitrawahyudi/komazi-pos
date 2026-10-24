@@ -99,8 +99,9 @@
 - **Multi-Tier AI LLM Failover:**
   1. ⚡ **Tier 1 (Utama):** Groq Cloud LPU (*ultra-fast response ~300ms*)
   2. 🧠 **Tier 2 (Fallback 1):** Google Gemini 1.5 Flash
-  3. 🌐 **Tier 3 (Fallback 2):** OpenRouter AI
-  4. 💻 **Tier 4 (Offline):** Mesin analitik deterministik lokal tanpa perlu koneksi internet.
+  3. 🚀 **Tier 3 (Fallback 2):** Ezkielyna AI Cloud (*DeepSeek v4.1 Flash, pembayaran QRIS*)
+  4. 🌐 **Tier 4 (Fallback 3):** OpenRouter AI
+  5. 💻 **Tier 5 (Offline):** Mesin analitik deterministik lokal tanpa perlu koneksi internet.
 - **Asisten Penjualan:** Tanya jawab interaktif mengenai menu terlaris, proyeksi pendapatan, jam ramai (*peak hours*), dan estimasi belanja bahan baku.
 
 ---

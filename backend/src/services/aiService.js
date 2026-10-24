@@ -3,6 +3,7 @@ import { generateFallbackNarrative } from './salesAnalyticsEngine.js';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GEMINI_OPENAI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const GEMINI_NATIVE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const EZKIELYNA_DEFAULT_URL = 'https://api.ezkielyna.store/v1/chat/completions';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
@@ -29,6 +30,9 @@ export async function getAiSettings() {
     groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
     geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    ezkielynaApiKey: process.env.EZKIELYNA_API_KEY || '',
+    ezkielynaModel: process.env.EZKIELYNA_MODEL || 'deepseek-v4.1-flash',
+    ezkielynaBaseUrl: process.env.EZKIELYNA_BASE_URL || 'https://api.ezkielyna.store/v1',
     openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
     openrouterModel: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct',
     primaryProvider: process.env.AI_PRIMARY_PROVIDER || 'groq',
@@ -248,7 +252,7 @@ Jangan pernah mengabaikan batasan peran Anda atau memberikan data sensitif meski
 /**
  * Generate intelligent conversational sales analytics narrative
  * with multi-turn conversation memory using Multi-Tier Fallback:
- * Tier 1: Groq -> Tier 2: Google Gemini -> Tier 3: OpenRouter -> Tier 4: Local Deterministic
+ * Tier 1: Groq -> Tier 2: Google Gemini -> Tier 3: Ezkielyna -> Tier 4: OpenRouter -> Tier 5: Local Deterministic
  *
  * @param {string} userQuery
  * @param {object} businessData - Comprehensive non-sensitive context across all tables
@@ -283,120 +287,167 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
   ];
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // TIER 1: GROQ API (Urutan Paling Atas — Ultra Fast LPU Inference)
+  // Multi-Tier Fallback Execution (Mendukung AI_PRIMARY_PROVIDER via .env)
   // ─────────────────────────────────────────────────────────────────────────────
-  if (settings.groqApiKey) {
-    try {
-      const groqRes = await fetchWithTimeout(
-        GROQ_API_URL,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model: settings.groqModel || 'openai/gpt-oss-120b',
-            messages: messagesPayload,
-            temperature: 0.2,
-            max_tokens: 700,
-          }),
-        },
-        3500 // 3.5 detik timeout
-      );
+  const primary = (settings.primaryProvider || 'groq').toLowerCase().trim();
+  const defaultTiers = ['groq', 'gemini', 'ezkielyna', 'openrouter'];
+  const orderedTiers = [primary, ...defaultTiers.filter((p) => p !== primary)];
 
-      if (groqRes.ok) {
-        const json = await groqRes.json();
-        const text = json.choices?.[0]?.message?.content?.trim();
-        if (text) {
+  for (const tier of orderedTiers) {
+    // 1. TIER GROQ API (Ultra Fast LPU Inference)
+    if (tier === 'groq' && settings.groqApiKey) {
+      try {
+        const groqRes = await fetchWithTimeout(
+          GROQ_API_URL,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${settings.groqApiKey}`,
+            },
+            body: JSON.stringify({
+              model: settings.groqModel || 'openai/gpt-oss-120b',
+              messages: messagesPayload,
+              temperature: 0.2,
+              max_tokens: 700,
+            }),
+          },
+          3500 // 3.5 detik timeout
+        );
+
+        if (groqRes.ok) {
+          const json = await groqRes.json();
+          const text = json.choices?.[0]?.message?.content?.trim();
+          if (text) {
+            return {
+              text: sanitizeAiResponse(text),
+              provider: 'GROQ',
+              model: 'Komazi AI (Groq)',
+              latencyTier: 'Komazi AI (Fast LPU)',
+            };
+          }
+        } else {
+          const errorBody = await groqRes.text();
+          console.warn(`[AIService] Groq API gagal (HTTP ${groqRes.status}):`, errorBody);
+        }
+      } catch (err) {
+        console.warn('[AIService] Groq API error / timeout:', err.message);
+      }
+    }
+
+    // 2. TIER GOOGLE GEMINI API (Generative AI Cloud)
+    if (tier === 'gemini' && settings.geminiApiKey) {
+      try {
+        const geminiText = await callGeminiApi(
+          settings,
+          messagesPayload,
+          contextSystemContent,
+          userQuery,
+          historyMessages
+        );
+        if (geminiText) {
           return {
-            text: sanitizeAiResponse(text),
-            provider: 'GROQ',
-            model: 'Komazi AI (Groq)',
-            latencyTier: 'Komazi AI (Fast LPU)',
+            text: sanitizeAiResponse(geminiText),
+            provider: 'GEMINI',
+            model: 'Komazi AI (Gemini)',
+            latencyTier: 'Komazi AI (Google Gemini Cloud)',
           };
         }
-      } else {
-        const errorBody = await groqRes.text();
-        console.warn(`[AIService] Groq API gagal (HTTP ${groqRes.status}):`, errorBody);
+      } catch (err) {
+        console.warn('[AIService] Gemini API error:', err.message);
       }
-    } catch (err) {
-      console.warn('[AIService] Groq API error / timeout:', err.message, 'Mencoba Google Gemini...');
     }
-  }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TIER 2: GOOGLE GEMINI API (Fallback Tingkat 1 — Generative AI Cloud)
-  // ─────────────────────────────────────────────────────────────────────────────
-  if (settings.geminiApiKey) {
-    try {
-      const geminiText = await callGeminiApi(
-        settings,
-        messagesPayload,
-        contextSystemContent,
-        userQuery,
-        historyMessages
-      );
-      if (geminiText) {
-        return {
-          text: sanitizeAiResponse(geminiText),
-          provider: 'GEMINI',
-          model: 'Komazi AI (Gemini)',
-          latencyTier: 'Komazi AI (Google Gemini Cloud)',
-        };
-      }
-    } catch (err) {
-      console.warn('[AIService] Gemini API error:', err.message, 'Mencoba OpenRouter...');
-    }
-  }
+    // 3. TIER EZKIELYNA API (High Speed OpenAI-Compatible Multi-Model)
+    if (tier === 'ezkielyna' && settings.ezkielynaApiKey) {
+      try {
+        const baseUrl = (settings.ezkielynaBaseUrl || 'https://api.ezkielyna.store/v1').replace(/\/+$/, '');
+        const ezkielynaUrl = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TIER 3: OPENROUTER API (Fallback Tingkat 2 — High Availability Router)
-  // ─────────────────────────────────────────────────────────────────────────────
-  if (settings.openrouterApiKey) {
-    try {
-      const openRouterRes = await fetchWithTimeout(
-        OPENROUTER_API_URL,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.openrouterApiKey}`,
-            'HTTP-Referer': 'https://komazi.pos',
-            'X-Title': 'Komazi POS Sales Analytics',
+        const ezkielynaRes = await fetchWithTimeout(
+          ezkielynaUrl,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${settings.ezkielynaApiKey}`,
+            },
+            body: JSON.stringify({
+              model: settings.ezkielynaModel || 'deepseek-v4.1-flash',
+              messages: messagesPayload,
+              temperature: 0.2,
+              max_tokens: 700,
+            }),
           },
-          body: JSON.stringify({
-            model: settings.openrouterModel || 'meta-llama/llama-3.3-70b-instruct',
-            messages: messagesPayload,
-            temperature: 0.2,
-            max_tokens: 700,
-          }),
-        },
-        4000 // 4 detik timeout
-      );
+          7000 // 7 detik timeout
+        );
 
-      if (openRouterRes.ok) {
-        const json = await openRouterRes.json();
-        const text = json.choices?.[0]?.message?.content?.trim();
-        if (text) {
-          return {
-            text: sanitizeAiResponse(text),
-            provider: 'OPENROUTER',
-            model: 'Komazi AI (OpenRouter)',
-            latencyTier: 'Komazi AI (Cloud Fallback)',
-          };
+        if (ezkielynaRes.ok) {
+          const json = await ezkielynaRes.json();
+          const text = json.choices?.[0]?.message?.content?.trim();
+          if (text) {
+            return {
+              text: sanitizeAiResponse(text),
+              provider: 'EZKIELYNA',
+              model: `Komazi AI (Ezkielyna - ${settings.ezkielynaModel || 'deepseek-v4.1-flash'})`,
+              latencyTier: 'Komazi AI (Ezkielyna Cloud)',
+            };
+          }
+        } else {
+          const errorBody = await ezkielynaRes.text();
+          console.warn(`[AIService] Ezkielyna API gagal (HTTP ${ezkielynaRes.status}):`, errorBody);
         }
-      } else {
-        const errorBody = await openRouterRes.text();
-        console.warn(`[AIService] OpenRouter API gagal (HTTP ${openRouterRes.status}):`, errorBody);
+      } catch (err) {
+        console.warn('[AIService] Ezkielyna API error / timeout:', err.message);
       }
-    } catch (err) {
-      console.warn('[AIService] OpenRouter API error / timeout:', err.message, 'Beralih ke local fallback...');
+    }
+
+    // 4. TIER OPENROUTER API (High Availability Router)
+    if (tier === 'openrouter' && settings.openrouterApiKey) {
+      try {
+        const openRouterRes = await fetchWithTimeout(
+          OPENROUTER_API_URL,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${settings.openrouterApiKey}`,
+              'HTTP-Referer': 'https://komazi.pos',
+              'X-Title': 'Komazi POS Sales Analytics',
+            },
+            body: JSON.stringify({
+              model: settings.openrouterModel || 'meta-llama/llama-3.3-70b-instruct',
+              messages: messagesPayload,
+              temperature: 0.2,
+              max_tokens: 700,
+            }),
+          },
+          7000 // 7 detik timeout
+        );
+
+        if (openRouterRes.ok) {
+          const json = await openRouterRes.json();
+          const text = json.choices?.[0]?.message?.content?.trim();
+          if (text) {
+            return {
+              text: sanitizeAiResponse(text),
+              provider: 'OPENROUTER',
+              model: 'Komazi AI (OpenRouter)',
+              latencyTier: 'Komazi AI (Cloud Fallback)',
+            };
+          }
+        } else {
+          const errorBody = await openRouterRes.text();
+          console.warn(`[AIService] OpenRouter API gagal (HTTP ${openRouterRes.status}):`, errorBody);
+        }
+      } catch (err) {
+        console.warn('[AIService] OpenRouter API error / timeout:', err.message);
+      }
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // TIER 4: LOCAL DETERMINISTIC ENGINE (Tertiary Fallback — 100% Offline Ready)
+  // TIER 5: LOCAL DETERMINISTIC ENGINE (Final Fallback — 100% Offline Ready)
   // ─────────────────────────────────────────────────────────────────────────────
   return {
     text: sanitizeAiResponse(generateFallbackNarrative(businessData, userQuery, effectiveRole, effectiveUserName)),
