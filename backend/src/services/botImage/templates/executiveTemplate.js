@@ -193,7 +193,7 @@ export function renderSalesReportCard(data = {}) {
           <span style="text-align:right;font-weight:700;color:#60A5FA;">${formatRupiah(byMethod.QRIS || 0)}</span>
         </div>
         <div class="table-row" style="grid-template-columns: 2fr 1fr;">
-          <span style="font-weight:600;color:#FFF;">💵 Tunai (Cash)</span>
+          <span style="font-weight:600;color:#FFF;">💵 Tunai</span>
           <span style="text-align:right;font-weight:700;color:#10B981;">${formatRupiah(byMethod.CASH || 0)}</span>
         </div>
         <div class="table-row" style="grid-template-columns: 2fr 1fr;">
@@ -310,14 +310,13 @@ export function renderDailyCloseBookCard(data = {}) {
         <div style="font-size:12px;font-weight:800;color:#FBBF24;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px;">
           TOP 3 MENU PALING LARIS HARI INI:
         </div>
-        ${
-          topProducts.slice(0, 3).map((p, idx) => `
+        ${topProducts.slice(0, 3).map((p, idx) => `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-bottom:8px;">
               <span style="font-weight:600;font-size:13px;color:#FFF;">#${idx + 1} ${escapeHtml(p.name)}</span>
               <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#10B981;">${p.qty}</span>
             </div>
           `).join('') || '<div style="color:#6B7280;font-style:italic;">Data menu tuntas diarsipkan</div>'
-        }
+    }
       </div>
     </div>
   `;

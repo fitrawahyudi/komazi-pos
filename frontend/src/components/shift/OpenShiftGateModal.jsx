@@ -180,7 +180,7 @@ export default function OpenShiftGateModal({ isOpen, onClose }) {
           {/* Modal Input */}
           <div className="space-y-2">
             <label className="block text-xs font-bold text-komazi-muted uppercase tracking-wider">
-              Modal Awal Kasir:
+              Modal Awal Kasir
             </label>
             <div className="relative">
               <span className="absolute left-4 top-3.5 text-sm font-bold text-komazi-muted font-mono">

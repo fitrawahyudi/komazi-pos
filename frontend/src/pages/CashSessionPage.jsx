@@ -335,7 +335,7 @@ export default function CashSessionPage() {
 
             <div>
               <label className="block text-xs font-bold text-komazi-muted uppercase mb-1">
-                Modal Awal Kasir:
+                Modal Awal Kasir
               </label>
               <div className="relative">
                 <span className="absolute left-3.5 top-2.5 text-sm font-bold text-komazi-muted font-mono">

@@ -717,8 +717,8 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                       </div>
 
                       {Number(order.discount) > 0 && (
-                        <div className="flex justify-between text-neutral-800">
-                          <span>Diskon:</span>
+                        <div className="flex justify-between text-neutral-800 font-bold">
+                          <span>Diskon{order.promoName ? ` (${order.promoName})` : ''}:</span>
                           <span>-{formatRupiah(order.discount)}</span>
                         </div>
                       )}

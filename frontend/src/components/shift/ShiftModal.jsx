@@ -365,7 +365,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
 
               <div className="space-y-2">
                 <label className="block font-bold text-komazi-muted uppercase tracking-wider text-[11px]">
-                  Modal Awal Kasir:
+                  Modal Awal Kasir
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-sm font-bold text-komazi-muted font-mono">
@@ -455,7 +455,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
               <div className="p-4 rounded-2xl bg-gradient-to-r from-komazi-surface-2 via-neutral-900 to-komazi-surface-2 border border-komazi-border flex items-center justify-between">
                 <div>
                   <span className="text-[10px] uppercase font-bold tracking-wider text-komazi-muted block">
-                    Total Kas yang Diharapkan di Laci:
+                    Total Kas yang Diharapkan di Laci
                   </span>
                   <span className="font-display font-black text-2xl text-komazi-coral font-mono">
                     {formatRupiah(expectedCash)}

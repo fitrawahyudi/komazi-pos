@@ -637,7 +637,6 @@ export function generateReceiptHtml(orderData = {}) {
       <div class="title-center">
         <h1 class="title-main">STRUK PEMBELIAN</h1>
         <p class="title-sub1">TERIMA KASIH TELAH MEMILIH KOMAZI COFFEE</p>
-        <p class="title-sub2">— PREMIUM COFFEE &amp; COLLABORATIVE WORKSPACE —</p>
       </div>
       <div class="header-vip-box">
         <div class="vip-left">
@@ -672,18 +671,10 @@ export function generateReceiptHtml(orderData = {}) {
         <div class="info-row">
           <div class="info-label">
             <span>👤</span>
-            <span>ID PEMBELI</span>
+            <span>PELANGGAN</span>
           </div>
           <div class="info-colon">:</div>
           <div class="info-value">${escapeHtml(customerName)}</div>
-        </div>
-        <div class="info-row">
-          <div class="info-label">
-            <span>⊞</span>
-            <span>PRODUK / MENU</span>
-          </div>
-          <div class="info-colon">:</div>
-          <div class="info-value">${escapeHtml(productSummary)}</div>
         </div>
         <div class="info-row">
           <div class="info-label">
@@ -699,7 +690,7 @@ export function generateReceiptHtml(orderData = {}) {
             <span>TANGGAL &amp; WAKTU</span>
           </div>
           <div class="info-colon">:</div>
-          <div class="info-value">${dateFormatted} ${timeFormatted}</div>
+          <div class="info-value">${dateFormatted}, ${timeFormatted}</div>
         </div>
         <div class="info-row">
           <div class="info-label">
@@ -708,14 +699,13 @@ export function generateReceiptHtml(orderData = {}) {
           </div>
           <div class="info-colon">:</div>
           <div class="info-value">
-            <span class="status-badge">👑 PAID (LUNAS)</span>
+            <span class="status-badge">PAID</span>
           </div>
         </div>
       </div>
 
       <!-- Right Signature Box -->
       <div class="signature-card">
-        <div class="sig-top-badge">✦ TANDA TANGAN &amp; VERIFIKASI ✦</div>
         <div class="sig-body">
           <div class="sig-text">
             <div class="sig-cursive">Komazi Coffee</div>
@@ -735,9 +725,9 @@ export function generateReceiptHtml(orderData = {}) {
         <thead>
           <tr>
             <th class="col-no">NO</th>
-            <th>DETAIL MENU / PRODUK</th>
+            <th>DETAIL MENU</th>
             <th style="text-align: right; padding-right: 20px;">HARGA SATUAN</th>
-            <th style="text-align: center;">JUMLAH / QTY</th>
+            <th style="text-align: center;">JUMLAH</th>
             <th style="text-align: right; padding-right: 20px;">SUBTOTAL</th>
           </tr>
         </thead>
@@ -759,7 +749,7 @@ export function generateReceiptHtml(orderData = {}) {
         ${
           discount > 0
             ? `<div class="cost-subline" style="color: #2FA39C;">
-                <span>Diskon Promo</span>
+                <span>Diskon ${orderData.promoName ? `(${escapeHtml(orderData.promoName)})` : 'Promo'}</span>
                 <span style="font-family: 'JetBrains Mono', monospace;">-${formatRupiah(discount)}</span>
               </div>`
             : ''
@@ -778,8 +768,7 @@ export function generateReceiptHtml(orderData = {}) {
       </div>
 
       <div class="bottom-box thanks-box">
-        <div class="thanks-title">THANK YOU</div>
-        <div class="thanks-sub">ATAS KEPERCAYAAN ANDA</div>
+        <div class="thanks-title">TERIMA KASIH</div>
         <div class="stars-row">★ ★ ★ ★ ★</div>
         <div style="font-family:'Outfit',sans-serif;font-size:11px;font-weight:800;color:#FF5A4D;letter-spacing:1px;margin-top:4px;">@komazi-assistant</div>
       </div>

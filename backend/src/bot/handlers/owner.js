@@ -73,7 +73,7 @@ export function registerOwner(bot) {
 • Tamu Workspace Aktif: <b>${activeWs.length}</b> sesi berjalan
 
 <b>Metode Pembayaran:</b>
-• Tunai (Cash): ${rupiah(today.byMethod.CASH)}
+• Tunai: ${rupiah(today.byMethod.CASH)}
 • QRIS Dinamis: ${rupiah(today.byMethod.QRIS)}
 • Transfer Bank: ${rupiah(today.byMethod.TRANSFER)}
 ━━━━━━━━━━━━━━━━━━
@@ -231,12 +231,12 @@ Status Keuangan: ${statusIcon}
 
   bot.callbackQuery(/^profit_per:(today|yesterday|7d|month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const period = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
 
     try {
       const report = await profitService.calculateProfitAndLoss({ period });
       const { caption, kb } = renderProfitMessage(report, period);
-      return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+      return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => { });
     } catch (err) {
       return ctx.reply(`❌ Gagal memperbarui laba bersih: ${err.message}`);
     }
@@ -384,12 +384,12 @@ ${aiInsight}
           // Ambil nomor kontak supplier jika ada
           const ingredientsWithSupplier = criticalNames.length > 0
             ? await prisma.ingredient.findMany({
-                where: {
-                  name: { in: criticalNames },
-                  supplierPhone: { not: null },
-                },
-                select: { id: true, name: true, unit: true, stock: true, supplierName: true, supplierPhone: true },
-              })
+              where: {
+                name: { in: criticalNames },
+                supplierPhone: { not: null },
+              },
+              select: { id: true, name: true, unit: true, stock: true, supplierName: true, supplierPhone: true },
+            })
             : [];
 
           const waKb = new InlineKeyboard();
@@ -556,7 +556,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
 
   // Callbacks untuk Sentinel
   bot.callbackQuery('sentinel_action:refresh', requireRole('OWNER', 'MANAGER'), async (ctx) => {
-    await ctx.answerCallbackQuery('Memperbarui status sistem...').catch(() => {});
+    await ctx.answerCallbackQuery('Memperbarui status sistem...').catch(() => { });
     const status = await checkSystemHealth({ checkAi: true });
     const sentinelJob = await prisma.scheduledJob.findFirst({
       where: { jobType: 'MONITORING', name: { contains: 'Sentinel' }, deletedAt: null },
@@ -565,11 +565,11 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
     const caption = formatSentinelStatusHtml(status, { isManual: true, jobConfig: sentinelJob });
     const kb = buildSentinelKeyboard(sentinelJob);
 
-    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => { });
   });
 
   bot.callbackQuery('sentinel_action:schedule_menu', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
     const kb = new InlineKeyboard()
       .text('🌅 Pagi 08:00 WIB (1x Sehari)', 'sentinel_set:0 8 * * *')
       .row()
@@ -599,12 +599,12 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
 <i>Atau gunakan perintah:</i> <code>/sentinel_schedule &lt;waktu&gt;</code> (cth: 08:00, 30m, 1h)
     `.trim();
 
-    return ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    return ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }).catch(() => { });
   });
 
   bot.callbackQuery(/^sentinel_set:(.+)$/, requireRole('OWNER'), async (ctx) => {
     const choice = ctx.match[1];
-    await ctx.answerCallbackQuery('Menyimpan jadwal...').catch(() => {});
+    await ctx.answerCallbackQuery('Menyimpan jadwal...').catch(() => { });
 
     const sentinelJob = await prisma.scheduledJob.findFirst({
       where: { jobType: 'MONITORING', name: { contains: 'Sentinel' }, deletedAt: null },
@@ -624,7 +624,7 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
             .text('🛡️ Cek Status', 'sentinel_action:refresh')
             .text('▶️ Aktifkan Kembali', 'sentinel_action:toggle_resume'),
         }
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     try {
@@ -653,14 +653,14 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
             .text('🛡️ Cek Status Sekarang', 'sentinel_action:refresh')
             .text('⏰ Atur Jadwal Lain', 'sentinel_action:schedule_menu'),
         }
-      ).catch(() => {});
+      ).catch(() => { });
     } catch (err) {
       return ctx.reply(`❌ Format jadwal tidak valid: ${esc(err.message)}`, { parse_mode: 'HTML' });
     }
   });
 
   bot.callbackQuery('sentinel_action:toggle_pause', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
     const sentinelJob = await prisma.scheduledJob.findFirst({
       where: { jobType: 'MONITORING', name: { contains: 'Sentinel' }, deletedAt: null },
     });
@@ -676,11 +676,11 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
     const caption = formatSentinelStatusHtml(status, { isManual: true, jobConfig: sentinelJob });
     const kb = buildSentinelKeyboard(sentinelJob);
 
-    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => { });
   });
 
   bot.callbackQuery('sentinel_action:toggle_resume', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
     const sentinelJob = await prisma.scheduledJob.findFirst({
       where: { jobType: 'MONITORING', name: { contains: 'Sentinel' }, deletedAt: null },
     });
@@ -698,11 +698,11 @@ Kapan Sentinel Scheduler harus memeriksa kesehatan sistem & mengirim laporan ke 
     const caption = formatSentinelStatusHtml(status, { isManual: true, jobConfig: sentinelJob });
     const kb = buildSentinelKeyboard(sentinelJob);
 
-    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    return ctx.editMessageText(caption, { parse_mode: 'HTML', reply_markup: kb }).catch(() => { });
   });
 
   bot.callbackQuery('prediksi_action:refresh', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery({ text: '🧠 Menghitung prediksi terbaru...' }).catch(() => {});
+    await ctx.answerCallbackQuery({ text: '🧠 Menghitung prediksi terbaru...' }).catch(() => { });
     return withLoadingAnimation(
       ctx,
       { chatAction: 'typing' },
@@ -757,7 +757,7 @@ ${aiInsight}
   });
 
   bot.callbackQuery('prediksi_action:cek_stok', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
     try {
       const stockForecast = await calculateStockRunoutForecast();
       const caption = `
@@ -779,7 +779,7 @@ ${stockForecast.criticalItems.slice(0, 5).map((it) => `• <b>${esc(it.name)}</b
   });
 
   bot.callbackQuery('prediksi_action:omzet_today', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => { });
     try {
       const [today, yesterday, activeWs] = await Promise.all([
         orderService.getSummary('today'),

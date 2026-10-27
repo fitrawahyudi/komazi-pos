@@ -58,30 +58,89 @@ export const productSchema = z.object({
 });
 
 export const orderItemSchema = z.object({
-  productId: z.number().int(),
+  productId: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : val),
+    z.number().int('ID produk harus berupa bilangan bulat')
+  ),
   variantName: z.string().nullable().optional(),
-  qty: z.number().int().min(1, 'Qty minimal 1'),
-  unitPrice: z.number().nonnegative(),
-  discount: z.number().nonnegative().optional().default(0),
+  qty: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : val),
+    z.number().int('Qty harus berupa bilangan bulat').min(1, 'Qty minimal 1')
+  ),
+  unitPrice: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : val),
+    z.number().nonnegative('Harga satuan tidak boleh negatif')
+  ),
+  discount: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : 0),
+    z.number().nonnegative().optional().default(0)
+  ),
   note: z.string().nullable().optional(),
 });
 
 export const paymentSchema = z.object({
-  method: z.enum(['CASH', 'QRIS', 'TRANSFER']),
-  amount: z.number().positive(),
+  method: z.preprocess(
+    (val) => (typeof val === 'string' ? val.toUpperCase().trim() : val),
+    z.enum(['CASH', 'QRIS', 'TRANSFER'], {
+      errorMap: () => ({ message: 'Metode pembayaran harus CASH, QRIS, atau TRANSFER' }),
+    })
+  ),
+  amount: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : 0),
+    z.number().nonnegative('Nominal pembayaran tidak boleh negatif')
+  ),
   reference: z.string().nullable().optional(),
+  tendered: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : undefined),
+    z.number().nonnegative().optional()
+  ),
+  change: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : undefined),
+    z.number().nonnegative().optional()
+  ),
 });
 
 export const createOrderSchema = z.object({
-  type: z.enum(['DINE_IN', 'TAKE_AWAY']).default('DINE_IN'),
-  tableNo: z.string().nullable().optional(),
+  type: z.preprocess(
+    (val) => {
+      if (typeof val === 'string') {
+        const u = val.toUpperCase().replace('-', '_').trim();
+        if (u === 'TAKEAWAY' || u === 'TAKE_AWAY') return 'TAKE_AWAY';
+        if (u === 'DINEIN' || u === 'DINE_IN') return 'DINE_IN';
+      }
+      return val;
+    },
+    z.enum(['DINE_IN', 'TAKE_AWAY']).default('DINE_IN')
+  ),
+  tableNo: z
+    .union([z.string(), z.number()])
+    .transform((val) => {
+      if (val === null || val === undefined || val === '') return null;
+      return String(val).trim();
+    })
+    .nullable()
+    .optional(),
   customerName: z.string().nullable().optional(),
-  customerId: z.number().int().nullable().optional(),
-  shiftId: z.number().int().nullable().optional(),
+  customerId: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : null),
+    z.number().int().nullable().optional()
+  ),
+  shiftId: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : null),
+    z.number().int().nullable().optional()
+  ),
   items: z.array(orderItemSchema).optional().default([]),
-  discount: z.number().nonnegative().optional().default(0),
+  discount: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : 0),
+    z.number().nonnegative().optional().default(0)
+  ),
   payments: z.array(paymentSchema).optional(),
-  workspaceSessionId: z.number().int().nullable().optional(),
+  workspaceSessionId: z.preprocess(
+    (val) => (val !== null && val !== undefined && val !== '' ? Number(val) : null),
+    z.number().int().nullable().optional()
+  ),
+  promoCode: z.string().nullable().optional(),
+  promoName: z.string().nullable().optional(),
 }).refine((data) => (data.items && data.items.length > 0) || Boolean(data.workspaceSessionId), {
   message: 'Pesanan harus memiliki minimal satu item atau sesi workspace',
   path: ['items'],

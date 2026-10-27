@@ -301,29 +301,41 @@ export const useOrdersStore = create(
 
         // Persist order to MySQL backend
         try {
+          const validOrderItems = itemsWithCost
+            .map((i) => ({
+              productId: Number(i.productId || i.id),
+              variantName: i.variantName ? String(i.variantName) : null,
+              qty: Number(i.qty) || 1,
+              unitPrice: Number(i.price || i.unitPrice) || 0,
+              discount: Number(i.discount) || 0,
+              note: i.note ? String(i.note) : null,
+            }))
+            .filter((i) => !isNaN(i.productId) && i.productId > 0);
+
           const apiRes = await api.orders.create({
             type: orderPayload.type || 'DINE_IN',
             tableNo: cleanTableNo,
             customerName: cleanCustomerName,
             customerId: orderPayload.customerId ? Number(orderPayload.customerId) : null,
             shiftId: orderPayload.shiftId ? Number(orderPayload.shiftId) : null,
-            items: itemsWithCost.map((i) => ({
-              productId: Number(i.productId),
-              variantName: i.variantName ? String(i.variantName) : null,
-              qty: Number(i.qty) || 1,
-              unitPrice: Number(i.price || i.unitPrice) || 0,
-              discount: Number(i.discount) || 0,
-              note: i.note ? String(i.note) : null,
-            })),
+            items: validOrderItems,
             discount: Number(orderPayload.discount) || 0,
             payments: cleanPayments,
             workspaceSessionId: (orderPayload.workspaceSessionId ?? orderPayload.workspaceSession?.id)
               ? Number(orderPayload.workspaceSessionId ?? orderPayload.workspaceSession?.id)
               : null,
+            promoCode: orderPayload.promoCode || null,
+            promoName: orderPayload.promoName || null,
           });
 
           if (apiRes && !apiRes.success) {
-            throw new Error(apiRes.message || 'Gagal membuat pesanan');
+            const errorDetails = Array.isArray(apiRes.errors) && apiRes.errors.length > 0
+              ? apiRes.errors.map((e) => `${e.field}: ${e.message}`).join(', ')
+              : null;
+            const errMsg = errorDetails
+              ? `${apiRes.message || 'Validasi gagal'} (${errorDetails})`
+              : (apiRes.message || 'Gagal membuat pesanan');
+            throw new Error(errMsg);
           }
 
           if (apiRes && apiRes.success && apiRes.data) {
@@ -629,9 +641,14 @@ export const useOrdersStore = create(
               tableNo: cleanTableNo,
               customerName: cleanCustomerName,
               customerId: paidOrderPayload.customerId ? Number(paidOrderPayload.customerId) : null,
+              promoCode: paidOrderPayload.promoCode || null,
+              promoName: paidOrderPayload.promoName || null,
             });
             if (payRes && !payRes.success) {
-              throw new Error(payRes.message || 'Gagal memproses pembayaran');
+              const errorDetails = Array.isArray(payRes.errors) && payRes.errors.length > 0
+                ? payRes.errors.map((e) => `${e.field}: ${e.message}`).join(', ')
+                : null;
+              throw new Error(errorDetails ? `${payRes.message || 'Gagal memproses pembayaran'} (${errorDetails})` : (payRes.message || 'Gagal memproses pembayaran'));
             }
             if (payRes && payRes.success && payRes.data) {
               paidOrderBackend = payRes.data;
@@ -647,9 +664,14 @@ export const useOrdersStore = create(
               discount: Number(paidOrderPayload.discount) || 0,
               payments: cleanPayments,
               workspaceSessionId: paidOrderPayload.workspaceSessionId ? Number(paidOrderPayload.workspaceSessionId) : null,
+              promoCode: paidOrderPayload.promoCode || null,
+              promoName: paidOrderPayload.promoName || null,
             });
             if (createRes && !createRes.success) {
-              throw new Error(createRes.message || 'Gagal membuat pesanan');
+              const errorDetails = Array.isArray(createRes.errors) && createRes.errors.length > 0
+                ? createRes.errors.map((e) => `${e.field}: ${e.message}`).join(', ')
+                : null;
+              throw new Error(errorDetails ? `${createRes.message || 'Validasi gagal'} (${errorDetails})` : (createRes.message || 'Gagal membuat pesanan'));
             }
             if (createRes && createRes.success && createRes.data) {
               paidOrderBackend = createRes.data;

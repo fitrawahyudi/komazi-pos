@@ -55,6 +55,7 @@ import {
   UserCheck,
   Utensils,
   Download,
+  Ticket,
 } from 'lucide-react';
 import EditProfileModal from '../profile/EditProfileModal';
 import { usePrinterStore } from '../../store/printerStore';
@@ -199,6 +200,12 @@ export default function Sidebar() {
             to: '/categories',
             label: 'Kategori Menu',
             icon: Tag,
+            allowed: isManagerOrOwner,
+          },
+          {
+            to: '/promos',
+            label: 'Promo & Diskon',
+            icon: Ticket,
             allowed: isManagerOrOwner,
           },
           {

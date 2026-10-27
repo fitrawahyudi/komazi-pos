@@ -56,6 +56,7 @@ import { registerOwner } from './handlers/owner.js';
 import { registerAiHandler, executeAiQuery } from './handlers/ai.js';
 import { registerJobHandlers } from './handlers/jobs.js';
 import { registerStaffMenu } from './handlers/staffMenu.js';
+import { registerAiActionHandlers, tryHandleOperationalAction } from './handlers/aiActions.js';
 import { isAiDirectChatMode, setAiDirectChatMode } from './ai/aiSessionManager.js';
 
 import { openShift } from './conversations/openShift.js';
@@ -127,6 +128,7 @@ registerBarista(bot);
 registerManager(bot);
 registerOwner(bot);
 registerAiHandler(bot);
+registerAiActionHandlers(bot);
 registerJobHandlers(bot);
 registerStaffMenu(bot);
 
@@ -178,7 +180,16 @@ bot.on('message', async (ctx) => {
     }
   }
 
-  // 2. Deteksi perintah jadwal dinamis tanpa garis miring (/)
+  // 2. Deteksi Aksi Operasional AI Copilot (Restock Bahan & Status Menu)
+  const isAuthorizedCopilot = ctx.user.role === 'OWNER' || ctx.user.role === 'MANAGER' || ctx.user.role === 'BARISTA';
+  if (isAuthorizedCopilot && !text.startsWith('/')) {
+    const actionResult = await tryHandleOperationalAction(ctx, text);
+    if (actionResult && actionResult.handled) {
+      return;
+    }
+  }
+
+  // 3. Deteksi perintah jadwal dinamis tanpa garis miring (/)
   if (isManagerOrOwner && !text.startsWith('/')) {
     if (/^(jadwal|daftar\s+jadwal|list\s+jadwal|lihat\s+jadwal|cek\s+jadwal)$/i.test(lowerText)) {
       const listText = await universalSchedulerAgent.listActiveSchedulesNatural(ctx.user);

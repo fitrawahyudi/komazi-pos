@@ -33,7 +33,7 @@
 - **Kalkulasi Finansial Otomatis:** Perhitungan subtotal, diskon (nominal / persentase), service charge (5%), pajak resto PB1/PPN (10%), serta pembulatan cerdas ke kelipatan terdekat.
 - **Hold & Split Bills & Merge Bill:** Kemampuan menahan nota transaksi (*Open Bills*), membagi tagihan per pelanggan (*Split Bill*), serta menggabungkan beberapa meja (*Merge Bills*).
 - **Multi-Metode Pembayaran:**
-  - 💵 **Tunai (Cash):** Tombol pecahan cepat (50k, 100k, 200k), uang pas, dan perhitungan kembalian otomatis.
+  - 💵 **Tunai:** Tombol pecahan cepat (50k, 100k, 200k), uang pas, dan perhitungan kembalian otomatis.
   - 📱 **QRIS Statis & Dinamis:** Pengurai payload QRIS dengan validasi CRC16 dan render QR otomatis.
   - 🏦 **Transfer Bank:** Nomor rekening bank dengan tombol salin 1-klik dan catatan referensi transfer.
 - **Mode Layar Penuh (Fullscreen):** Tombol layar penuh di navbar atas (dan tombol F11) untuk pengalaman kasir tanpa distraksi browser.

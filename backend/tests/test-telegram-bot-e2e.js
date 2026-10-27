@@ -91,6 +91,34 @@ async function testTelegramBotE2E() {
     });
     assert(barMessages.length === 1 && barMessages[0].text.includes('<code>['), 'Default withLoadingAnimation displays clean loading bar frame');
 
+    // 1c. Uji withLoadingAnimation dengan skipLoadingMessage: true (Mode Bebas Chat)
+    console.log('1️⃣c Testing withLoadingAnimation with skipLoadingMessage: true...');
+    const skipMessages = [];
+    const skipActions = [];
+    const mockSkipCtx = {
+      replyWithChatAction: async (action) => skipActions.push(action),
+      reply: async (text) => {
+        skipMessages.push(text);
+        return { chat: { id: 12345 }, message_id: 777, text };
+      },
+      api: {
+        editMessageText: async () => {},
+        deleteMessage: async () => {},
+      },
+    };
+
+    const skipResult = await withLoadingAnimation(
+      mockSkipCtx,
+      { chatAction: 'typing', skipLoadingMessage: true },
+      async () => {
+        return 'success_no_loading_frame';
+      }
+    );
+
+    assert(skipResult === 'success_no_loading_frame', 'Worker executes and returns result');
+    assert(skipActions.includes('typing'), 'Chat action typing dispatched');
+    assert(skipMessages.length === 0, 'No loading frame messages sent to user when skipLoadingMessage is true');
+
     // 2. Uji buildPaginatedNumericKeyboard (10 item layout)
     console.log('2️⃣  Testing buildPaginatedNumericKeyboard (10 items on page)...');
     const mock10Items = Array.from({ length: 10 }, (_, i) => ({ id: 100 + i + 1, name: `Item ${i + 1}` }));

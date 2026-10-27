@@ -133,13 +133,6 @@ export default function CloseSessionReportModal({ session, onClose, onProceedToC
               </p>
             </div>
           </div>
-
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl bg-komazi-surface-2 hover:bg-neutral-800 text-komazi-muted hover:text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Modal Scrollable Body */}

@@ -6,7 +6,6 @@
 
 import prisma from '../../config/db.js';
 import { jobRunnerService } from './jobRunnerService.js';
-import { jobRegistryService } from './jobRegistryService.js';
 import logger from '../../utils/logger.js';
 
 const POLL_INTERVAL_MS = Number(process.env.CRON_WORKER_INTERVAL_MS) || 15000; // 15 detik
@@ -92,10 +91,7 @@ export async function startCronWorker() {
   logger.scheduler.info(`[CronWorker] Starting engine (interval: ${POLL_INTERVAL_MS}ms, maxConcurrency: ${MAX_CONCURRENT_JOBS})`);
 
   try {
-    // 1. Seed jadwal bawaan jika tabel masih kosong
-    await jobRegistryService.seedDefaultJobsIfEmpty();
-
-    // 2. Bersihkan job runs yang menggantung dari restart sebelumnya
+    // 1. Bersihkan job runs yang menggantung dari restart sebelumnya
     await jobRunnerService.recoverStaleRuns();
   } catch (startupErr) {
     logger.scheduler.warn(`[CronWorker] Warning on startup checks: ${startupErr.message}`);

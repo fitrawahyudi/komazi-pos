@@ -27,6 +27,7 @@ const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 const OrdersPage = lazy(() => import('./pages/OrdersPage'));
 const MenuPage = lazy(() => import('./pages/MenuPage'));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage'));
+const PromosPage = lazy(() => import('./pages/PromosPage'));
 const StockPage = lazy(() => import('./pages/StockPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
@@ -435,6 +436,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
                 <CategoriesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Manajemen Promo & Diskon (Manager+) */}
+          <Route
+            path="promos"
+            element={
+              <ProtectedRoute allowedRoles={['MANAGER', 'OWNER']}>
+                <PromosPage />
               </ProtectedRoute>
             }
           />

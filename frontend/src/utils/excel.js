@@ -445,31 +445,31 @@ export function downloadRecipeTemplate(options = {}) {
   const liveProducts = options.products || [];
   const productRows = liveProducts.length > 0
     ? liveProducts.map((p) => ({
-        'SKU Produk': p.sku || `PRD-${p.id}`,
-        'Nama Produk': p.name,
-        'Nama Varian': Array.isArray(p.variants) && p.variants.length > 0 ? p.variants.map((v) => v.name).join(', ') : '',
-        'Kategori': p.category?.name || p.categoryName || '-',
-        'Aktif?': p.isActive !== false ? 'ya' : 'tidak',
-        'Lacak Stok?': p.trackStock ? 'ya' : 'tidak',
-      }))
+      'SKU Produk': p.sku || `PRD-${p.id}`,
+      'Nama Produk': p.name,
+      'Nama Varian': Array.isArray(p.variants) && p.variants.length > 0 ? p.variants.map((v) => v.name).join(', ') : '',
+      'Kategori': p.category?.name || p.categoryName || '-',
+      'Aktif?': p.isActive !== false ? 'ya' : 'tidak',
+      'Lacak Stok?': p.trackStock ? 'ya' : 'tidak',
+    }))
     : [
-        {
-          'SKU Produk': 'SA-01',
-          'Nama Produk': 'Sanger Espresso',
-          'Nama Varian': 'Ice, Hot',
-          'Kategori': 'Coffee',
-          'Aktif?': 'ya',
-          'Lacak Stok?': 'ya',
-        },
-        {
-          'SKU Produk': 'KMZ-02',
-          'Nama Produk': 'Croissant Butter Paris',
-          'Nama Varian': '',
-          'Kategori': 'Bakery',
-          'Aktif?': 'ya',
-          'Lacak Stok?': 'ya',
-        },
-      ];
+      {
+        'SKU Produk': 'SA-01',
+        'Nama Produk': 'Sanger Espresso',
+        'Nama Varian': 'Ice, Hot',
+        'Kategori': 'Coffee',
+        'Aktif?': 'ya',
+        'Lacak Stok?': 'ya',
+      },
+      {
+        'SKU Produk': 'KMZ-02',
+        'Nama Produk': 'Croissant Butter Paris',
+        'Nama Varian': '',
+        'Kategori': 'Bakery',
+        'Aktif?': 'ya',
+        'Lacak Stok?': 'ya',
+      },
+    ];
   const wsProduk = buildReferenceSheet(
     ['SKU Produk', 'Nama Produk', 'Nama Varian', 'Kategori', 'Aktif?', 'Lacak Stok?'],
     productRows
@@ -480,43 +480,43 @@ export function downloadRecipeTemplate(options = {}) {
   const liveIngredients = options.ingredients || [];
   const ingredientRows = liveIngredients.length > 0
     ? liveIngredients.map((i) => ({
-        'Nama Sumber Persediaan': i.name,
-        'Satuan': i.unit,
-        'Jumlah Stok': Number(i.stock || 0),
-        'Stok Minimum': Number(i.minStock || 0),
-        'Harga per Satuan': Number(i.costPerUnit || 0),
-        'Lacak Stok?': 'ya',
-        'Aktif?': i.isActive !== false ? 'ya' : 'tidak',
-      }))
+      'Nama Sumber Persediaan': i.name,
+      'Satuan': i.unit,
+      'Jumlah Stok': Number(i.stock || 0),
+      'Stok Minimum': Number(i.minStock || 0),
+      'Harga per Satuan': Number(i.costPerUnit || 0),
+      'Lacak Stok?': 'ya',
+      'Aktif?': i.isActive !== false ? 'ya' : 'tidak',
+    }))
     : [
-        {
-          'Nama Sumber Persediaan': 'Biji Kopi House Blend Arabica',
-          'Satuan': 'gram',
-          'Jumlah Stok': 5000,
-          'Stok Minimum': 1000,
-          'Harga per Satuan': 250,
-          'Lacak Stok?': 'ya',
-          'Aktif?': 'ya',
-        },
-        {
-          'Nama Sumber Persediaan': 'Fresh Milk Pasteurisasi',
-          'Satuan': 'ml',
-          'Jumlah Stok': 15000,
-          'Stok Minimum': 3000,
-          'Harga per Satuan': 22,
-          'Lacak Stok?': 'ya',
-          'Aktif?': 'ya',
-        },
-        {
-          'Nama Sumber Persediaan': 'Gula Pasir',
-          'Satuan': 'kg',
-          'Jumlah Stok': 25,
-          'Stok Minimum': 5,
-          'Harga per Satuan': 17500,
-          'Lacak Stok?': 'ya',
-          'Aktif?': 'ya',
-        },
-      ];
+      {
+        'Nama Sumber Persediaan': 'Biji Kopi House Blend Arabica',
+        'Satuan': 'gram',
+        'Jumlah Stok': 5000,
+        'Stok Minimum': 1000,
+        'Harga per Satuan': 250,
+        'Lacak Stok?': 'ya',
+        'Aktif?': 'ya',
+      },
+      {
+        'Nama Sumber Persediaan': 'Fresh Milk Pasteurisasi',
+        'Satuan': 'ml',
+        'Jumlah Stok': 15000,
+        'Stok Minimum': 3000,
+        'Harga per Satuan': 22,
+        'Lacak Stok?': 'ya',
+        'Aktif?': 'ya',
+      },
+      {
+        'Nama Sumber Persediaan': 'Gula Pasir',
+        'Satuan': 'kg',
+        'Jumlah Stok': 25,
+        'Stok Minimum': 5,
+        'Harga per Satuan': 17500,
+        'Lacak Stok?': 'ya',
+        'Aktif?': 'ya',
+      },
+    ];
   const wsBahan = buildReferenceSheet(
     ['Nama Sumber Persediaan', 'Satuan', 'Jumlah Stok', 'Stok Minimum', 'Harga per Satuan', 'Lacak Stok?', 'Aktif?'],
     ingredientRows
@@ -623,16 +623,16 @@ export function downloadMenuTemplate(options = {}) {
   const liveCategories = options.categories || [];
   const catRows = liveCategories.length > 0
     ? liveCategories.map((c) => ({
-        'Nama Kategori': c.name,
-        'Deskripsi': c.description || '-',
-        'Jumlah Produk': Number(c.productsCount || c._count?.products || 0),
-      }))
+      'Nama Kategori': c.name,
+      'Deskripsi': c.description || '-',
+      'Jumlah Produk': Number(c.productsCount || c._count?.products || 0),
+    }))
     : [
-        { 'Nama Kategori': 'Coffee', 'Deskripsi': 'Minuman berbasis espresso & manual brew', 'Jumlah Produk': 12 },
-        { 'Nama Kategori': 'Non-Coffee', 'Deskripsi': 'Matcha, cokelat, teh artisan & susu', 'Jumlah Produk': 8 },
-        { 'Nama Kategori': 'Bakery', 'Deskripsi': 'Croissant, toast & pastry segar', 'Jumlah Produk': 5 },
-        { 'Nama Kategori': 'Main Course', 'Deskripsi': 'Makanan berat dan rice bowl', 'Jumlah Produk': 6 },
-      ];
+      { 'Nama Kategori': 'Coffee', 'Deskripsi': 'Minuman berbasis espresso & manual brew', 'Jumlah Produk': 12 },
+      { 'Nama Kategori': 'Non-Coffee', 'Deskripsi': 'Matcha, cokelat, teh artisan & susu', 'Jumlah Produk': 8 },
+      { 'Nama Kategori': 'Bakery', 'Deskripsi': 'Croissant, toast & pastry segar', 'Jumlah Produk': 5 },
+      { 'Nama Kategori': 'Main Course', 'Deskripsi': 'Makanan berat dan rice bowl', 'Jumlah Produk': 6 },
+    ];
   const wsCat = buildReferenceSheet(['Nama Kategori', 'Deskripsi', 'Jumlah Produk'], catRows);
   XLSX.utils.book_append_sheet(wb, wsCat, 'Data Kategori');
 
@@ -640,18 +640,18 @@ export function downloadMenuTemplate(options = {}) {
   const liveIngredients = options.ingredients || [];
   const ingRows = liveIngredients.length > 0
     ? liveIngredients.map((ing) => ({
-        'Nama Bahan': ing.name,
-        'Satuan': ing.unit,
-        'Harga Modal per Satuan': Number(ing.costPerUnit || 0),
-        'Stok Tersedia': Number(ing.stock || 0),
-      }))
+      'Nama Bahan': ing.name,
+      'Satuan': ing.unit,
+      'Harga Modal per Satuan': Number(ing.costPerUnit || 0),
+      'Stok Tersedia': Number(ing.stock || 0),
+    }))
     : [
-        { 'Nama Bahan': 'Kopi Biji Espresso', 'Satuan': 'gram', 'Harga Modal per Satuan': 220, 'Stok Tersedia': 5000 },
-        { 'Nama Bahan': 'Susu Fresh Milk', 'Satuan': 'ml', 'Harga Modal per Satuan': 20, 'Stok Tersedia': 10000 },
-        { 'Nama Bahan': 'Gula Aren Cair', 'Satuan': 'ml', 'Harga Modal per Satuan': 30, 'Stok Tersedia': 3000 },
-        { 'Nama Bahan': 'Beras Premium', 'Satuan': 'gram', 'Harga Modal per Satuan': 15, 'Stok Tersedia': 25000 },
-        { 'Nama Bahan': 'Telur Ayam', 'Satuan': 'pcs', 'Harga Modal per Satuan': 2000, 'Stok Tersedia': 120 },
-      ];
+      { 'Nama Bahan': 'Kopi Biji Espresso', 'Satuan': 'gram', 'Harga Modal per Satuan': 220, 'Stok Tersedia': 5000 },
+      { 'Nama Bahan': 'Susu Fresh Milk', 'Satuan': 'ml', 'Harga Modal per Satuan': 20, 'Stok Tersedia': 10000 },
+      { 'Nama Bahan': 'Gula Aren Cair', 'Satuan': 'ml', 'Harga Modal per Satuan': 30, 'Stok Tersedia': 3000 },
+      { 'Nama Bahan': 'Beras Premium', 'Satuan': 'gram', 'Harga Modal per Satuan': 15, 'Stok Tersedia': 25000 },
+      { 'Nama Bahan': 'Telur Ayam', 'Satuan': 'pcs', 'Harga Modal per Satuan': 2000, 'Stok Tersedia': 120 },
+    ];
   const wsIng = buildReferenceSheet(['Nama Bahan', 'Satuan', 'Harga Modal per Satuan', 'Stok Tersedia'], ingRows);
   XLSX.utils.book_append_sheet(wb, wsIng, 'Data Bahan Baku');
 
@@ -1205,15 +1205,15 @@ export function exportOrdersToExcel({
   const dataRows = orders.map((o, idx) => {
     const waktu = o.createdAt
       ? new Intl.DateTimeFormat('id-ID', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Jakarta',
-        }).format(new Date(o.createdAt)).replace(/\./g, ':')
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Jakarta',
+      }).format(new Date(o.createdAt)).replace(/\./g, ':')
       : '-';
 
     let statusLabel = o.status;
@@ -1226,8 +1226,8 @@ export function exportOrdersToExcel({
       o.type === 'TAKE_AWAY' || o.type === 'TAKEAWAY'
         ? 'Take-Away'
         : o.type === 'DELIVERY'
-        ? 'Delivery'
-        : 'Dine-In';
+          ? 'Delivery'
+          : 'Dine-In';
 
     const tableNo = o.tableNo ? `Meja ${o.tableNo}` : '-';
     const customer = o.customerName || o.customer?.name || 'Pelanggan Dine In';
@@ -1249,7 +1249,7 @@ export function exportOrdersToExcel({
 
     const paymentMethod = o.payments?.[0]?.method || o.paymentMethod || 'CASH';
     let formattedMethod = paymentMethod;
-    if (paymentMethod === 'CASH') formattedMethod = 'Tunai (Cash)';
+    if (paymentMethod === 'CASH') formattedMethod = 'Tunai';
     else if (paymentMethod === 'TRANSFER') formattedMethod = 'Transfer Bank';
     else if (paymentMethod === 'QRIS') formattedMethod = 'QRIS';
 
@@ -1491,15 +1491,15 @@ export function exportOrdersToExcel({
   orders.forEach((o) => {
     const waktu = o.createdAt
       ? new Intl.DateTimeFormat('id-ID', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Jakarta',
-        }).format(new Date(o.createdAt)).replace(/\./g, ':')
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Jakarta',
+      }).format(new Date(o.createdAt)).replace(/\./g, ':')
       : '-';
 
     let statusLabel = o.status;
@@ -1729,15 +1729,15 @@ export function exportOrdersToCsv({
   const rows = orders.map((o, idx) => {
     const waktu = o.createdAt
       ? new Intl.DateTimeFormat('id-ID', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Jakarta',
-        }).format(new Date(o.createdAt)).replace(/\./g, ':')
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Jakarta',
+      }).format(new Date(o.createdAt)).replace(/\./g, ':')
       : '-';
 
     let statusLabel = o.status;
@@ -1750,8 +1750,8 @@ export function exportOrdersToCsv({
       o.type === 'TAKE_AWAY' || o.type === 'TAKEAWAY'
         ? 'Take-Away'
         : o.type === 'DELIVERY'
-        ? 'Delivery'
-        : 'Dine-In';
+          ? 'Delivery'
+          : 'Dine-In';
 
     const tableNo = o.tableNo ? `Meja ${o.tableNo}` : '-';
     const customer = o.customerName || o.customer?.name || 'Pelanggan Dine In';
@@ -1773,7 +1773,7 @@ export function exportOrdersToCsv({
 
     const paymentMethod = o.payments?.[0]?.method || o.paymentMethod || 'CASH';
     let formattedMethod = paymentMethod;
-    if (paymentMethod === 'CASH') formattedMethod = 'Tunai (Cash)';
+    if (paymentMethod === 'CASH') formattedMethod = 'Tunai';
     else if (paymentMethod === 'TRANSFER') formattedMethod = 'Transfer Bank';
     else if (paymentMethod === 'QRIS') formattedMethod = 'QRIS';
 
@@ -1874,14 +1874,14 @@ export function exportZReportToExcel({
     Array.isArray(session.cashiers) && session.cashiers.length > 0
       ? session.cashiers
       : [
-          {
-            id: session.cashierId,
-            name: session.cashierName || 'Kasir',
-            role: 'Kasir',
-            ordersCount,
-            totalSales,
-          },
-        ];
+        {
+          id: session.cashierId,
+          name: session.cashierName || 'Kasir',
+          role: 'Kasir',
+          ordersCount,
+          totalSales,
+        },
+      ];
 
   const cashMovements = Array.isArray(session.cashMovements)
     ? session.cashMovements
@@ -2041,7 +2041,7 @@ export function exportZReportToExcel({
   rows.push(['No', 'Metode Pembayaran', 'Porsi Penjualan (%)', 'Total Nominal (Rp)', 'Keterangan Akuntansi']);
   rowMeta.push({ type: 'TBL_HEADER' });
 
-  rows.push([1, 'Uang Tunai (Cash)', calcShare(cashAmount), cashAmount, 'Masuk langsung ke laci kasir fisik']);
+  rows.push([1, 'Uang Tunai', calcShare(cashAmount), cashAmount, 'Masuk langsung ke laci kasir fisik']);
   rowMeta.push({ type: 'DATA_ROW', isEven: true, isCash: true });
 
   rows.push([2, 'QRIS Digital', calcShare(qrisAmount), qrisAmount, 'Masuk otomatis ke rekening settlement QRIS']);
@@ -2095,10 +2095,10 @@ export function exportZReportToExcel({
         m.type === 'IN'
           ? 'KAS MASUK (IN)'
           : m.type === 'OUT'
-          ? 'KAS KELUAR (OUT)'
-          : m.type === 'DROP'
-          ? 'SETOR BRANKAS (DROP)'
-          : m.type;
+            ? 'KAS KELUAR (OUT)'
+            : m.type === 'DROP'
+              ? 'SETOR BRANKAS (DROP)'
+              : m.type;
 
       rows.push([
         idx + 1,

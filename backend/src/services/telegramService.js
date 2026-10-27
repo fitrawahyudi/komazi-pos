@@ -238,8 +238,8 @@ export async function notifyPaidTransaction(order) {
     const dateObj = order.paidAt
       ? new Date(order.paidAt)
       : order.createdAt
-      ? new Date(order.createdAt)
-      : new Date();
+        ? new Date(order.createdAt)
+        : new Date();
     const timeStr =
       dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
     const dateStr = dateObj.toLocaleDateString('id-ID', {
@@ -268,23 +268,23 @@ export async function notifyPaidTransaction(order) {
       order.payments.forEach((p) => {
         const m =
           p.method === 'CASH'
-            ? 'Tunai (Cash)'
+            ? 'Tunai'
             : p.method === 'QRIS'
-            ? 'QRIS Dinamis'
-            : p.method === 'TRANSFER'
-            ? 'Transfer Bank'
-            : p.method;
+              ? 'QRIS Dinamis'
+              : p.method === 'TRANSFER'
+                ? 'Transfer Bank'
+                : p.method;
         paymentMethods.push(m);
       });
     } else if (order.paymentMethod) {
       const m =
         order.paymentMethod === 'CASH'
-          ? 'Tunai (Cash)'
+          ? 'Tunai'
           : order.paymentMethod === 'QRIS'
-          ? 'QRIS Dinamis'
-          : order.paymentMethod === 'TRANSFER'
-          ? 'Transfer Bank'
-          : order.paymentMethod;
+            ? 'QRIS Dinamis'
+            : order.paymentMethod === 'TRANSFER'
+              ? 'Transfer Bank'
+              : order.paymentMethod;
       paymentMethods.push(m);
     } else {
       paymentMethods.push('QRIS Dinamis');
@@ -392,9 +392,9 @@ export async function notifyLowStock({ ingredientName, currentStock, minStock, u
     }
 
     if (photoBuffer) {
-      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+      sendTelegramPhoto(photoBuffer, message).catch(() => { });
     } else {
-      sendTelegramMessage(message).catch(() => {});
+      sendTelegramMessage(message).catch(() => { });
     }
   } catch (err) {
     console.warn('[TelegramService] notifyLowStock error:', err.message);
@@ -449,9 +449,9 @@ export async function notifyShiftOpened({ shift, cashier, register, openingCash 
     }
 
     if (photoBuffer) {
-      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+      sendTelegramPhoto(photoBuffer, message).catch(() => { });
     } else {
-      sendTelegramMessage(message).catch(() => {});
+      sendTelegramMessage(message).catch(() => { });
     }
   } catch (err) {
     console.warn('[TelegramService] notifyShiftOpened error:', err.message);
@@ -536,9 +536,9 @@ ${notes ? `<b>Catatan:</b> <i>${notes}</i>\n` : ''}━━━━━━━━━�
     }
 
     if (photoBuffer) {
-      sendTelegramPhoto(photoBuffer, message).catch(() => {});
+      sendTelegramPhoto(photoBuffer, message).catch(() => { });
     } else {
-      sendTelegramMessage(message).catch(() => {});
+      sendTelegramMessage(message).catch(() => { });
     }
   } catch (err) {
     console.warn('[TelegramService] notifyShiftClosed error:', err.message);
@@ -613,7 +613,7 @@ Berikut perintah kontrol & monitoring yang tersedia:
 <b>Rata-rata Order:</b> ${sales.averageOrderValueFormatted || 'Rp 0'}
 
 <b>Metode Pembayaran:</b>
-• Tunai (Cash): Rp ${Number(summary.byMethod?.CASH || 0).toLocaleString('id-ID')}
+• Tunai: Rp ${Number(summary.byMethod?.CASH || 0).toLocaleString('id-ID')}
 • QRIS Dinamis: Rp ${Number(summary.byMethod?.QRIS || 0).toLocaleString('id-ID')}
 • Transfer Bank: Rp ${Number(summary.byMethod?.TRANSFER || 0).toLocaleString('id-ID')}
 ━━━━━━━━━━━━━━━━━━
@@ -993,7 +993,7 @@ ${stockForecast.criticalItems.slice(0, 4).map((it) => `• <b>${it.name}</b>: si
 <b>Estimasi Profit:</b> Rp ${estProfit.toLocaleString('id-ID')} (~${avgMargin}%)
 
 <b>Rincian Metode Pembayaran:</b>
-• Tunai (Cash): Rp ${Number(summary.byMethod?.CASH || 0).toLocaleString('id-ID')}
+• Tunai: Rp ${Number(summary.byMethod?.CASH || 0).toLocaleString('id-ID')}
 • QRIS Dinamis: Rp ${Number(summary.byMethod?.QRIS || 0).toLocaleString('id-ID')}
 • Transfer Bank: Rp ${Number(summary.byMethod?.TRANSFER || 0).toLocaleString('id-ID')}
 

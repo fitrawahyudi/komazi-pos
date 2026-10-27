@@ -180,8 +180,8 @@ function ProductCard({ product, onSelect }) {
               product.isSoldOut
                 ? 'Menu habis'
                 : product.isDynamicPrice
-                  ? `Tentukan harga ${product.name} (+)`
-                  : `Tambah ${product.name} ke pesanan (+)`
+                  ? `Tentukan harga ${product.name}`
+                  : `Tambah ${product.name} ke pesanan`
             }
             className={`flex h-9 w-9 items-center justify-center rounded-xl transition-all shadow-sm ${
               product.isSoldOut

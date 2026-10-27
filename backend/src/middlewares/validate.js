@@ -12,6 +12,11 @@ export function validate(schema) {
         message: e.message,
       })) || [{ field: 'general', message: err.message }];
 
+      console.warn(
+        `[ValidateMiddleware] Validation failed for ${req.method} ${req.originalUrl || req.url}:`,
+        formattedErrors
+      );
+
       return errorResponse(res, 'Validasi gagal', 400, formattedErrors);
     }
   };

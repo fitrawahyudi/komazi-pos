@@ -17,7 +17,7 @@ export function buildSalesReportCaption(summary, periodLabel = 'Hari Ini') {
 <b>Total Transaksi:</b> ${summary.totalTransactions} Pesanan
 
 <b>Metode Pembayaran:</b>
-• Tunai (Cash): ${rupiah(summary.byMethod?.CASH || 0)}
+• Tunai: ${rupiah(summary.byMethod?.CASH || 0)}
 • QRIS Dinamis: ${rupiah(summary.byMethod?.QRIS || 0)}
 • Transfer Bank: ${rupiah(summary.byMethod?.TRANSFER || 0)}
 

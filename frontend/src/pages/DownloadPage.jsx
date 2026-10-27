@@ -391,7 +391,7 @@ export default function DownloadPage() {
           <p>Saat pelanggan siap melunasi pesanan, tekan tombol <strong>Bayar Sekarang</strong>:</p>
           <ul className="list-disc list-inside space-y-2 pl-1 text-xs sm:text-sm">
             <li>
-              <strong>Tunai (Cash):</strong> Masukkan nominal uang yang diserahkan pelanggan. Aplikasi memiliki tombol pecahan cepat (Rp 50.000, Rp 100.000, Uang Pas). Layar otomatis menampilkan nominal kembalian dengan angka besar.
+              <strong>Tunai:</strong> Masukkan nominal uang yang diserahkan pelanggan. Aplikasi memiliki tombol pecahan cepat (Rp 50.000, Rp 100.000, Uang Pas). Layar otomatis menampilkan nominal kembalian dengan angka besar.
             </li>
             <li>
               <strong>QRIS Dinamis:</strong> Layar tablet kasir akan menampilkan barcode QRIS resmi dengan nominal tagihan yang terkunci persis hingga rupiah terakhir. Pelanggan cukup memindai dengan BCA, Mandiri, GoPay, OVO, Dana, atau ShopeePay.
@@ -915,7 +915,7 @@ export default function DownloadPage() {
             </h1>
 
             <p className="text-neutral-300 text-sm sm:text-base leading-relaxed max-w-xl">
-             Komazi POS dirancang secara eksklusif untuk operasional <strong>Komazi Coffee &amp; Workspace</strong> — alur kerja barista, manajemen pesanan kopi &amp; varian rasa, sewa meja coworking/workspace, printer thermal Bluetooth &amp; USB ESC/POS, Barista Display (BDS/KDS), serta integrasi bot Telegram asisten operasional kedai.
+              Komazi POS dirancang secara eksklusif untuk operasional <strong>Komazi Coffee &amp; Workspace</strong> — alur kerja barista, manajemen pesanan kopi &amp; varian rasa, sewa meja coworking/workspace, printer thermal Bluetooth &amp; USB ESC/POS, Barista Display (BDS/KDS), serta integrasi bot Telegram asisten operasional kedai.
             </p>
 
             {/* ACTION BUTTONS */}
@@ -1053,18 +1053,16 @@ export default function DownloadPage() {
                   key={screen.id}
                   type="button"
                   onClick={() => setSelectedPreview(idx)}
-                  className={`p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex items-start gap-3 relative overflow-hidden group ${
-                    isSelected
+                  className={`p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex items-start gap-3 relative overflow-hidden group ${isSelected
                       ? 'bg-gradient-to-br from-[#1d2736] to-[#131b26] border-komazi-coral/60 shadow-lg shadow-komazi-coral/10 ring-1 ring-komazi-coral/40'
                       : 'bg-[#111822]/80 hover:bg-[#182232]/80 border-white/[0.08] hover:border-white/20'
-                  }`}
+                    }`}
                 >
                   <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
-                      isSelected
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-all ${isSelected
                         ? 'bg-komazi-coral text-white border-komazi-coral shadow-md shadow-komazi-coral/30'
                         : 'bg-white/[0.05] text-neutral-400 border-white/[0.08] group-hover:text-neutral-200 group-hover:bg-white/[0.08]'
-                    }`}
+                      }`}
                   >
                     <ScreenIcon className="w-4 h-4" />
                   </div>
@@ -1213,11 +1211,10 @@ export default function DownloadPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('pos')}
-                className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'pos'
+                className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'pos'
                     ? 'bg-gradient-to-r from-komazi-coral to-[#ea580c] text-white shadow-md shadow-komazi-coral/25'
                     : 'text-neutral-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <Smartphone className="w-4 h-4" />
                 <span>Panduan APK POS Android</span>
@@ -1226,11 +1223,10 @@ export default function DownloadPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('bot')}
-                className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'bot'
+                className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'bot'
                     ? 'bg-gradient-to-r from-komazi-coral to-[#ea580c] text-white shadow-md shadow-komazi-coral/25'
                     : 'text-neutral-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <Bot className="w-4 h-4" />
                 <span>Panduan Asisten Bot Telegram</span>

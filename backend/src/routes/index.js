@@ -33,6 +33,7 @@ import expenseRoutes from './expenseRoutes.js';
 import assetRoutes from './assetRoutes.js';
 import depreciationRoutes from './depreciationRoutes.js';
 import downloadRoutes from './downloadRoutes.js';
+import promoRoutes from './promoRoutes.js';
 
 const router = Router();
 
@@ -74,6 +75,7 @@ router.use('/telegram', telegramRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/assets', assetRoutes);
 router.use('/depreciations', depreciationRoutes);
+router.use('/promos', promoRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

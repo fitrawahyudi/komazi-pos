@@ -91,5 +91,5 @@ backend/public/uploads/attendance/*
 .agents/
 skills-lock.json
 
-
-
+# 11. Distribution Artifacts
+apk-distribution/

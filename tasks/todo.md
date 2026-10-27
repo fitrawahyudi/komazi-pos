@@ -1,41 +1,77 @@
-# Task Breakdown Checklist: Komazi AI Upgrade
+# Task Breakdown Checklist: Sistem Promo Transaksi Kasir
 
-- [x] **Task 1: Isolasi Riwayat Chat Komazi AI per-Role (Frontend)**
-  - [x] Update `aiAnalyticsStore.js` to store `messagesByRole: { OWNER: [], MANAGER: [], CASHIER: [], BARISTA: [], KITCHEN: [] }`
-  - [x] Ensure switching accounts or opening modal loads role-specific conversation
-  - [x] Scope `clearChat` to current active role only
-  - [x] Update persistence partializer in `aiAnalyticsStore.js` with versioned key `komazi-ai-chat-history-v2`
-- [x] **Task 2: Ekstensi Konteks Database Komazi AI & Sensor Data Sensitif (Backend)**
-  - [x] Extend `komaziAiContextAggregator.js` and `salesAnalyticsEngine.js` to aggregate Expenses, Fixed Assets, Shift Cash Audits, CRM Loyalty Members, Recipes, Workspace
-  - [x] Add recursive redaction filter (`redactSensitiveData`) for sensitive fields (passwords, hashes, supervisor PINs, tokens)
-  - [x] Enforce role-based visibility rules (Owner/Manager vs Cashier/Barista/Kitchen)
-- [x] **Task 3: Integrasi Eksekusi Cron Job via Chatbot AI (Backend)**
-  - [x] Add scheduling & cron job intent detection in `aiPromptComposer.js` & `aiAnalyticsController.js`
-  - [x] Connect `aiAnalyticsController.js` to `universalSchedulerAgent` & `jobRegistryService`
-  - [x] Implement natural language cron parsing for recurring reports and reminders
-  - [x] Enforce authorization (only OWNER/MANAGER can create/manage cron jobs, polite refusal for Cashier)
-- [x] **Task 4: Pengujian & Verifikasi End-to-End**
-  - [x] Add frontend unit test 17 for role-based chat isolation & greeting (`frontend/tests/frontend.test.js`)
-  - [x] Run backend verification tests for AI cron job creation, sensitive data redaction, and database context (`backend/tests/test-ai-role-isolation-and-cron.js`)
-  - [x] Run full frontend test suite (17/17 PASS) & production Vite build (SUCCESS)
+- [x] **Task 1: Promo Service & Validator Engine (Backend)**
+  - **Description:** Membangun core engine promosi untuk mengelola preset diskon dan validasi kode voucher (kuota, min spend, batas potongan, masa aktif) dengan persistensi aman di tabel Setting.
+  - **Acceptance criteria:**
+    - [x] Menyediakan preset awal: `Diskon Karyawan 20%`, `Mitra Komunitas 10%`, `Komplimen Minuman Rp 25.000`.
+    - [x] Menyediakan voucher awal: `KOMAZI10` (10% min Rp 50rb), `HEMAT15K` (Rp 15rb min Rp 75rb).
+    - [x] Fungsi `validateVoucher(code, subtotal, customerId)` menguji aktif, rentang tanggal, min belanja, kuota, dan mengembalikan nominal diskon presisi.
+    - [x] Fungsi `consumeVoucher(code)` menambah `usedCount` secara aman.
+  - **Verification:**
+    - [x] `node backend/tests/test-promo-service.js` lulus 100%.
+  - **Dependencies:** None
+  - **Files likely touched:**
+    - `backend/src/services/promoService.js`
+    - `backend/tests/test-promo-service.js`
+  - **Estimated scope:** S (2 files)
 
-# Task Breakdown Checklist: Perbaikan Koneksi Kabel Printer Thermal (USB & Serial)
+- [x] **Task 2: API Endpoints & Order Recording (Backend)**
+  - **Description:** Menyediakan REST API controller & routes untuk presets dan voucher, serta mencatat pemakaian promo saat pembuatan order di `orderController.js`.
+  - **Acceptance criteria:**
+    - [x] `GET /api/promos/presets` mengembalikan daftar preset diskon aktif.
+    - [x] `POST /api/promos/validate-voucher` menerima `{ code, subtotal }` dan mengembalikan detail potongan jika valid.
+    - [x] `GET /api/promos/vouchers` (Role: OWNER/MANAGER) mengembalikan seluruh voucher & statistik.
+    - [x] `createOrder` di `orderController.js` menerima `promoCode`/`promoName` opsional dan memicu pemotongan kuota jika voucher valid.
+  - **Verification:**
+    - [x] Unit & route test via `test-promo-api.js`.
+  - **Dependencies:** Task 1
+  - **Files likely touched:**
+    - `backend/src/controllers/promoController.js`
+    - `backend/src/routes/promoRoutes.js`
+    - `backend/src/routes/index.js`
+    - `backend/src/controllers/orderController.js`
+  - **Estimated scope:** M (3-4 files)
 
-- [x] **Task 1: Dual Mode WebUSB (Direct) & Web Serial (COM Port)**
-  - [x] Implementasi Direct WebUSB (`navigator.usb`) untuk printer POS-58/POS-80 (Epson, Panda, Xprinter, Iware) tanpa perlu driver virtual COM
-  - [x] Implementasi Web Serial (`navigator.serial`) dengan pilihan baud rate (9600, 19200, 38400, 57600, 115200) untuk konverter CH340 / CP2102 / PL2303
-  - [x] Mengatasi stream writer lock leak dengan `try ... finally { writer.releaseLock(); }`
-  - [x] Chunking transfer data (1024 bytes WebUSB, 512 bytes Web Serial) mencegah buffer overrun
-- [x] **Task 2: Integrasi UI & Modal Koneksi Kabel**
-  - [x] Buat komponen modal mandiri `UsbModal.jsx` dengan tab Direct WebUSB & Serial COM, tombol Test Print, Feed Paper, dan Buka Laci Kasir (RJ-11)
-  - [x] Hubungkan Sidebar (`openUsbModal`), PrinterPage, dan ThermalReceiptModal
-  - [x] Terapkan arsitektur anti-double UI (modal di-mount tunggal di `Layout.jsx`)
-- [x] **Task 3: Pemulihan Koneksi Otomatis & Event Disconnect**
-  - [x] Event listener `disconnect` pada `navigator.usb` & `navigator.serial` untuk deteksi kabel dicabut seketika
-  - [x] Auto-reconnect saat reload halaman via `navigator.usb.getDevices()` & `navigator.serial.getPorts()`
-  - [x] Perbaiki `printer.web.js` agar `connectionType === 'USB'` langsung memproses ESC/POS (bukan bypass ke dialog print browser)
-- [x] **Task 4: Verifikasi & Testing Unit**
-  - [x] Test 18: USB error sanitization & Windows driver claim detection
-  - [x] Test 19: WebUSB bulk endpoint detection & Serial baud rate setup
-  - [x] Test 20: USB receipt ESC/POS routing & RJ-11 cash drawer kick pulse
-  - [x] 20/20 test frontend pass, build Vite sukses
+## Checkpoint: Backend Engine & API Complete
+- [x] Backend API untuk preset dan validasi voucher siap dikonsumsi POS frontend.
+
+- [x] **Task 3: Cart Store Promo State (Frontend)**
+  - **Description:** Mengintegrasikan status promo aktif ke dalam Zustand `cartStore`, menangani perhitungan diskon reaktif, dan mencegah konflik dengan penukaran poin loyalty member.
+  - **Acceptance criteria:**
+    - [x] State `appliedPromo`: `{ code, name, type, value, discountAmount, isPreset }`.
+    - [x] Action `applyPresetDiscount(preset)` memasang preset diskon instan.
+    - [x] Action `applyVoucher(voucherData)` memasang voucher yang sudah tervalidasi.
+    - [x] Action `removePromo()` mereset promo dan diskon ke 0.
+    - [x] `getCartSummary()` menghitung total dengan akurat dan menyertakan rincian promo.
+  - **Verification:**
+    - [x] Automated test and store verification.
+  - **Dependencies:** Task 2
+  - **Files likely touched:**
+    - `frontend/src/store/cartStore.js`
+  - **Estimated scope:** S (1 file)
+
+- [x] **Task 4: CartSidebar Discount Popover UI (Frontend)**
+  - **Description:** Mendesain ulang popover diskon di sidebar keranjang kasir POS dengan chips preset 1-klik, input voucher promo instan, dan kartu status promo aktif.
+  - **Acceptance criteria:**
+    - [x] Menampilkan chip tombol preset cepat (`[Karyawan 20%]`, `[Mitra 10%]`, `[Komplimen Rp25rb]`) yang langsung memotong total saat diklik.
+    - [x] Kolom input kode voucher dengan tombol "Terapkan" dan indikator validasi real-time.
+    - [x] Kartu hijau estetik saat promo terpasang, menunjukkan nama promo, hemat berapa Rupiah, dan tombol [Hapus].
+    - [x] Tetap menyediakan tab input nominal/persen manual sebagai opsi cadangan kasir.
+  - **Verification:**
+    - [x] Visual verification & interaksi di CartSidebar.
+  - **Dependencies:** Task 3
+  - **Files likely touched:**
+    - `frontend/src/components/pos/CartSidebar.jsx`
+  - **Estimated scope:** M (1 file)
+
+- [x] **Task 5: End-to-End Verification (Backend & POS)**
+  - **Description:** Menguji alur menyeluruh mulai dari pemilihan preset di POS, validasi voucher promo, checkout order di backend, hingga pemakaian kuota voucher.
+  - **Acceptance criteria:**
+    - [x] `node backend/tests/test-promo-e2e.js` lulus 100%.
+    - [x] Struk atau order payload mencantumkan detail promo yang digunakan secara transparan.
+  - **Verification:**
+    - [x] E2E script run passed.
+  - **Dependencies:** Task 4
+  - **Files likely touched:**
+    - `backend/tests/test-promo-e2e.js`
+  - **Estimated scope:** S (1 file)

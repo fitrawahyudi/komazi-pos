@@ -196,7 +196,7 @@ Sebelum mulai melayani transaksi pelanggan, Owner wajib menyelesaikan pengaturan
 
 Sistem kasir Komazi mendukung tiga kanal pembayaran utama:
 
-1. **Uang Tunai (Cash):** Selalu aktif secara bawaan dengan kalkulasi kembalian otomatis dan tombol pecahan cepat (50k, 100k, 200k).
+1. **Uang Tunai:** Selalu aktif secara bawaan dengan kalkulasi kembalian otomatis dan tombol pecahan cepat (50k, 100k, 200k).
 2. **QRIS Merchant (Dinamis & Statis):**
    - Klik **Unggah Gambar QRIS** untuk mengunggah barcode QRIS resmi dari bank atau penyedia pembayaran Anda (BCA, Mandiri, GoPay, OVO, ShopeePay, dll.).
    - Sistem akan membaca payload QRIS dan secara otomatis mengaktifkan fitur **QRIS Dinamis**: setiap kali pelanggan membayar via QRIS di kasir, sistem menyuntikkan nominal tagihan pas ke dalam kode QR sehingga pelanggan tidak perlu mengetikkan angka rupiah secara manual.
@@ -596,7 +596,7 @@ Setelah seluruh pesanan selesai diinput, klik tombol oranye besar: **Bayar (Rp .
 └────────────────────────────────────────────────────────┘
 ```
 
-1. **Metode Tunai (Cash):**
+1. **Metode Tunai:**
    - Klik tombol pecahan cepat (misal `100k`) atau ketik jumlah uang tunai yang diserahkan pelanggan.
    - Sistem secara otomatis menghitung nominal kembalian dengan angka besar yang jelas untuk kasir.
 2. **Metode QRIS Dinamis:**

@@ -40,15 +40,15 @@ export function formatOrderType(type) {
 }
 
 /**
- * Format payment method: CASH -> Tunai (Cash), QRIS -> QRIS, TRANSFER -> Transfer Bank
+ * Format payment method: CASH -> Tunai, QRIS -> QRIS, TRANSFER -> Transfer Bank
  */
 export function formatPaymentMethod(method) {
-  if (!method) return 'Tunai (Cash)';
+  if (!method) return 'Tunai';
   const m = String(method).trim().toUpperCase();
   if (m.includes('QRIS')) return 'QRIS';
   if (m.includes('TRANSFER')) return 'Transfer Bank';
   if (m.includes('DEBIT') || m.includes('CARD')) return 'Kartu Debit';
-  return 'Tunai (Cash)';
+  return 'Tunai';
 }
 
 /**
@@ -197,10 +197,9 @@ export function exportReportToCsv({
     'sep=;',
     `${storeName.toUpperCase()} - LAPORAN PENJUALAN & TRANSAKSI;;;;;;;;;;;;;`,
     `Periode: ${dateRangeLabel} | Dicetak Pada: ${formatWibDateTime(new Date())};;;;;;;;;;;;;`,
-    `Ringkasan: ${summary.totalOrders} Transaksi | Total Omzet: Rp ${summary.totalRevenue.toLocaleString('id-ID')}${
-      canViewCogs
-        ? ` | Total HPP: Rp ${summary.totalCogs.toLocaleString('id-ID')} | Total Laba Kotor: Rp ${summary.totalGrossProfit.toLocaleString('id-ID')} (${summary.avgMargin}%)`
-        : ''
+    `Ringkasan: ${summary.totalOrders} Transaksi | Total Omzet: Rp ${summary.totalRevenue.toLocaleString('id-ID')}${canViewCogs
+      ? ` | Total HPP: Rp ${summary.totalCogs.toLocaleString('id-ID')} | Total Laba Kotor: Rp ${summary.totalGrossProfit.toLocaleString('id-ID')} (${summary.avgMargin}%)`
+      : ''
     };;;;;;;;;;;;;`,
     '',
     headerColumns.join(';'),
@@ -277,10 +276,10 @@ export function exportReportToExcel({
     `Total Omzet: Rp ${summary.totalRevenue.toLocaleString('id-ID')}`,
     ...(canViewCogs
       ? [
-          `Total HPP: Rp ${summary.totalCogs.toLocaleString('id-ID')}`,
-          `Laba Kotor: Rp ${summary.totalGrossProfit.toLocaleString('id-ID')}`,
-          `Margin: ${summary.avgMargin}%`,
-        ]
+        `Total HPP: Rp ${summary.totalCogs.toLocaleString('id-ID')}`,
+        `Laba Kotor: Rp ${summary.totalGrossProfit.toLocaleString('id-ID')}`,
+        `Margin: ${summary.avgMargin}%`,
+      ]
       : []),
   ];
   const emptyRow = [];
@@ -360,10 +359,10 @@ export function exportReportToExcel({
     { wch: 18 }, // Total Akhir (Rp)
     ...(canViewCogs
       ? [
-          { wch: 16 }, // Total HPP (Rp)
-          { wch: 16 }, // Laba Kotor (Rp)
-          { wch: 12 }, // Margin (%)
-        ]
+        { wch: 16 }, // Total HPP (Rp)
+        { wch: 16 }, // Laba Kotor (Rp)
+        { wch: 12 }, // Margin (%)
+      ]
       : []),
     { wch: 18 }, // Metode Pembayaran
     { wch: 16 }, // Status

@@ -30,7 +30,29 @@ export async function withLoadingAnimation(ctx, options = {}, workerFn) {
     chatAction = 'typing',
     frames = null,
     forceLoadingBar = false,
+    skipLoadingMessage = false,
+    skipLoading = false,
   } = options || {};
+
+  const shouldSkipMessage = Boolean(skipLoadingMessage || skipLoading);
+
+  // Jika skipLoadingMessage aktif (misalnya pada mode bebas chat langsung),
+  // jangan kirim pesan frame loading ke ruang obrolan Telegram.
+  // Cukup kirim chat action native (seperti 'typing') secara berkala agar responsif & natural.
+  if (shouldSkipMessage) {
+    let actionInterval = null;
+    try {
+      if (chatAction && ctx && typeof ctx.replyWithChatAction === 'function') {
+        await ctx.replyWithChatAction(chatAction).catch(() => {});
+        actionInterval = setInterval(() => {
+          ctx.replyWithChatAction(chatAction).catch(() => {});
+        }, 4000);
+      }
+      return await workerFn();
+    } finally {
+      if (actionInterval) clearInterval(actionInterval);
+    }
+  }
 
   // Gunakan loading bar sebagai standar default kecuali bila frame eksplisit diberikan
   const activeFrames =

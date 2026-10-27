@@ -34,7 +34,7 @@ async function sendDailyReport() {
 <b>Total Transaksi:</b> ${summary.totalTransactions} Pesanan
 
 <b>Metode Pembayaran:</b>
-• Tunai (Cash): ${rupiah(summary.byMethod.CASH)}
+• Tunai: ${rupiah(summary.byMethod.CASH)}
 • QRIS Dinamis: ${rupiah(summary.byMethod.QRIS)}
 • Transfer Bank: ${rupiah(summary.byMethod.TRANSFER)}
 
@@ -155,31 +155,21 @@ async function expireApprovals() {
 }
 
 export function startJobs() {
-  // 1) Laporan harian ke Owner — 22:00 WIB
-  cron.schedule('0 22 * * *', sendDailyReport, { timezone: 'Asia/Jakarta' });
-
-  // 2) Stok menipis — tiap jam pada jam operasional (08:00 - 22:00 WIB)
-  cron.schedule('0 8-22 * * *', checkLowStock, { timezone: 'Asia/Jakarta' });
-
-  // 3) Workspace hampir habis — tiap menit
+  // 1) Pemeliharaan internal server runtime (non-bisnis / in-memory tracking)
+  // Workspace hampir habis — tiap menit
   cron.schedule('* * * * *', checkExpiringSessions, { timezone: 'Asia/Jakarta' });
 
-  // 4) Approval kedaluwarsa — tiap 5 menit
+  // Approval kedaluwarsa — tiap 5 menit
   cron.schedule('*/5 * * * *', expireApprovals, { timezone: 'Asia/Jakarta' });
 
-  // 5) Komazi AI Morning Executive Briefing — 08:00 WIB
-  cron.schedule('0 8 * * *', () => dispatchMorningBriefing(), { timezone: 'Asia/Jakarta' });
-
-  // 6) Komazi AI Evening Performance Wrap-Up — 22:00 WIB
-  cron.schedule('0 22 * * *', () => dispatchEveningWrapup(), { timezone: 'Asia/Jakarta' });
-
-  // 7) Komazi AI Stockout Sentinel Check — Tiap 30 menit (08:00 - 22:00 WIB)
-  cron.schedule('*/30 8-22 * * *', () => dispatchStockoutAlert(false), { timezone: 'Asia/Jakarta' });
-
-  // 8) Start Dynamic Cron Engine Worker
+  // 2) Mulai Mesin Penjadwal Terpusat (Central Dynamic CronWorker)
+  // Seluruh tugas bisnis terjadwal (Laporan Penjualan Harian 22:00 WIB, Peringatan Stok Menipis,
+  // System Health Sentinel, Database Backup, serta AI Executive Briefing) dikelola secara terpusat
+  // oleh CronWorker berbasis tabel ScheduledJob dengan kontrol konkurensi atomik dan idempotency.
+  // Ini mengeliminasi eksekusi ganda (duplicate run) yang sebelumnya terjadi akibat adanya cron statis ganda.
   startCronWorker().catch((err) => {
     logger.scheduler.error(`Failed to start dynamic cron worker: ${err.message}`);
   });
 
-  logger.scheduler.info('Telegram automated background jobs & Komazi AI Proactive scheduled (Asia/Jakarta)');
+  logger.scheduler.info('Telegram automated background jobs & Central Dynamic Cron Engine started (Asia/Jakarta)');
 }

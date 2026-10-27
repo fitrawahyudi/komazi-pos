@@ -25,8 +25,8 @@ import logger from '../../utils/logger.js';
 import { parseNaturalScheduleText } from '../../services/cron/naturalScheduleParser.js';
 import { storeQuickJobDraft } from './jobs.js';
 import { findPosKnowledge } from '../../services/ai/posKnowledgeBase.js';
-import prisma from '../../config/db.js';
 import { checkSystemHealth, formatSentinelStatusHtml } from '../../services/cron/handlers/monitoringHandler.js';
+import { tryHandleOperationalAction } from './aiActions.js';
 
 /**
  * Memformat teks output AI agar aman untuk parser HTML Telegram.
@@ -65,11 +65,27 @@ import { universalSchedulerAgent } from '../../services/ai/universalSchedulerAge
  * Fungsi inti pemrosesan query AI (dapat dipanggil dari /ai maupun pesan teks bebas)
  * @param {object} ctx - Grammy context
  * @param {string} rawQuery - Pertanyaan user
- * @param {object} options - Opsi eksekusi { fromDirectChat: boolean }
+ * @param {object} options - Opsi eksekusi { fromDirectChat: boolean, skipLoading: boolean }
  */
-export async function executeAiQuery(ctx, rawQuery, options = { fromDirectChat: false }) {
+export async function executeAiQuery(ctx, rawQuery, options = {}) {
+  const {
+    fromDirectChat = false,
+    skipLoading = false,
+  } = options || {};
+
+  const isDirectChat =
+    fromDirectChat === true ||
+    (options?.fromDirectChat === undefined && Boolean(ctx.user?.id && isAiDirectChatMode(ctx.user.id)));
+  const shouldSkipLoading = Boolean(isDirectChat || skipLoading);
+
   const config = getOpenclawConfig();
   const lowerQuery = rawQuery.toLowerCase().trim();
+
+  // 0. Deteksi Intensi Aksi Operasional AI Copilot (Restock Bahan & Toggle Menu Availability)
+  const actionResult = await tryHandleOperationalAction(ctx, rawQuery);
+  if (actionResult && actionResult.handled) {
+    return;
+  }
 
   // 1. Kueri status jadwal aktif secara alami jika diminta
   const isManagerOrOwner = ctx.user?.role === 'OWNER' || ctx.user?.role === 'MANAGER';
@@ -145,10 +161,15 @@ export async function executeAiQuery(ctx, rawQuery, options = { fromDirectChat: 
     queryNotice = '\n<i>[Pertanyaan disesuaikan dengan batas 500 karakter]</i>';
   }
 
-  // 4. Eksekusi dengan Animasi Loading Bar
+  // 4. Eksekusi query AI
+  // Pada Mode Bebas Chat (Direct Chat), tidak memakai animasi frame loading bar
+  // agar pengalaman mengobrol natural tanpa popup/flicker pesan loading.
   return withLoadingAnimation(
     ctx,
-    { chatAction: 'typing' },
+    {
+      chatAction: 'typing',
+      skipLoadingMessage: shouldSkipLoading,
+    },
     async () => {
       try {
         const [systemPrompt, history] = await Promise.all([
@@ -312,9 +333,10 @@ export function registerAiHandler(bot) {
         `<b>Pilihan Penggunaan:</b>\n` +
         `1. Ketik perintah: <code>/ai [pertanyaan Anda]</code>\n` +
         `2. Atau aktifkan <b>Mode Chat Bebas</b> agar bisa langsung mengobrol seperti chat biasa!\n\n` +
-        `<b>Contoh Pertanyaan:</b>\n` +
+        `<b>Contoh Pertanyaan & Aksi Cepat:</b>\n` +
         `• <code>/ai bagaimana ringkasan omset penjualan hari ini?</code>\n` +
-        `• <code>/ai apakah ada bahan baku yang perlu segera dibeli?</code>\n\n` +
+        `• <code>/ai catat restock fresh milk 5 liter</code>\n` +
+        `• <code>/ai matikan menu matcha latte</code>\n\n` +
         `<b>Perintah Cepat:</b>\n` +
         `• <code>/ai on</code> — Aktifkan mode chat bebas\n` +
         `• <code>/ai off</code> — Matikan mode chat bebas\n` +

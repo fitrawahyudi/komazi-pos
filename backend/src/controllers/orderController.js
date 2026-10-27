@@ -10,6 +10,7 @@ import { approvalService } from '../services/approval.service.js';
 import { dispatchNotification } from '../services/notification.service.js';
 import { checkStaffShiftEligibility } from '../services/scheduleGuard.service.js';
 import { getSettingsMap } from '../services/settingsCache.service.js';
+import { consumeVoucher } from '../services/promoService.js';
 import logger from '../utils/logger.js';
 
 // Cached default station lookup
@@ -277,6 +278,8 @@ export async function createOrder(req, res) {
       discount = 0,
       payments = [],
       workspaceSessionId,
+      promoCode,
+      promoName,
     } = req.body;
 
     // Validasi jadwal kerja & presensi staf: Staf wajib presensi sebelum bertransaksi
@@ -487,6 +490,31 @@ export async function createOrder(req, res) {
 
     const canView = canViewCostData(req.user?.role);
     const outputOrder = formatOrderForResponse(newOrder, canView);
+    if (promoCode) outputOrder.promoCode = promoCode;
+    if (promoName) outputOrder.promoName = promoName;
+
+    // Catat pemakaian voucher promo & audit log
+    if (promoCode) {
+      consumeVoucher(promoCode).catch((err) => {
+        logger.warn(`Failed to consume promo voucher "${promoCode}": ${err.message}`);
+      });
+    }
+
+    if (promoCode || promoName) {
+      prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'ORDER_PROMO_APPLIED',
+          detail: {
+            orderId: newOrder.id,
+            invoiceNo: newOrder.invoiceNo,
+            promoCode: promoCode || null,
+            promoName: promoName || null,
+            discountAmount: parseFloat(discount) || 0,
+          },
+        },
+      }).catch(() => {});
+    }
 
     const hasKitchen = (outputOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
     const hasBar = (outputOrder.items || []).some((i) => i.station?.type === 'BAR' || isDrinkItemHelper(i));
@@ -762,7 +790,7 @@ export async function updateOrder(req, res) {
 export async function payOrder(req, res) {
   try {
     const id = parseInt(req.params.id);
-    const { payments, items, discount, type, tableNo, customerName, customerId } = req.body;
+    const { payments, items, discount, type, tableNo, customerName, customerId, promoCode, promoName } = req.body;
 
     // Validasi jadwal kerja & presensi staf: Staf wajib presensi sebelum bertransaksi
     const eligibility = await checkStaffShiftEligibility(req.user.id, req.user.role);
@@ -1052,6 +1080,29 @@ export async function payOrder(req, res) {
       amount: outputUpdated.total,
       methods: (payments || []).map((p) => p.method).join(', '),
     });
+
+    // Catat pemakaian voucher promo & audit log jika ada promo
+    if (promoCode) {
+      consumeVoucher(promoCode).catch((err) => {
+        logger.warn(`Failed to consume promo voucher "${promoCode}": ${err.message}`);
+      });
+    }
+
+    if (promoCode || promoName) {
+      prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'ORDER_PROMO_APPLIED',
+          detail: {
+            orderId: outputUpdated.id,
+            invoiceNo: outputUpdated.invoiceNo,
+            promoCode: promoCode || null,
+            promoName: promoName || null,
+            discountAmount: parseFloat(discount) || 0,
+          },
+        },
+      }).catch(() => {});
+    }
 
     return successResponse(res, outputUpdated, 'Pembayaran berhasil dikonfirmasi');
   } catch (err) {

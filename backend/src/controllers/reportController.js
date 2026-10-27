@@ -234,7 +234,7 @@ export async function exportCSV(req, res) {
       const cashier = o.cashier?.name || 'Kasir';
       const customer = o.customerName || 'Tamu';
       const orderType = o.type === 'DINE_IN' ? 'Dine-In' : o.type === 'TAKE_AWAY' ? 'Take-Away' : o.type;
-      const paymentMethod = o.payments?.[0]?.method === 'QRIS' ? 'QRIS' : o.payments?.[0]?.method === 'TRANSFER' ? 'Transfer Bank' : 'Tunai (Cash)';
+      const paymentMethod = o.payments?.[0]?.method === 'QRIS' ? 'QRIS' : o.payments?.[0]?.method === 'TRANSFER' ? 'Transfer Bank' : 'Tunai';
       const statusLabel = o.status === 'PAID' ? 'Lunas' : o.status === 'VOIDED' ? 'Dibatalkan (Void)' : o.status === 'SERVED' ? 'Disajikan' : o.status;
 
       return [

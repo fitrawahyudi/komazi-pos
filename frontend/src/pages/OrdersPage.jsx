@@ -541,9 +541,8 @@ export default function OrdersPage() {
                 title="Pilihan cepat ekspor Excel / CSV"
               >
                 <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    showExportDropdown ? 'rotate-180' : ''
-                  }`}
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${showExportDropdown ? 'rotate-180' : ''
+                    }`}
                 />
               </button>
             </div>
@@ -837,7 +836,7 @@ export default function OrdersPage() {
               className="w-full appearance-none pl-3.5 pr-8 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text font-medium focus:border-komazi-coral focus:outline-none cursor-pointer transition-colors"
             >
               <option value="ALL">Semua Metode</option>
-              <option value="CASH">Tunai (Cash)</option>
+              <option value="CASH">Tunai</option>
               <option value="QRIS">QRIS Dinamis</option>
               <option value="TRANSFER">Transfer Bank</option>
             </select>
@@ -891,55 +890,50 @@ export default function OrdersPage() {
             <button
               type="button"
               onClick={() => handleSelectDatePreset('TODAY')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                activeDatePreset === 'TODAY'
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${activeDatePreset === 'TODAY'
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
-              }`}
+                }`}
             >
               Hari Ini
             </button>
             <button
               type="button"
               onClick={() => handleSelectDatePreset('YESTERDAY')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                activeDatePreset === 'YESTERDAY'
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${activeDatePreset === 'YESTERDAY'
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
-              }`}
+                }`}
             >
               Kemarin
             </button>
             <button
               type="button"
               onClick={() => handleSelectDatePreset('7DAYS')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                activeDatePreset === '7DAYS'
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${activeDatePreset === '7DAYS'
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
-              }`}
+                }`}
             >
               7 Hari
             </button>
             <button
               type="button"
               onClick={() => handleSelectDatePreset('THIS_MONTH')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                activeDatePreset === 'THIS_MONTH'
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${activeDatePreset === 'THIS_MONTH'
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
-              }`}
+                }`}
             >
               Bulan Ini
             </button>
             <button
               type="button"
               onClick={() => handleSelectDatePreset('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                activeDatePreset === 'ALL'
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${activeDatePreset === 'ALL'
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'bg-komazi-surface-2 hover:bg-komazi-surface-2/80 text-komazi-muted hover:text-white border border-komazi-border'
-              }`}
+                }`}
             >
               Semua
             </button>
@@ -950,244 +944,243 @@ export default function OrdersPage() {
 
       {/* 4. ORDERS TABLE */}
       <div className="rounded-2xl border border-komazi-border bg-komazi-surface overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-komazi-border bg-komazi-surface-2 text-komazi-muted font-bold uppercase tracking-wider">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-komazi-border bg-komazi-surface-2 text-komazi-muted font-bold uppercase tracking-wider">
+              <tr>
+                <th className="py-3 px-4">No. Invoice</th>
+                <th className="py-3 px-4">Waktu Transaksi</th>
+                <th className="py-3 px-4">Kasir</th>
+                <th className="py-3 px-4">Pelanggan / Meja</th>
+                <th className="py-3 px-4">Item Pesanan</th>
+                <th className="py-3 px-4">Metode Bayar</th>
+                <th className="py-3 px-4 text-right">Total Akhir</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-komazi-border">
+              {isLoading && orders.length === 0 ? (
                 <tr>
-                  <th className="py-3 px-4">No. Invoice</th>
-                  <th className="py-3 px-4">Waktu Transaksi</th>
-                  <th className="py-3 px-4">Kasir</th>
-                  <th className="py-3 px-4">Pelanggan / Meja</th>
-                  <th className="py-3 px-4">Item Pesanan</th>
-                  <th className="py-3 px-4">Metode Bayar</th>
-                  <th className="py-3 px-4 text-right">Total Akhir</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-center">Aksi</th>
+                  <td colSpan={9} className="p-4 sm:p-6 bg-komazi-black/40">
+                    <OrdersTableSkeleton rows={5} />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-komazi-border">
-                {isLoading && orders.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-4 sm:p-6 bg-komazi-black/40">
-                      <OrdersTableSkeleton rows={5} />
-                    </td>
-                  </tr>
-                ) : filteredOrders.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      className="py-16 text-center text-komazi-muted space-y-2"
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="py-16 text-center text-komazi-muted space-y-2"
+                  >
+                    <Receipt className="w-10 h-10 mx-auto text-komazi-muted/40" />
+                    <p className="font-semibold text-sm text-komazi-text">
+                      {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
+                        ? 'Belum ada transaksi untuk hari ini.'
+                        : 'Tidak ada transaksi yang sesuai kriteria filter.'}
+                    </p>
+                    <p className="text-xs text-komazi-muted max-w-md mx-auto">
+                      {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
+                        ? 'Gunakan tombol preset atau pilih rentang tanggal lain untuk melihat riwayat sebelumnya.'
+                        : 'Coba sesuaikan kata kunci pencarian, filter kasir, shift, atau rentang waktu di atas.'}
+                    </p>
+                    {(activeDatePreset === 'TODAY' || isFiltered) && orders.length > 0 && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDatePreset('ALL')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral/90 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Lihat Semua Riwayat Transaksi</span>
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                paginatedOrders.map((order) => {
+                  const payment = order.payments?.[0];
+                  return (
+                    <tr
+                      key={order.id}
+                      className="hover:bg-komazi-surface-2/60 transition-colors"
                     >
-                      <Receipt className="w-10 h-10 mx-auto text-komazi-muted/40" />
-                      <p className="font-semibold text-sm text-komazi-text">
-                        {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
-                          ? 'Belum ada transaksi untuk hari ini.'
-                          : 'Tidak ada transaksi yang sesuai kriteria filter.'}
-                      </p>
-                      <p className="text-xs text-komazi-muted max-w-md mx-auto">
-                        {activeDatePreset === 'TODAY' && !searchQuery && statusFilter === 'ALL' && methodFilter === 'ALL' && shiftFilter === 'ALL' && cashierFilter === 'ALL'
-                          ? 'Gunakan tombol preset atau pilih rentang tanggal lain untuk melihat riwayat sebelumnya.'
-                          : 'Coba sesuaikan kata kunci pencarian, filter kasir, shift, atau rentang waktu di atas.'}
-                      </p>
-                      {(activeDatePreset === 'TODAY' || isFiltered) && orders.length > 0 && (
-                        <div className="pt-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectDatePreset('ALL')}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral/90 text-white font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>Lihat Semua Riwayat Transaksi</span>
-                          </button>
+                      {/* 1. Invoice No */}
+                      <td className="py-3.5 px-4 font-mono font-bold text-komazi-coral">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderDetail(order)}
+                          className="hover:underline hover:text-white transition-colors cursor-pointer text-left font-mono font-bold text-komazi-coral"
+                          title="Klik untuk melihat rincian detail pesanan"
+                        >
+                          {order.invoiceNo}
+                        </button>
+                      </td>
+
+                      {/* 2. Date Time */}
+                      <td className="py-3.5 px-4 text-komazi-muted whitespace-nowrap">
+                        {formatDateTime(order.createdAt)}
+                      </td>
+
+                      {/* 3. Kasir & Shift (Visible to all cashiers & managers) */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-komazi-text">
+                          {order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir'}
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedOrders.map((order) => {
-                    const payment = order.payments?.[0];
-                    return (
-                      <tr
-                        key={order.id}
-                        className="hover:bg-komazi-surface-2/60 transition-colors"
-                      >
-                        {/* 1. Invoice No */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-komazi-coral">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedOrderDetail(order)}
-                            className="hover:underline hover:text-white transition-colors cursor-pointer text-left font-mono font-bold text-komazi-coral"
-                            title="Klik untuk melihat rincian detail pesanan"
-                          >
-                            {order.invoiceNo}
-                          </button>
-                        </td>
+                      </td>
 
-                        {/* 2. Date Time */}
-                        <td className="py-3.5 px-4 text-komazi-muted whitespace-nowrap">
-                          {formatDateTime(order.createdAt)}
-                        </td>
+                      {/* 4. Customer / Table */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-komazi-text">
+                          {order.customerName || 'Tamu Komazi'}
+                        </div>
+                        <div className="text-[10px] text-komazi-muted">
+                          {(order.type === 'DINE_IN' || order.orderType === 'DINE_IN')
+                            ? `Dine In • Meja ${order.tableNo || '-'}`
+                            : 'Take Away'}
+                        </div>
+                      </td>
 
-                        {/* 3. Kasir & Shift (Visible to all cashiers & managers) */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-komazi-text">
-                            {order.cashierName || order.cashier?.name || order.shift?.cashier?.name || 'Kasir'}
-                          </div>
-                        </td>
+                      {/* 5. Items summary */}
+                      <td className="py-3.5 px-4 max-w-xs">
+                        <div className="line-clamp-2 text-komazi-muted text-[11px]">
+                          {order.items?.map((i) => `${i.productName || i.name} (${i.qty}x)`).join(', ')}
+                          {order.workspaceSession && (
+                            <span className="text-komazi-teal-light font-medium ml-1">
+                              + Workspace ({order.workspaceSession.areaName})
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-                        {/* 4. Customer / Table */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-semibold text-komazi-text">
-                            {order.customerName || 'Tamu Komazi'}
-                          </div>
-                          <div className="text-[10px] text-komazi-muted">
-                            {(order.type === 'DINE_IN' || order.orderType === 'DINE_IN')
-                              ? `Dine In • Meja ${order.tableNo || '-'}`
-                              : 'Take Away'}
-                          </div>
-                        </td>
+                      {/* 6. Payment Method */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="inline-block px-2.5 py-1 rounded-lg bg-komazi-surface-2 border border-komazi-border font-bold text-[10px] text-komazi-text">
+                          {payment?.method || order.paymentMethod || 'CASH'}
+                        </span>
+                      </td>
 
-                        {/* 5. Items summary */}
-                        <td className="py-3.5 px-4 max-w-xs">
-                          <div className="line-clamp-2 text-komazi-muted text-[11px]">
-                            {order.items?.map((i) => `${i.productName || i.name} (${i.qty}x)`).join(', ')}
-                            {order.workspaceSession && (
-                              <span className="text-komazi-teal-light font-medium ml-1">
-                                + Workspace ({order.workspaceSession.areaName})
-                              </span>
-                            )}
-                          </div>
-                        </td>
+                      {/* 7. Total Final */}
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-sm text-komazi-coral tabular-nums whitespace-nowrap">
+                        {formatRupiah(order.total)}
+                      </td>
 
-                        {/* 6. Payment Method */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className="inline-block px-2.5 py-1 rounded-lg bg-komazi-surface-2 border border-komazi-border font-bold text-[10px] text-komazi-text">
-                            {payment?.method || order.paymentMethod || 'CASH'}
-                          </span>
-                        </td>
-
-                        {/* 7. Total Final */}
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-sm text-komazi-coral tabular-nums whitespace-nowrap">
-                          {formatRupiah(order.total)}
-                        </td>
-
-                        {/* 8. Status Badge */}
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                              order.status === 'PAID'
-                                ? 'bg-success/15 text-success border border-success/30'
-                                : order.status === 'VOIDED'
+                      {/* 8. Status Badge */}
+                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${order.status === 'PAID'
+                              ? 'bg-success/15 text-success border border-success/30'
+                              : order.status === 'VOIDED'
                                 ? 'bg-danger/15 text-danger border border-danger/30'
                                 : 'bg-warning/15 text-warning border border-warning/30'
                             }`}
+                        >
+                          {order.status === 'PAID' && <CheckCircle className="w-3 h-3" />}
+                          {order.status === 'VOIDED' && <XCircle className="w-3 h-3" />}
+                          {order.status === 'REFUNDED' && <RotateCcw className="w-3 h-3" />}
+                          <span>{order.status}</span>
+                        </span>
+                        {order.voidReason && (
+                          <p className="text-[9px] text-danger italic mt-0.5 max-w-[120px] truncate mx-auto">
+                            "{order.voidReason}"
+                          </p>
+                        )}
+                        {order.refundReason && (
+                          <p className="text-[9px] text-warning italic mt-0.5 max-w-[120px] truncate mx-auto">
+                            "{order.refundReason}"
+                          </p>
+                        )}
+                      </td>
+
+                      {/* 9. Action Buttons */}
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* Lihat Detail Pesanan */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrderDetail(order)}
+                            title="Lihat Rincian Detail Pesanan"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-teal-light hover:text-white text-komazi-muted transition-colors cursor-pointer"
                           >
-                            {order.status === 'PAID' && <CheckCircle className="w-3 h-3" />}
-                            {order.status === 'VOIDED' && <XCircle className="w-3 h-3" />}
-                            {order.status === 'REFUNDED' && <RotateCcw className="w-3 h-3" />}
-                            <span>{order.status}</span>
-                          </span>
-                          {order.voidReason && (
-                            <p className="text-[9px] text-danger italic mt-0.5 max-w-[120px] truncate mx-auto">
-                              "{order.voidReason}"
-                            </p>
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Reprint Struk Pelanggan */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedReceipt(order)}
+                            title="Cetak Ulang Struk Pelanggan"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-coral hover:text-white text-komazi-muted transition-colors cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Cetak Struk Pertinggal (Salinan Kasir) */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedReceipt({ ...order, initialReceiptType: 'merchant' })}
+                            title="Cetak Struk Pertinggal (Salinan Kasir / Arsip Toko)"
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-amber-500 hover:text-white text-komazi-muted transition-colors cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Void Button (only if PAID) */}
+                          {order.status === 'PAID' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVoidTargetOrder(order);
+                                setVoidReason('');
+                                setManagerPin('');
+                              }}
+                              title={
+                                isManagerOrOwner
+                                  ? 'Batalkan / Void Transaksi (Akses Langsung Manager)'
+                                  : 'Batalkan / Void Transaksi (Perlu Otorisasi PIN)'
+                              }
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-danger hover:text-white text-komazi-muted transition-colors"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
                           )}
-                          {order.refundReason && (
-                            <p className="text-[9px] text-warning italic mt-0.5 max-w-[120px] truncate mx-auto">
-                              "{order.refundReason}"
-                            </p>
+
+                          {/* Refund Button (only if PAID) */}
+                          {order.status === 'PAID' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRefundTargetOrder(order);
+                                setRefundAmount(order.total);
+                                setRefundReason('');
+                                setManagerPin('');
+                              }}
+                              title="Refund / Pengembalian Dana"
+                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-warning hover:text-black text-komazi-muted transition-colors"
+                            >
+                              <Undo2 className="w-3.5 h-3.5" />
+                            </button>
                           )}
-                        </td>
-
-                        {/* 9. Action Buttons */}
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Lihat Detail Pesanan */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedOrderDetail(order)}
-                              title="Lihat Rincian Detail Pesanan"
-                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-teal-light hover:text-white text-komazi-muted transition-colors cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Reprint Struk Pelanggan */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedReceipt(order)}
-                              title="Cetak Ulang Struk Pelanggan"
-                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-komazi-coral hover:text-white text-komazi-muted transition-colors cursor-pointer"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Cetak Struk Pertinggal (Salinan Kasir) */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedReceipt({ ...order, initialReceiptType: 'merchant' })}
-                              title="Cetak Struk Pertinggal (Salinan Kasir / Arsip Toko)"
-                              className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-amber-500 hover:text-white text-komazi-muted transition-colors cursor-pointer"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Void Button (only if PAID) */}
-                            {order.status === 'PAID' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setVoidTargetOrder(order);
-                                  setVoidReason('');
-                                  setManagerPin('');
-                                }}
-                                title={
-                                  isManagerOrOwner
-                                    ? 'Batalkan / Void Transaksi (Akses Langsung Manager)'
-                                    : 'Batalkan / Void Transaksi (Perlu Otorisasi PIN)'
-                                }
-                                className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-danger hover:text-white text-komazi-muted transition-colors"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Refund Button (only if PAID) */}
-                            {order.status === 'PAID' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRefundTargetOrder(order);
-                                  setRefundAmount(order.total);
-                                  setRefundReason('');
-                                  setManagerPin('');
-                                }}
-                                title="Refund / Pengembalian Dana"
-                                className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-warning hover:text-black text-komazi-muted transition-colors"
-                              >
-                                <Undo2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Controls */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={filteredOrders.length}
-            itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage}
-            onItemsPerPageChange={setItemsPerPage}
-            itemLabel="transaksi"
-          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredOrders.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
+          itemLabel="transaksi"
+        />
+      </div>
 
       {/* Modal: Dedicated Order Detail View */}
       {selectedOrderDetail && (
@@ -1387,10 +1380,10 @@ export default function OrdersPage() {
                   : startDate
                 : `${startDate} s/d ${endDate}`
               : startDate
-              ? `Mulai ${startDate}`
-              : endDate
-              ? `Sampai ${endDate}`
-              : 'Semua Tanggal',
+                ? `Mulai ${startDate}`
+                : endDate
+                  ? `Sampai ${endDate}`
+                  : 'Semua Tanggal',
           cashier: cashierFilter,
           shift:
             shiftFilter === 'ACTIVE'
@@ -1398,8 +1391,8 @@ export default function OrdersPage() {
                 ? `Shift Aktif (${activeShift.cashierName})`
                 : 'Shift Aktif'
               : shiftFilter !== 'ALL'
-              ? `Shift #${shiftFilter}`
-              : 'Semua Shift',
+                ? `Shift #${shiftFilter}`
+                : 'Semua Shift',
           search: searchQuery.trim(),
         }}
       />

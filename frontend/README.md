@@ -15,7 +15,7 @@ Frontend Web Application Point of Sale (POS) & Workspace Management System untuk
   - Perhitungan otomatis: Subtotal, Diskon (Nominal / Persen), Service Charge (5%), PB1/PPN Resto (10%), serta Pembulatan ke Rp 100 terdekat.
   - **Hold Bill / Open Bills**: Fitur simpan pesanan tertahan dan lanjutkan nanti.
 - **Multi-Metode Pembayaran (Shortcut `F9`)**:
-  - **Tunai (Cash)**: Tombol uang pas, pecahan cepat (50k, 100k, 200k, 500k), input kustom, serta kalkulasi uang kembalian otomatis.
+  - **Tunai**: Tombol uang pas, pecahan cepat (50k, 100k, 200k, 500k), input kustom, serta kalkulasi uang kembalian otomatis.
   - **QRIS Statis**: Simulasi QR code dinamis NMID dengan panduan scan e-wallet / mobile banking.
   - **Transfer Bank**: Nomor rekening BCA / Mandiri dengan tombol salin 1-klik dan input nomor referensi.
   - **Efek Konfeti Perayaan**: Animasi visual saat transaksi pembayaran berhasil diselesaikan.

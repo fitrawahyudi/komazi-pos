@@ -33,6 +33,7 @@ import {
   formatFriendlySalutation,
 } from '../src/services/ai/aiToneFormatter.js';
 import { universalSchedulerAgent } from '../src/services/ai/universalSchedulerAgent.js';
+import { withLoadingAnimation } from '../src/bot/utils/loading.js';
 
 async function runSuperPowerfulE2e() {
   console.log('================================================================');
@@ -172,6 +173,30 @@ async function runSuperPowerfulE2e() {
   setAiDirectChatMode(testUser.id, true);
   assert.strictEqual(isAiDirectChatMode(testUser.id), true, 'Mode bebas diaktifkan kembali');
   console.log('  ✅ Toggle Mode Bebas beroperasi normal dan persisten');
+
+  // Verifikasi bahwa eksekusi query pada Mode Bebas Chat tidak memicu pesan loading bar
+  const dispatchedActions = [];
+  const repliedMessages = [];
+  const mockDirectCtx = {
+    user: testUser,
+    replyWithChatAction: async (act) => { dispatchedActions.push(act); },
+    reply: async (msg, opt) => {
+      repliedMessages.push({ msg, opt });
+      return { message_id: 101, text: msg };
+    },
+    api: {
+      editMessageText: async () => {},
+      deleteMessage: async () => {},
+    },
+  };
+
+  await withLoadingAnimation(mockDirectCtx, { chatAction: 'typing', skipLoadingMessage: true }, async () => {
+    return 'ai_reply';
+  });
+
+  assert.strictEqual(dispatchedActions.includes('typing'), true, 'Chat action typing harus tetap dikirim');
+  assert.strictEqual(repliedMessages.length, 0, 'Tidak boleh ada pesan animasi loading bar pada mode bebas chat');
+  console.log('  ✅ Mode Bebas Chat terkonfirmasi 100% bebas dari pesan animasi loading');
 
   // ==================================================================
   // 5. Skenario 5: Ringkasan Episodik Jangka Panjang untuk Prompt LLM

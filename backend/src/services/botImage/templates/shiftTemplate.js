@@ -161,7 +161,7 @@ export function renderShiftClosedCard(data = {}) {
           <span style="text-align:right;">Nominal</span>
         </div>
         <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr;">
-          <span style="font-weight:600;color:#FFFFFF;">💵 Uang Tunai (Cash)</span>
+          <span style="font-weight:600;color:#FFFFFF;">💵 Uang Tunai</span>
           <span style="text-align:right;color:#9CA3AF;">${totalSales > 0 ? Math.round((cashSales / totalSales) * 100) : 0}%</span>
           <span style="text-align:right;font-weight:700;color:#10B981;">${formatRupiah(cashSales)}</span>
         </div>

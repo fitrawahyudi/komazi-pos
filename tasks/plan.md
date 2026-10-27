@@ -1,59 +1,57 @@
-# Rencana Implementasi: Komazi AI Upgrade (Isolasi Role, Database Luas, Cron Job)
+# Implementation Plan: Sistem Promo Transaksi Kasir (Preset Diskon 1-Klik & Voucher Promo)
 
-## Latar Belakang & Tujuan
-Berdasarkan Statement of Intent terkonfirmasi:
-1. **Isolasi Riwayat Chat per-Role**: Riwayat chat Owner tidak boleh bocor ke Kasir (dan sebaliknya).
-2. **Kecerdasan Database Menyeluruh**: AI dapat menjawab seluruh data operasional & finansial kedai (omzet komparatif, pengeluaran, resep/bahan, pelanggan, shift, aset) dengan pembatasan hak akses role dan sensor data sensitif (password, PIN, token).
-3. **Pembuatan & Manajemen Cron Job via AI**: Pengguna (Owner/Manager) dapat membuat dan menjadwalkan tugas otomatis (cron job) dalam bahasa alami di antarmuka web Komazi AI.
+## Overview
+Membangun sistem promosi dan diskon terstruktur di POS Kasir Komazi Coffee yang menggantikan input angka manual bebas menjadi:
+1. **Tombol Preset Diskon Cepat (1-klik)** di kasir (seperti Diskon Karyawan 20%, Mitra Komunitas 10%, Komplimen Minuman).
+2. **Validasi Kode Voucher Promo** (seperti `KOMAZI10`, `HEMAT15K`) dengan pengecekan backend otomatis (minimal belanja, kuota, tanggal kedaluwarsa).
+3. **Pencatatan Audit & Struk Transaksi** yang rapi mencantumkan nama promo yang digunakan.
 
----
+## Architecture Decisions
+1. **Non-Breaking Dynamic Setting Storage**: Vouchers dan Preset Diskon dikelola melalui layanan `promoService.js` yang memanfaatkan tabel `Setting` (key: `promo_presets` dan `promo_vouchers`). Ini memungkinkan update instan dan nol migrasi database (zero database migration risk) pada lingkungan produksi.
+2. **Robust Validation Pipeline**: Validasi voucher di backend memeriksa secara ketat: status aktif, tanggal berlaku (`startDate` - `endDate`), batas minimal belanja (`minSpend`), kuota pemakaian tersisa (`quota` vs `usedCount`), dan kalkulasi batas potongan maksimal (`maxDiscount`).
+3. **Reactive Frontend State (`cartStore`)**: Menambahkan `appliedPromo` pada keranjang belanja POS, yang terintegrasi langsung dengan kalkulasi subtotal, pajak, biaya layanan, dan grand total. Penukaran poin loyalty tetap dapat berjalan berdampingan atau saling eksklusif dengan pesan yang jelas.
+4. **Fast-Paced Cashier UX**: Popover diskon di [CartSidebar.jsx](file:///d:/pos-komazi/frontend/src/components/pos/CartSidebar.jsx) dirombak dengan UI modern: chips preset 1-klik di bagian atas, form input kode kupon dengan tombol verifikasi instan, dan kartu status promo aktif dengan tombol batal.
 
-## Daftar Tugas Terurut (Vertical Slices)
+## Task List
 
-### Task 1: Isolasi Riwayat Chat Komazi AI per-Role (Frontend)
-- **Files touched:** `frontend/src/store/aiAnalyticsStore.js`, `frontend/src/components/analytics/AiSalesAssistantModal.jsx`
-- **Tindakan:**
-  - Ubah struktur penyimpanan pesan dari array tunggal `messages` menjadi `messagesByRole: { OWNER: [...], MANAGER: [...], CASHIER: [...], BARISTA: [...], KITCHEN: [...] }`.
-  - Sinkronisasi `messages` aktif sesuai `role` user yang sedang login saat modal dibuka atau saat berganti user.
-  - Pisahkan `clearChat` agar hanya menghapus riwayat role yang sedang aktif.
-  - Partialize localStorage dengan key yang aman atau mapping per-role.
-- **Verifikasi:**
-  - Buka AI sebagai Owner, kirim pesan -> pesan tersimpan di role Owner.
-  - Ganti ke Kasir -> pesan Owner tidak muncul, menampilkan pesan sambutan & riwayat Kasir.
+### Phase 1: Backend Foundation & Promo Engine
+- [ ] **Task 1: Promo Service & Validator Engine (`backend/src/services/promoService.js`)**
+  - Penyediaan default presets & voucher awal.
+  - Implementasi fungsi `getPresets()`, `savePresets()`, `getVouchers()`, `validateVoucher(code, subtotal, customerId)`, dan `consumeVoucher(code)`.
+  - Unit test validator di `backend/tests/test-promo-service.js`.
 
-### Task 2: Ekstensi Konteks Database Komazi AI & Sensor Data Sensitif (Backend)
-- **Files touched:** `backend/src/services/ai/komaziAiContextAggregator.js`, `backend/src/services/salesAnalyticsEngine.js`, `backend/src/services/ai/aiPromptComposer.js`
-- **Tindakan:**
-  - Perluas agregator konteks operasional untuk mencakup:
-    - Pengeluaran (Expense): total bulanan, kategori pengeluaran terbesar.
-    - Pelanggan (Customer): total member, tier member, poin.
-    - Aset & Inventaris: ringkasan nilai aset & penyusutan, stok bahan kritis & resep.
-    - HRIS & Shift: kehadiran staf, ringkasan selisih kas terbaru.
-    - Penjualan historis: perbandingan bulan ini vs bulan lalu, metode pembayaran.
-  - Terapkan sensor data sensitif: string/objek yang mengandung `password`, `pin`, `token`, `secret`, `hash` wajib difilter/dihapus total.
-  - Terapkan pembatasan role:
-    - OWNER & MANAGER: Akses penuh (laba bersih, omzet lengkap, HPP, pengeluaran, gaji).
-    - CASHIER, BARISTA, KITCHEN: Dibatasi pada SOP, menu resep, stok bahan, meja/workspace, dan shift terkait tanpa akses data laba/HPP/gaji.
-- **Verifikasi:**
-  - Test query AI seputar expense, customer, dan aset.
-  - Pastikan tidak ada data password/PIN yang bocor dalam prompt AI.
+### Checkpoint 1: Engine & Rules
+- [ ] Validator berhasil menguji syarat min. belanja, tanggal, kuota, dan kalkulasi persen/nominal.
 
-### Task 3: Integrasi Eksekusi Cron Job via Chatbot AI (Backend)
-- **Files touched:** `backend/src/controllers/aiAnalyticsController.js`, `backend/src/services/ai/aiPromptComposer.js`, `backend/src/services/ai/naturalScheduleParser.js` (atau parser cron)
-- **Tindakan:**
-  - Tambahkan deteksi intent penjadwalan cron (`CREATE_SCHEDULE`, `LIST_SCHEDULE`, `CANCEL_SCHEDULE`) di `aiPromptComposer.js` / controller.
-  - Hubungkan dengan `jobRegistryService.createJob` dan `UniversalSchedulerAgent`.
-  - Dukung sintaks bahasa alami seperti:
-    - *"Jadwalkan rekap omzet setiap jam 22:00"* -> Cron: `0 22 * * *`, JobType: `REPORT`
-    - *"Ingatkan cek stok bahan setiap hari jam 15:00"* -> Cron: `0 15 * * *`, JobType: `REMINDER`
-    - *"Tampilkan daftar cron job aktif"* -> Query `ScheduledJob` aktif
-  - Berikan pengamanan otorisasi: hanya role `OWNER` dan `MANAGER` yang diizinkan membuat/mengelola cron job. Role Kasir akan menerima pesan penolakan sopan bahwa pembuatan jadwal membutuhkan izin Owner/Manager.
-- **Verifikasi:**
-  - Kirim pertanyaan penjadwalan via endpoint `/ai/ask` -> Cron job tersimpan di database `ScheduledJob`.
+### Phase 2: REST API & Order Integration
+- [ ] **Task 2: API Endpoints & Order Recording (`promoRoutes.js`, `promoController.js`, `orderController.js`)**
+  - Endpoint `GET /api/promos/presets` (Kasir/Staff).
+  - Endpoint `POST /api/promos/validate-voucher` (Kasir/Staff).
+  - Endpoint CRUD `/api/promos/vouchers` (Role: OWNER/MANAGER).
+  - Integrasi pencatatan nama voucher & penambahan `usedCount` saat order dibuat di `orderController.js`.
 
-### Task 4: Pengujian E2E & Verifikasi Frontend
-- **Files touched:** `frontend/tests/frontend.test.js`, `backend/tests/test-ai-cron-and-role-isolation.js`
-- **Tindakan:**
-  - Buat unit & integrasi test untuk isolasi chat per-role di frontend.
-  - Buat automated test di backend untuk memverifikasi cron job creation via AI dan sensor data sensitif.
-  - Jalankan build frontend dan pastikan semua lulus.
+### Checkpoint 2: API Ready
+- [ ] Kasir dapat memanggil API validasi voucher dan order berhasil dibuat dengan referensi promo.
+
+### Phase 3: Frontend Store & UI Integration
+- [ ] **Task 3: Cart Store Promo State (`frontend/src/store/cartStore.js`)**
+  - Tambahkan state `appliedPromo` (detail kode/nama promo, tipe, nilai, dan potongan).
+  - Action `applyPresetDiscount(preset)`, `applyVoucher(voucherData)`, dan `removePromo()`.
+  - Sinkronisasi dengan `getCartSummary()` dan reset saat keranjang dibersihkan.
+- [ ] **Task 4: CartSidebar Discount Popover UI (`frontend/src/components/pos/CartSidebar.jsx`)**
+  - Tampilkan tombol chips Preset Diskon Cepat 1-klik di atas.
+  - Input teks Kode Voucher Promo dengan tombol "Terapkan" & feedback loading/error.
+  - Kartu hijau status promo aktif dengan rincian potongan dan tombol hapus promo.
+  - Tab manual input tetap tersedia sebagai opsi cadangan.
+
+### Phase 4: E2E Verification & Reporting
+- [ ] **Task 5: End-to-End Test & Struk Verification (`backend/tests/test-promo-e2e.js`)**
+  - Uji alur lengkap: ambil preset -> pasang diskon karyawan -> validasi voucher -> checkout order -> kuota berkurang.
+  - Pastikan struk dan canvas image mencatat nama promo secara transparan.
+
+## Risks and Mitigations
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Kasir memasukkan voucher yang kuotanya sudah habis | Medium | Backend menolak dengan pesan error jelas: "Kuota voucher telah habis terpakai" |
+| Minimal belanja belum tercapai tapi voucher dimasukkan | Low | Validasi real-time mencantumkan syarat minimal belanja (misal: "Minimal belanja Rp 50.000") |
+| Double discount (Voucher + Tukar Poin Member bertumpuk liar) | Medium | Aturan prioritas yang jelas: saat voucher/preset dipasang, penukaran poin dikonfirmasi/direset |

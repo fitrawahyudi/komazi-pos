@@ -102,9 +102,8 @@ function ReportTableContainer({
                 {headers.map((h, idx) => (
                   <th
                     key={idx}
-                    className={`py-3.5 px-4 whitespace-nowrap ${
-                      h.align === 'right' ? 'text-right' : h.align === 'center' ? 'text-center' : 'text-left'
-                    }`}
+                    className={`py-3.5 px-4 whitespace-nowrap ${h.align === 'right' ? 'text-right' : h.align === 'center' ? 'text-center' : 'text-left'
+                      }`}
                   >
                     {h.label}
                   </th>
@@ -226,10 +225,10 @@ export function ProductsReportView({ orders = [], dateRangeLabel = '', canViewCo
     { label: 'Total Penjualan', align: 'right' },
     ...(canViewCogs
       ? [
-          { label: 'Total HPP', align: 'right' },
-          { label: 'Laba Kotor', align: 'right' },
-          { label: 'Margin', align: 'right' },
-        ]
+        { label: 'Total HPP', align: 'right' },
+        { label: 'Laba Kotor', align: 'right' },
+        { label: 'Margin', align: 'right' },
+      ]
       : []),
   ];
 
@@ -261,10 +260,10 @@ export function ProductsReportView({ orders = [], dateRangeLabel = '', canViewCo
       productData.totalRev,
       ...(canViewCogs
         ? [
-            productData.totalCogs,
-            productData.totalGrossProfit,
-            `${productData.totalRev > 0 ? ((productData.totalGrossProfit / productData.totalRev) * 100).toFixed(1) : 0}%`,
-          ]
+          productData.totalCogs,
+          productData.totalGrossProfit,
+          `${productData.totalRev > 0 ? ((productData.totalGrossProfit / productData.totalRev) * 100).toFixed(1) : 0}%`,
+        ]
         : []),
     ];
     const payload = {
@@ -865,7 +864,7 @@ export function PaymentsReportView({ orders = [], dateRangeLabel = '', storeName
           bg="bg-komazi-coral/15"
         />
         <KpiCard
-          title="Uang Tunai (Cash)"
+          title="Uang Tunai"
           value={formatRupiah(payData.list.find((p) => p.name.includes('Tunai'))?.revenue || 0)}
           subtext={`${payData.list.find((p) => p.name.includes('Tunai'))?.count || 0} transaksi laci kasir`}
           icon={Wallet}
@@ -1579,24 +1578,22 @@ export function CashDrawerReportView({ shiftHistory = [], dateRangeLabel = '', s
               </td>
               <td className="py-3 px-4 text-right font-mono font-bold">
                 <span
-                  className={`px-2 py-0.5 rounded-md text-[11px] ${
-                    s.variance === 0
+                  className={`px-2 py-0.5 rounded-md text-[11px] ${s.variance === 0
                       ? 'text-komazi-muted'
                       : s.variance > 0
-                      ? 'text-emerald-400 bg-emerald-500/10'
-                      : 'text-danger bg-danger/10'
-                  }`}
+                        ? 'text-emerald-400 bg-emerald-500/10'
+                        : 'text-danger bg-danger/10'
+                    }`}
                 >
                   {s.variance > 0 ? `+${formatRupiah(s.variance)}` : s.variance < 0 ? formatRupiah(s.variance) : 'Pas'}
                 </span>
               </td>
               <td className="py-3 px-4 text-center">
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    s.isClosed
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${s.isClosed
                       ? 'bg-komazi-surface-2 text-komazi-muted border border-komazi-border'
                       : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  }`}
+                    }`}
                 >
                   {s.isClosed ? 'Ditutup' : 'Aktif'}
                 </span>

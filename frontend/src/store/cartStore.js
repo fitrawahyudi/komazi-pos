@@ -16,6 +16,7 @@ export const useCartStore = create(
       selectedCustomerId: null, // ID pelanggan terdaftar yang dipilih (null = tamu/non-member)
       discountType: 'NOMINAL', // 'NOMINAL' | 'PERCENT'
       discountValue: 0,
+      appliedPromo: null, // Detail promo/voucher aktif: { code, name, type, value, discountAmount, isPreset }
       redeemedPoints: 0, // Jumlah poin loyalty yang ditukarkan (1 poin = Rp 1.000 diskon)
       attachedWorkspaceSession: null, // If bundled with workspace
       openBills: [], // Array of saved open orders
@@ -37,11 +38,59 @@ export const useCartStore = create(
         set({
           discountType: type,
           discountValue: Math.max(0, Number(value) || 0),
+          appliedPromo: null, // Reset preset/voucher jika manual input diubah
+        });
+      },
+
+      applyPresetDiscount: (preset) => {
+        if (!preset) return;
+        set({
+          appliedPromo: {
+            id: preset.id,
+            name: preset.name,
+            shortLabel: preset.shortLabel || preset.name,
+            type: preset.type,
+            value: Number(preset.value) || 0,
+            isPreset: true,
+          },
+          discountType: preset.type,
+          discountValue: Number(preset.value) || 0,
+          redeemedPoints: 0, // Reset poin loyalty jika promo diskon dipasang
+        });
+      },
+
+      applyVoucher: (voucher) => {
+        if (!voucher) return;
+        set({
+          appliedPromo: {
+            code: voucher.code,
+            name: voucher.name,
+            type: voucher.type,
+            value: Number(voucher.value) || 0,
+            discountAmount: Number(voucher.discountAmount) || 0,
+            minSpend: Number(voucher.minSpend) || 0,
+            maxDiscount: Number(voucher.maxDiscount) || 0,
+            isPreset: false,
+          },
+          discountType: voucher.type,
+          discountValue: Number(voucher.value) || 0,
+          redeemedPoints: 0,
+        });
+      },
+
+      removePromo: () => {
+        set({
+          appliedPromo: null,
+          discountType: 'NOMINAL',
+          discountValue: 0,
         });
       },
 
       setRedeemedPoints: (points) => {
-        set({ redeemedPoints: Math.max(0, Number(points) || 0) });
+        set({
+          redeemedPoints: Math.max(0, Number(points) || 0),
+          appliedPromo: null, // Reset promo jika kasir memilih tukar poin
+        });
       },
 
       attachWorkspaceSession: (session) => {
@@ -158,6 +207,7 @@ export const useCartStore = create(
           selectedCustomerId: null,
           discountType: 'NOMINAL',
           discountValue: 0,
+          appliedPromo: null,
           redeemedPoints: 0,
           attachedWorkspaceSession: null,
           currentHoldBillId: null,
@@ -167,7 +217,7 @@ export const useCartStore = create(
 
       // Calculate totals
       getCartSummary: () => {
-        const { items, discountType, discountValue, attachedWorkspaceSession } = get();
+        const { items, discountType, discountValue, appliedPromo, attachedWorkspaceSession } = get();
         const { settings } = useSettingsStore.getState();
 
         const itemsSubtotal = items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
@@ -177,6 +227,9 @@ export const useCartStore = create(
         let discountAmount = 0;
         if (discountType === 'PERCENT') {
           discountAmount = Math.round((subtotal * Math.min(100, discountValue)) / 100);
+          if (appliedPromo && appliedPromo.maxDiscount > 0 && discountAmount > appliedPromo.maxDiscount) {
+            discountAmount = appliedPromo.maxDiscount;
+          }
         } else {
           discountAmount = Math.min(subtotal, discountValue);
         }
@@ -210,6 +263,7 @@ export const useCartStore = create(
           tax,
           grandTotal,
           totalQty: items.reduce((sum, item) => sum + item.qty, 0),
+          appliedPromo: appliedPromo || null,
         };
       },
 
@@ -251,6 +305,7 @@ export const useCartStore = create(
           selectedCustomerId: state.selectedCustomerId,
           discountType: state.discountType,
           discountValue: state.discountValue,
+          appliedPromo: state.appliedPromo || null,
           attachedWorkspaceSession: state.attachedWorkspaceSession,
           savedAt: new Date().toISOString(),
           total: summary.grandTotal,
@@ -327,6 +382,7 @@ export const useCartStore = create(
           selectedCustomerId: bill.selectedCustomerId || null,
           discountType: bill.discountType,
           discountValue: bill.discountValue,
+          appliedPromo: bill.appliedPromo || null,
           attachedWorkspaceSession: bill.attachedWorkspaceSession,
           currentHoldBillId: bill.billId, // Tandai bahwa cart memuat hold bill ini
           currentBackendOrderId: bill.backendOrderId || null, // Catat ID backend MySQL order
