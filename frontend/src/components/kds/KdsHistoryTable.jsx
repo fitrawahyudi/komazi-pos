@@ -158,11 +158,10 @@ export default function KdsHistoryTable({
             <button
               type="button"
               onClick={() => handleToggleToday(true)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                filterTodayOnly
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${filterTodayOnly
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'text-komazi-muted hover:text-white'
-              }`}
+                }`}
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>Hari Ini</span>
@@ -170,11 +169,10 @@ export default function KdsHistoryTable({
             <button
               type="button"
               onClick={() => handleToggleToday(false)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                !filterTodayOnly
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${!filterTodayOnly
                   ? 'bg-komazi-coral text-white shadow-sm'
                   : 'text-komazi-muted hover:text-white'
-              }`}
+                }`}
             >
               Semua Hari
             </button>
@@ -232,8 +230,8 @@ export default function KdsHistoryTable({
                           {searchQuery
                             ? 'Tidak ada pesanan riwayat yang cocok'
                             : filterTodayOnly
-                            ? 'Belum ada pesanan selesai hari ini'
-                            : 'Tidak ada riwayat pesanan'}
+                              ? 'Belum ada pesanan selesai hari ini'
+                              : 'Tidak ada riwayat pesanan'}
                         </p>
                         <p className="text-xs text-komazi-muted mt-1 max-w-sm">
                           {searchQuery
@@ -298,11 +296,10 @@ export default function KdsHistoryTable({
                         </span>
                         <div className="mt-1 flex items-center gap-1">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                              isDineIn
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${isDineIn
                                 ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                                 : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                            }`}
+                              }`}
                           >
                             {isDineIn ? (
                               <Store className="w-2.5 h-2.5" />

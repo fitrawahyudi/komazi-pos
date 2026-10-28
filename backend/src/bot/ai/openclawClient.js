@@ -26,7 +26,7 @@ export const KomaziAiError = OpenClawError;
  * @param {string|number} [params.userId]
  * @returns {Promise<{ text: string, model: string, usage: object }>}
  */
-export async function sendOpenClawChat({ messages = [], userId = null }) {
+export async function sendOpenClawChat({ messages = [], userId = null, user = null }) {
   const config = getOpenclawConfig();
 
   if (!config.enabled) {
@@ -138,12 +138,15 @@ export async function sendOpenClawChat({ messages = [], userId = null }) {
             text: m.content,
           }));
 
+        const fallbackRole = user?.role || 'OWNER';
+        const rawName = user?.name || user?.first_name || '';
+        const fallbackName = ['user', 'admin', 'administrator', 'null', 'undefined'].includes(rawName.toLowerCase()) ? '' : rawName;
         const nativeResult = await generateSalesAnalyticsNarrative(
           userMsg,
           {},
           historyMsgs,
-          'OWNER',
-          'User',
+          fallbackRole,
+          fallbackName,
           { systemPrompt: systemMsg }
         );
 

@@ -58,7 +58,7 @@ export function broadcastOrdersSync(eventDetail) {
     // 2. Dispatch local CustomEvent for same-tab / same-window components
     try {
       window.dispatchEvent(new CustomEvent('komazi:orders-updated', { detail: eventDetail }));
-    } catch {}
+    } catch { }
   }
 }
 
@@ -555,7 +555,7 @@ export const useOrdersStore = create(
               (b) => b.id !== billId && b.billId !== billId && (!actualBackendId || b.backendOrderId !== actualBackendId)
             ),
           }));
-        } catch (_) {}
+        } catch (_) { }
 
         notifyOrdersChanged({
           action: 'ORDER_DELETED',
@@ -1232,7 +1232,7 @@ export function initOrdersSocketSync() {
     socket.on('order:new', (order) => {
       useOrdersStore.getState().fetchBackendOrders?.();
       if (order) {
-        NotificationService.notifyNewOrder?.(order)?.catch?.(() => {});
+        NotificationService.notifyNewOrder?.(order)?.catch?.(() => { });
       }
     });
 
@@ -1240,7 +1240,7 @@ export function initOrdersSocketSync() {
       useOrdersStore.getState().fetchBackendOrders?.();
       useShiftStore.getState().fetchActiveShift?.();
       if (order) {
-        NotificationService.notifyNewOrder?.(order)?.catch?.(() => {});
+        NotificationService.notifyNewOrder?.(order)?.catch?.(() => { });
       }
     });
 
@@ -1248,13 +1248,13 @@ export function initOrdersSocketSync() {
       useOrdersStore.getState().fetchBackendOrders?.();
       useShiftStore.getState().fetchActiveShift?.();
       if (order && (order.status === 'READY' || order.kitchenStatus === 'READY' || order.barStatus === 'READY')) {
-        NotificationService.notifyOrderReady?.(order)?.catch?.(() => {});
+        NotificationService.notifyOrderReady?.(order)?.catch?.(() => { });
       }
     });
 
     socket.on('approval:requested', (approval) => {
       if (approval) {
-        NotificationService.notifyApprovalRequired?.(approval)?.catch?.(() => {});
+        NotificationService.notifyApprovalRequired?.(approval)?.catch?.(() => { });
       }
     });
 

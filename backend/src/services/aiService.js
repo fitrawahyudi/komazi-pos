@@ -122,9 +122,36 @@ async function callGeminiApi(settings, messagesPayload, contextSystemContent, us
 }
 
 /**
- * Membersihkan output AI dari kebocoran key teknis / format JSON developer
+ * Deteksi apakah respons model LLM merupakan penolakan (canned refusal disclaimer)
+ * yang salah mengira tidak memiliki akses ke database/data penjualan padahal data sudah disertakan
  */
-export function sanitizeAiResponse(text) {
+export function isLlmRefusal(text) {
+  if (!text || typeof text !== 'string') return true;
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('tidak memiliki akses ke data') ||
+    lower.includes('tidak punya akses ke data') ||
+    lower.includes('tidak memiliki akses langsung ke data') ||
+    lower.includes('tidak memiliki akses ke database') ||
+    lower.includes('tidak punya akses ke database') ||
+    lower.includes('tidak memiliki koneksi ke database') ||
+    lower.includes('tidak punya koneksi ke database') ||
+    lower.includes('tidak bisa mengakses data penjualan') ||
+    lower.includes('tidak memiliki akses ke sistem penjualan') ||
+    lower.includes('sebagai model ai, saya tidak') ||
+    lower.includes('sebagai asisten ai, saya tidak memiliki akses') ||
+    lower.includes('sebagai model ai, komazi tidak') ||
+    lower.includes('komazi tidak memiliki akses ke data penjualan') ||
+    lower.includes('komazi tidak punya akses ke data penjualan') ||
+    lower.includes('tidak tahu tanggal hari ini') ||
+    (lower.includes('tidak memiliki akses') && lower.includes('database'))
+  );
+}
+
+/**
+ * Membersihkan output AI dari kebocoran key teknis / format JSON developer dan boilerplate robotik
+ */
+export function sanitizeAiResponse(text, userContext = null) {
   if (!text || typeof text !== 'string') return text;
   let cleaned = text;
 
@@ -134,7 +161,87 @@ export function sanitizeAiResponse(text) {
   cleaned = cleaned.replace(/\(?\s*criticalLowStockCount\s*[:=]?\s*\d+\s*\)?/gi, '');
   cleaned = cleaned.replace(/\b(isSoldOut|criticalLowStockItems|criticalLowStockCount)\b/g, '');
 
-  // 2. Bersihkan tanda kurung kosong atau spasi berlebih
+  // 2. Bersihkan kalimat robotik "dikembangkan oleh DeepSeek/Komazi", "diakses melalui...", "model AI"
+  cleaned = cleaned.replace(/dikembangkan oleh (?:DeepSeek|Komazi)[^\n.]*[\n.]*/gi, '');
+  cleaned = cleaned.replace(/diakses melalui (?:Ezkielyna|Komazi)[^\n.]*[\n.]*/gi, '');
+  cleaned = cleaned.replace(/jalan lewat (?:Ezkielyna|Komazi)[^\n.]*[\n.]*/gi, '');
+  cleaned = cleaned.replace(/Komazi,?\s*model\s+(?:dari|buatan)\s+Komazi[^\n.]*[\n.]*/gi, '');
+  cleaned = cleaned.replace(/di\s*sini\s*Komazi\s*berperan\s*sebagai\s*Komazi[^\n.]*[\n.]*/gi, '');
+  cleaned = cleaned.replace(/\bKomazi\s+(?:adalah|merupakan)\s+(?:model|asisten)\s+AI[^\n.]*[\n.]*/gi, '');
+
+  // Bersihkan kebocoran nama model pihak ketiga & provider API
+  cleaned = cleaned.replace(/\b(DeepSeek-V\d+(\.\d+)?(-Flash|-Chat)?|DeepSeek|Ezkielyna(\s*API|\s*Store)?)\b/gi, 'Komazi');
+
+  // Bersihkan duplikasi "Komazi Komazi" dan varian bold "Komazi **Komazi**"
+  cleaned = cleaned.replace(/Komazi(?:\s*(?:\*\*|\*|__)?Komazi(?:\*\*|\*|__)?)+/gi, 'Komazi');
+
+  // 3. Tentukan sapaan resmi pengganti "Bos", "Bapak", "Kak", "Bro", "Gan"
+  let targetSalutation = 'Rekan Komazi';
+  let cleanFirstName = '';
+  if (userContext) {
+    if (typeof userContext === 'object') {
+      const role = (userContext.role || '').toUpperCase();
+      const rawName = userContext.name || userContext.first_name || '';
+      let firstName = rawName.trim().split(' ')[0] || '';
+      if (['user', 'admin', 'administrator', 'null', 'undefined'].includes(firstName.toLowerCase())) {
+        firstName = '';
+      }
+      cleanFirstName = firstName;
+      const roleNameMap = {
+        OWNER: 'Owner',
+        MANAGER: 'Manager',
+        CASHIER: 'Kasir',
+        BARISTA: 'Barista',
+        KITCHEN: 'Kitchen',
+        STAFF: 'Staf',
+      };
+      const roleLabel = roleNameMap[role] || (firstName ? '' : 'Rekan Komazi');
+      targetSalutation = roleLabel ? (firstName ? `${roleLabel} ${firstName}` : roleLabel) : firstName;
+    } else if (typeof userContext === 'string') {
+      targetSalutation = userContext.trim();
+    }
+  }
+
+  // Hilangkan pola "Owner User", "Manager User", "Kasir User" dll
+  cleaned = cleaned.replace(/\b(Owner|Manager|Kasir|Barista|Kitchen|Staf|Rekan)\s+User\b/gi, '$1');
+
+  // Bersihkan sapaan tidak resmi (Bapak, Pak, Ibu, Bu, Mas, Mbak, Bro, Gan, Bos, Kak)
+  // Menangkap trailing name jika cocok agar tidak dobel nama (misal "Pak Doni" -> "Owner Doni", bukan "Owner Doni Doni")
+  cleaned = cleaned.replace(
+    /\b(Halo|Hai|Siap|Baik|Oke|Terima kasih|Trims|Maaf),?\s+(?:Bos|Bapak|Pak|Ibu|Bu|Mas|Mbak|Bro|Gan|Kak)(?:\s+[A-Za-z]+)?\b/gi,
+    `$1, ${targetSalutation}`
+  );
+  cleaned = cleaned.replace(
+    /\b(Kalau|Jika|Apabila)\s+(?:Bos|Bapak|Pak|Ibu|Bu|Mas|Mbak|Bro|Gan|Kak)(?:\s+[A-Za-z]+)?\b/gi,
+    `$1 ${targetSalutation}`
+  );
+  cleaned = cleaned.replace(
+    /\b(?:Bos|Bapak|Pak|Ibu|Bu|Mas|Mbak|Bro|Gan|Kak)\s+[A-Za-z]+\b/gi,
+    targetSalutation
+  );
+  cleaned = cleaned.replace(
+    /\b(?:Bos|Bapak|Pak|Ibu|Bu|Mas|Mbak|Bro|Gan)\b/g,
+    targetSalutation
+  );
+
+  // Bersihkan duplikasi nama seperti "Owner Doni Doni" atau "Owner Owner"
+  if (cleanFirstName) {
+    const doubleNameRegex = new RegExp(`\\b${cleanFirstName}\\s+${cleanFirstName}\\b`, 'gi');
+    cleaned = cleaned.replace(doubleNameRegex, cleanFirstName);
+  }
+  cleaned = cleaned.replace(/\b(Owner|Manager|Kasir|Barista|Kitchen)\s+\1\b/gi, '$1');
+
+  // 4. Ubah kata ganti diri orang pertama ("saya", "aku", "kami", "gue") menjadi "Komazi"
+  cleaned = cleaned.replace(/\b([Ss])aya\b/g, 'Komazi');
+  cleaned = cleaned.replace(/\b([Aa])ku\b/g, 'Komazi');
+  cleaned = cleaned.replace(/\b([Kk])ami\b/g, 'Komazi');
+  cleaned = cleaned.replace(/\b([Gg])ue\b/g, 'Komazi');
+  cleaned = cleaned.replace(/\b([Dd])aku\b/g, 'Komazi');
+
+  // Bersihkan lagi duplikasi Komazi
+  cleaned = cleaned.replace(/Komazi(?:\s*(?:\*\*|\*|__)?Komazi(?:\*\*|\*|__)?)+/gi, 'Komazi');
+
+  // 5. Bersihkan tanda kurung kosong atau spasi berlebih
   cleaned = cleaned.replace(/\(\s*\)/g, '');
   cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
@@ -147,7 +254,18 @@ export function sanitizeAiResponse(text) {
  */
 function buildRoleSpecificSystemPrompt(role, userName = '') {
   const normalized = (role || 'CASHIER').toUpperCase();
-  const displayName = userName ? `Kak ${userName}` : (normalized === 'OWNER' ? 'Owner' : normalized === 'MANAGER' ? 'Manager' : 'Rekan Komazi');
+  const roleNameMap = {
+    OWNER: 'Owner',
+    MANAGER: 'Manager',
+    CASHIER: 'Kasir',
+    BARISTA: 'Barista',
+    KITCHEN: 'Kitchen',
+    STAFF: 'Staf',
+  };
+  const roleLabel = roleNameMap[normalized] || 'Rekan';
+  const rawFirstName = userName ? userName.trim().split(' ')[0] : '';
+  const firstName = ['user', 'admin', 'administrator', 'null', 'undefined'].includes(rawFirstName.toLowerCase()) ? '' : rawFirstName;
+  const displayName = firstName ? `${roleLabel} ${firstName}` : roleLabel;
 
   let rolePersona = '';
   let roleBoundaries = '';
@@ -183,7 +301,7 @@ HAK AKSES ANDA: Membantu kasir dalam pelayanan pesanan pelanggan dan rekap shift
 - Ringkasan transaksi dan penjualan shift pribadi yang diproses oleh kasir ini hari ini.
 BATASAN KEAMANAN MUTLAK (SANGAT KETAT):
 - Anda DILARANG KERAS membocorkan total omset global kedai bulanan, perbandingan omset tahunan, margin keuntungan kedai, HPP bahan baku, atau performa kasir lain.
-- JIKA PENGGUNA BERTANYA TENTANG OMSET GLOBAL BULANAN, LABA KEDAI, ATAU DATA KASIR LAIN, TOLAK DENGAN SANTUN: "Sebagai asisten kasir, saya tidak memiliki akses ke laporan finansial global kedai. Silakan hubungi Store Manager atau Owner."`;
+- JIKA PENGGUNA BERTANYA TENTANG OMSET GLOBAL BULANAN, LABA KEDAI, ATAU DATA KASIR LAIN, TOLAK DENGAN SANTUN: "Sebagai asisten kasir, Komazi tidak memiliki akses ke laporan finansial global kedai. Silakan hubungi Store Manager atau Owner."`;
   } else if (normalized === 'BARISTA') {
     rolePersona = `Anda adalah Komazi AI — Asisten Operasional Bar Minuman (Barista). Anda sedang mendampingi ${displayName}.`;
     roleBoundaries = `
@@ -193,7 +311,7 @@ HAK AKSES ANDA: Operasional bar minuman, takaran/resep menu kopi/non-kopi, dan s
 - Memberikan komposisi bahan dan takaran resep minuman.
 BATASAN KEAMANAN MUTLAK:
 - Anda TIDAK MEMILIKI akses ke data uang, omset rupiah, pembayaran, kasir, atau workspace.
-- JIKA PENGGUNA BERTANYA TENTANG OMSET RUPIAH, UANG, ATAU TRANSAKSI, TOLAK DENGAN SANTUN: "Sebagai asisten operasional bar minuman, saya tidak memiliki akses ke data finansial atau penjualan rupiah kedai."`;
+- JIKA PENGGUNA BERTANYA TENTANG OMSET RUPIAH, UANG, ATAU TRANSAKSI, TOLAK DENGAN SANTUN: "Sebagai asisten operasional bar minuman, Komazi tidak memiliki akses ke data finansial atau penjualan rupiah kedai."`;
   } else if (normalized === 'KITCHEN') {
     rolePersona = `Anda adalah Komazi AI — Asisten Operasional Dapur Makanan (Kitchen). Anda sedang mendampingi ${displayName}.`;
     roleBoundaries = `
@@ -203,7 +321,7 @@ HAK AKSES ANDA: Operasional dapur makanan, stok bahan makanan/pastry, takaran re
 - Memberikan komposisi resep makanan di katalog.
 BATASAN KEAMANAN MUTLAK:
 - Anda TIDAK MEMILIKI akses ke data uang, omset rupiah, pembayaran, kasir, atau workspace.
-- JIKA PENGGUNA BERTANYA TENTANG OMSET RUPIAH, UANG, ATAU TRANSAKSI, TOLAK DENGAN SANTUN: "Sebagai asisten operasional dapur, saya tidak memiliki akses ke data finansial atau omset rupiah kedai."`;
+- JIKA PENGGUNA BERTANYA TENTANG OMSET RUPIAH, UANG, ATAU TRANSAKSI, TOLAK DENGAN SANTUN: "Sebagai asisten operasional dapur, Komazi tidak memiliki akses ke data finansial atau omset rupiah kedai."`;
   }
 
   return `Anda adalah Komazi AI untuk "Komazi Coffee & Workspace".
@@ -230,6 +348,11 @@ Respon Anda dibaca langsung oleh kasir dan pemilik toko manusia di layar kasir, 
    - Jawab secara to-the-point dalam 2 - 4 poin/kalimat pendek yang bersahabat dan nyaman dibaca cepat.
    - Sapa dengan ramah menggunakan panggilan "${displayName}" jika relevan.
    - DILARANG KERAS menggunakan rumus LaTeX atau simbol matematika ("\\[", "\\frac", "\\times", "\\approx", dll).
+5. ATURAN IDENTITAS DIRI & SAPAAN MUTLAK:
+   - DILARANG KERAS menggunakan kata "saya", "aku", "kami", atau "gue". SELALU sebut diri Anda sebagai "Komazi".
+   - DILARANG KERAS menyapa pengguna dengan "Bapak", "Pak", "Ibu", "Bu", "Bos", "Kak", "Mas", "Bro", atau "Gan". SELALU sapa pengguna dengan "${displayName}".
+   - DILARANG KERAS menyebut nama model pihak ketiga seperti "DeepSeek", "Gemini", "Groq", atau "Ezkielyna". Anda adalah "Komazi".
+   - DILARANG KERAS berdalih tidak tahu tanggal atau tidak menyimpan tanggal eksplisit untuk transaksi hari ini. Data penjualan adalah data real-time resmi hari ini.
 
 ═════════════════════════════════════════════════════════════════════════
 KEAMANAN DATA & PERLINDUNGAN INFORMASI SENSITIF (STRICT DATA SHIELDING)
@@ -264,6 +387,7 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
   const settings = await getAiSettings();
   const effectiveRole = userRole || businessData?.roleScope || 'CASHIER';
   const effectiveUserName = userName || businessData?.currentUser?.name || '';
+  const userContext = { role: effectiveRole, name: effectiveUserName };
 
   const systemPrompt = options.systemPrompt || buildRoleSpecificSystemPrompt(effectiveRole, effectiveUserName);
 
@@ -280,10 +404,22 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
     ? options.systemPrompt
     : `${systemPrompt}\n\nDATA RESMI OPERASIONAL & PENJUALAN KEDAI (JSON):\n${JSON.stringify(businessData, null, 2)}`;
 
+  // Struktur payload universal:
+  // Untuk model LLM (terutama DeepSeek / Ezkielyna) agar tidak salah mengira "tidak punya akses data",
+  // instruksi persona diletakkan di system role DAN data operasional resmi disandingkan langsung dengan pertanyaan user
+  const systemInstruction = `Anda adalah "Komazi AI", asisten resmi cerdas untuk kedai kopi & ruang kerja modern "Komazi Coffee & Workspace".
+Anda sedang berbicara langsung dengan: ${effectiveUserName || 'Pengguna'} (${effectiveRole}).
+Anda memiliki integrasi dan akses langsung ke seluruh database POS, transaksi penjualan kasir, perbandingan omset hari ini vs kemarin, status shift kasir, dan inventori kedai.
+JAWAB PERTANYAAN PENGGUNA DENGAN LENGKAP & AKURAT BERDASARKAN DATA RESMI OPERASIONAL KEDAI YANG DISEDIAKAN.
+DILARANG MENGAKU TIDAK MEMILIKI AKSES KE DATABASE ATAU DATA PENJUALAN KEDAI KARENA SELURUH DATA SUDAH LENGKAP TERSEDIA DI BAWAH.
+Jika menyajikan perbandingan data omset/metrik penjualan atau daftar metrik, SELALU gunakan format tabel Markdown yang rapi dengan baris header dan pemisah baris (| Kolom 1 | Kolom 2 | ... / |---|---|...).`;
+
+  const userPromptContent = `[DATA RESMI OPERASIONAL & PENJUALAN KEDAI]:\n${contextSystemContent}\n\n[PERTANYAAN PENGGUNA]:\n${userQuery}`;
+
   const messagesPayload = [
-    { role: 'system', content: contextSystemContent },
+    { role: 'system', content: systemInstruction },
     ...historyMessages,
-    { role: 'user', content: userQuery },
+    { role: 'user', content: userPromptContent },
   ];
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -318,13 +454,15 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
         if (groqRes.ok) {
           const json = await groqRes.json();
           const text = json.choices?.[0]?.message?.content?.trim();
-          if (text) {
+          if (text && !isLlmRefusal(text)) {
             return {
-              text: sanitizeAiResponse(text),
+              text: sanitizeAiResponse(text, userContext),
               provider: 'GROQ',
               model: 'Komazi AI (Groq)',
               latencyTier: 'Komazi AI (Fast LPU)',
             };
+          } else if (text && isLlmRefusal(text)) {
+            console.warn('[AIService] Groq mengembalikan penolakan data, melanjutkan ke provider berikutnya...');
           }
         } else {
           const errorBody = await groqRes.text();
@@ -345,13 +483,15 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
           userQuery,
           historyMessages
         );
-        if (geminiText) {
+        if (geminiText && !isLlmRefusal(geminiText)) {
           return {
-            text: sanitizeAiResponse(geminiText),
+            text: sanitizeAiResponse(geminiText, userContext),
             provider: 'GEMINI',
             model: 'Komazi AI (Gemini)',
             latencyTier: 'Komazi AI (Google Gemini Cloud)',
           };
+        } else if (geminiText && isLlmRefusal(geminiText)) {
+          console.warn('[AIService] Gemini mengembalikan penolakan data, melanjutkan ke provider berikutnya...');
         }
       } catch (err) {
         console.warn('[AIService] Gemini API error:', err.message);
@@ -385,13 +525,15 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
         if (ezkielynaRes.ok) {
           const json = await ezkielynaRes.json();
           const text = json.choices?.[0]?.message?.content?.trim();
-          if (text) {
+          if (text && !isLlmRefusal(text)) {
             return {
-              text: sanitizeAiResponse(text),
+              text: sanitizeAiResponse(text, userContext),
               provider: 'EZKIELYNA',
               model: `Komazi AI (Ezkielyna - ${settings.ezkielynaModel || 'deepseek-v4.1-flash'})`,
               latencyTier: 'Komazi AI (Ezkielyna Cloud)',
             };
+          } else if (text && isLlmRefusal(text)) {
+            console.warn('[AIService] Ezkielyna mengembalikan penolakan data, melanjutkan ke provider berikutnya...');
           }
         } else {
           const errorBody = await ezkielynaRes.text();
@@ -428,13 +570,15 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
         if (openRouterRes.ok) {
           const json = await openRouterRes.json();
           const text = json.choices?.[0]?.message?.content?.trim();
-          if (text) {
+          if (text && !isLlmRefusal(text)) {
             return {
-              text: sanitizeAiResponse(text),
+              text: sanitizeAiResponse(text, userContext),
               provider: 'OPENROUTER',
               model: 'Komazi AI (OpenRouter)',
               latencyTier: 'Komazi AI (Cloud Fallback)',
             };
+          } else if (text && isLlmRefusal(text)) {
+            console.warn('[AIService] OpenRouter mengembalikan penolakan data, melanjutkan ke provider berikutnya...');
           }
         } else {
           const errorBody = await openRouterRes.text();
@@ -450,9 +594,10 @@ export async function generateSalesAnalyticsNarrative(userQuery, businessData, h
   // TIER 5: LOCAL DETERMINISTIC ENGINE (Final Fallback — 100% Offline Ready)
   // ─────────────────────────────────────────────────────────────────────────────
   return {
-    text: sanitizeAiResponse(generateFallbackNarrative(businessData, userQuery, effectiveRole, effectiveUserName)),
+    text: sanitizeAiResponse(generateFallbackNarrative(businessData, userQuery, effectiveRole, effectiveUserName), userContext),
     provider: 'LOCAL_FALLBACK',
     model: 'Komazi AI',
     latencyTier: 'Komazi AI (Offline Engine)',
   };
 }
+

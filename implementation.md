@@ -1,477 +1,273 @@
-# implementation.md — Hak Akses dan Keamanan Riwayat Pesanan Komazi POS
+# IMPLEMENTATION.md
+## Komazi POS — Multi-Station KDS & BDS
 
-**Modul:** Riwayat Pesanan  
-**Prioritas:** Tinggi  
-**Status:** Spesifikasi implementasi  
-**Target:** Antigravity / Gemini Code Assistant
+**Status:** Proposed — menunggu audit source code dan persetujuan implementasi  
+**Stack:** React + Vite, Express, Prisma, MySQL, Socket.IO  
+**Target:** Satu order induk dan satu struk pelanggan dengan routing item ke KDS Internal, KDS Eksternal, dan BDS Bar.
+
+---
 
 ## 1. Tujuan
 
-Implementasikan sistem hak akses Riwayat Pesanan pada Komazi POS agar semua kasir dapat melihat riwayat transaksi, tetapi tidak dapat memanipulasi transaksi yang telah diselesaikan.
+Menerapkan pemisahan tampilan dan proses produksi berdasarkan station tanpa memecah transaksi keuangan pelanggan.
 
-Stack aplikasi:
+Satu order dapat berisi item untuk:
+- `KITCHEN_INTERNAL`
+- `KITCHEN_EXTERNAL`
+- `BAR`
 
-- Frontend: React + Vite + Capacitor.
-- Backend: Node.js + Express.
-- ORM: Prisma.
-- Database: MySQL.
-- Deployment: Vercel untuk frontend dan Railway untuk backend serta database.
+Order induk dinyatakan siap hanya setelah seluruh item produksi yang wajib diselesaikan telah berstatus siap.
 
-**Instruksi utama:** audit source code aktual sebelum mengubah kode. Pertahankan seluruh fitur lama, struktur database, autentikasi, sistem role, transaksi pembayaran, sesi kasir, persediaan, KDS/BDS, dan laporan yang sudah berjalan.
+## 2. Prinsip non-regresi
 
-Jangan mengasumsikan nama model, endpoint, status pesanan, atau struktur middleware tanpa memeriksa repository.
+1. Pertahankan login, role, checkout, pembayaran, diskon, pajak, struk, riwayat, laporan, refund, dan audit log.
+2. Jangan membuat pembayaran baru untuk setiap station.
+3. Jangan membuat transaksi penjualan duplikat.
+4. Jangan mengurangi stok dua kali akibat pemisahan station.
+5. Jangan menghapus atau mengganti kolom lama tanpa analisis dampak.
+6. Jangan menjalankan migrasi produksi sebelum backup, uji staging, dan persetujuan owner.
+7. Jangan mengubah fitur yang tidak terkait dengan kebutuhan multi-station.
 
----
+## 3. Model data
 
-## 2. Kebijakan hak akses
+Audit model Prisma yang sudah ada sebelum menentukan migrasi.
 
-Terapkan aturan berikut sebagai target perilaku aplikasi.
+### KitchenStation
 
-| Aksi | Kasir pemilik pesanan | Kasir lain | Owner/Admin berwenang |
-|---|---|---|---|
-| Melihat daftar riwayat | Ya | Ya | Ya |
-| Melihat detail pesanan | Ya | Ya | Ya |
-| Melihat total dan rincian item | Ya | Ya | Ya |
-| Melihat informasi pembayaran yang relevan | Ya | Ya | Ya |
-| Cetak ulang struk | Ya | Ya | Ya |
-| Edit pesanan yang belum dibayar | Ya, sesuai status | Tidak, kecuali pengalihan resmi | Sesuai izin |
-| Edit pesanan yang sudah dibayar | Tidak | Tidak | Tidak secara langsung |
-| Menghapus transaksi selesai | Tidak | Tidak | Tidak secara langsung |
-| Membatalkan transaksi | Sesuai kebijakan dan status | Sesuai kebijakan dan status | Sesuai izin |
-| Melakukan refund | Hanya jika diberi izin | Hanya jika diberi izin | Sesuai izin |
-| Melihat audit trail | Sesuai izin | Sesuai izin | Sesuai izin |
+- `id`
+- `code` — unik
+- `name`
+- `type` — INTERNAL atau EXTERNAL
+- `isActive`
+- `createdAt`
+- `updatedAt`
 
-Owner/Admin tidak otomatis boleh mengubah transaksi yang sudah dibayar secara langsung. Koreksi transaksi harus melalui prosedur yang dapat diaudit.
+Buat tiga station awal:
+- `KITCHEN_INTERNAL`
+- `KITCHEN_EXTERNAL`
+- `BAR`
 
-Role Admin harus mengikuti permission aktual aplikasi. Jangan memperluas hak akses Admin secara diam-diam.
+### Product
 
-### Prinsip dasar
+Tambahkan relasi station default hanya jika belum tersedia mekanisme routing yang setara.
 
-1. Semua kasir dapat melihat riwayat pesanan seluruh kasir.
-2. Kepemilikan pesanan tidak memberikan hak untuk memodifikasi transaksi yang sudah selesai.
-3. Pesanan yang belum dibayar hanya dapat diedit oleh kasir penanggung jawab, kecuali ada mekanisme pengalihan resmi.
-4. Transaksi yang sudah dibayar tidak dapat diedit atau dihapus oleh kasir.
-5. Refund dan pembatalan harus mengikuti aturan status transaksi dan otorisasi yang berlaku.
-6. Semua validasi wajib dilakukan di backend.
-7. Data transaksi historis tidak boleh dihapus hanya untuk memperbaiki kesalahan.
+Produk baru harus memiliki station yang valid. Produk lama yang belum dipetakan tidak boleh otomatis diarahkan ke station yang salah.
 
----
+### Order
 
-## 3. Audit source code sebelum implementasi
+Pertahankan order induk sebagai sumber kebenaran untuk:
+- Nomor order
+- Pelanggan
+- Total
+- Status pembayaran
+- Diskon dan pajak
+- Status keseluruhan
+- Riwayat dan audit
 
-Periksa bagian berikut:
+Jangan mewajibkan satu station pada order induk karena order dapat memiliki beberapa station.
 
-- Model pesanan dan item pesanan di Prisma.
-- Relasi pesanan dengan pengguna atau kasir pembuat.
-- Status pesanan, pembayaran, pembatalan, dan refund.
-- Alur checkout dan konfirmasi pembayaran.
-- Sistem penggabungan bill jika tersedia.
-- Sistem sesi kasir dan identitas kasir yang sedang bertugas.
-- Endpoint riwayat pesanan dan detail pesanan.
-- Endpoint edit, hapus, cancel, refund, dan cetak struk.
-- Middleware autentikasi dan otorisasi.
-- Komponen React untuk riwayat pesanan dan detail transaksi.
-- Sistem persediaan, HPP, dan mutasi stok.
-- Integrasi KDS/BDS.
-- Sistem laporan dan audit log.
+### OrderItem
 
-Buat `implementation-audit.md` yang mencatat:
+Setiap item harus menyimpan atau mereferensikan:
+- Order induk
+- Produk
+- Kuantitas dan harga saat transaksi
+- Station tujuan saat order dibuat
+- Status produksi
+- Waktu mulai dan selesai jika diperlukan
+- Informasi pembatalan sesuai kebijakan lama
 
-1. Model dan relasi yang sudah ada.
-2. Status pesanan dan transisi status yang sah.
-3. Endpoint serta komponen yang perlu disesuaikan.
-4. Risiko perubahan terhadap transaksi dan laporan.
-5. Migration yang diperlukan, jika ada.
-6. Daftar pengujian regresi.
+Station tujuan perlu menjadi snapshot agar perubahan konfigurasi produk tidak mengalihkan order yang sudah dibuat.
 
-Lanjutkan implementasi setelah audit selesai. Jangan berhenti hanya dengan menghasilkan laporan.
+Gunakan enum dan relasi sesuai pola penamaan dan tipe ID pada source code aktual. Jangan menambahkan model duplikat jika struktur yang sama sudah tersedia.
 
----
+## 4. Status produksi
 
-## 4. Aturan berdasarkan status pesanan
+Status yang disarankan:
 
-Jangan membuat status baru jika status yang setara sudah tersedia. Petakan aturan berikut ke status aktual aplikasi.
+- `NEW`
+- `IN_PROGRESS`
+- `READY`
+- `CANCELLED`
 
-### A. Pesanan terbuka atau belum dibayar
+Status ini harus dipisahkan dari status pembayaran dan status order induk.
 
-- Kasir pemilik pesanan boleh melihat dan mengedit sesuai status.
-- Kasir lain hanya dapat melihat.
-- Pengeditan harus ditolak jika pembayaran sudah dimulai atau status sudah berubah sehingga pengeditan tidak lagi aman.
-- Jika pesanan perlu dialihkan ke kasir lain, gunakan mekanisme pengalihan yang tercatat.
-- Jangan mengizinkan penggantian pemilik pesanan hanya dengan mengubah ID kasir melalui request.
+### Aturan status order induk
 
-### B. Pesanan sudah dibayar atau selesai
+- Semua item wajib produksi selesai: order dapat menjadi `READY`.
+- Masih ada item `NEW` atau `IN_PROGRESS`: order belum `READY`.
+- Ada item yang dibatalkan: terapkan aturan pembatalan yang sudah berlaku, dengan audit.
+- Order yang belum dibayar tidak boleh otomatis dianggap siap hanya karena station mengirim status selesai.
+- Refund atau pembatalan setelah produksi dimulai harus mengikuti alur otorisasi yang sudah ada.
 
-- Semua kasir boleh melihat detail pesanan.
-- Semua kasir boleh mencetak ulang struk.
-- Kasir tidak boleh mengubah item, harga, diskon, pajak, total, metode pembayaran, atau waktu transaksi.
-- Kasir tidak boleh menghapus pesanan.
-- Kasir tidak boleh mengembalikan status pesanan ke status terbuka.
-- Perubahan administratif yang benar-benar diperlukan harus melalui prosedur koreksi resmi yang memiliki audit trail.
+Definisikan dengan jelas item mana yang termasuk produksi wajib. Jangan menganggap semua jenis item, seperti biaya layanan atau item non-produksi, membutuhkan station.
 
-### C. Pesanan dibatalkan
+## 5. Alur checkout
 
-- Riwayat tetap tersedia.
-- Detail pembatalan dan alasan pembatalan ditampilkan sesuai permission.
-- Pesanan yang sudah dibatalkan tidak dapat diedit atau diaktifkan kembali secara langsung oleh kasir.
-- Jika pesanan perlu diproses kembali, gunakan alur resmi yang sesuai dengan sistem saat ini.
+1. Kasir memilih produk dan jumlah.
+2. Backend memvalidasi harga, status produk, station tujuan, dan izin pengguna.
+3. Semua item dikelompokkan berdasarkan station tanpa membuat order induk baru.
+4. Backend menyimpan order, item, dan informasi produksi secara konsisten dalam transaksi database.
+5. Gunakan mekanisme pembayaran yang sudah ada.
+6. Setelah order sah untuk dikirim ke produksi, setiap station mendapatkan item yang sesuai.
+7. Struk pelanggan tetap memuat semua item dan total transaksi.
 
-### D. Pesanan direfund
+Jangan memercayai station yang dikirim frontend tanpa memvalidasinya terhadap konfigurasi produk dan aturan bisnis di backend.
 
-- Transaksi asli tetap dipertahankan.
-- Refund dicatat sebagai transaksi atau peristiwa tersendiri sesuai arsitektur yang ada.
-- Nominal refund tidak boleh melebihi nominal yang dapat direfund.
-- Refund berulang tidak boleh menggandakan pengembalian dana.
-- Status refund harus konsisten dengan catatan pembayaran dan laporan.
-- Refund tidak boleh dilakukan hanya dengan mengubah status pesanan menjadi `REFUNDED` tanpa pencatatan dampak finansial.
+## 6. Express API
 
----
+Audit dan sesuaikan endpoint yang sudah ada terlebih dahulu. Jangan membuat endpoint duplikat jika fungsi yang sama sudah tersedia.
 
-## 5. Implementasi frontend
+Kemampuan API yang dibutuhkan:
 
-Sesuaikan halaman Riwayat Pesanan yang sudah ada. Jangan membuat halaman duplikat jika modulnya telah tersedia.
+- Membaca station yang diizinkan untuk pengguna.
+- Mengambil item produksi berdasarkan station dan status.
+- Memperbarui status produksi dengan otorisasi.
+- Membaca progres station pada order induk.
+- Membaca detail order sesuai hak akses.
+- Mencatat audit perubahan status.
 
-### A. Daftar riwayat
+Semua akses harus diverifikasi di server. Staf eksternal tidak boleh membaca atau memperbarui order internal dengan mengubah ID atau parameter request.
 
-Semua kasir dapat melihat daftar pesanan dari seluruh kasir.
+## 7. Socket.IO dan sinkronisasi
 
-Informasi yang disarankan:
+Gunakan mekanisme autentikasi Socket.IO yang sudah ada.
 
-- Nomor pesanan.
-- Tanggal dan waktu.
-- Nama kasir penanggung jawab.
-- Nama atau nomor meja jika tersedia.
-- Jenis pesanan.
-- Jumlah item.
-- Total pembayaran.
-- Status pesanan.
-- Status pembayaran.
-- Tombol detail.
-- Tombol cetak ulang struk.
+- Emit event hanya kepada station atau pengguna yang berhak.
+- Event membawa identitas order dan item yang diperlukan.
+- Hindari mengirim data pelanggan atau transaksi keuangan yang tidak dibutuhkan station.
+- Simpan perubahan status di database sebelum memberi tahu klien.
+- Tangani koneksi ulang dengan mengambil ulang data dari API.
+- Gunakan identitas event atau mekanisme idempotensi untuk menghindari pemrosesan ganda.
+- Jangan menjadikan event Socket.IO sebagai satu-satunya sumber kebenaran.
 
-Gunakan pagination dan filter periode untuk mencegah pemuatan seluruh data sekaligus.
+Contoh nama event konseptual:
+- `kitchen:item-created`
+- `kitchen:item-status-updated`
+- `order:production-progress-updated`
 
-### B. Filter
+Nama akhir harus mengikuti konvensi proyek yang sudah ada.
 
-Sediakan filter yang relevan:
+## 8. Frontend
 
-- Nomor pesanan.
-- Rentang tanggal.
-- Kasir.
-- Status pesanan.
-- Status pembayaran.
-- Jenis pesanan.
+### POS Kasir
 
-Filter kasir digunakan untuk pencarian, bukan untuk membatasi kasir hanya pada transaksi miliknya.
+- Tetap satu checkout.
+- Menampilkan progres per station.
+- Menampilkan status keseluruhan order.
+- Tetap mencetak satu struk pelanggan.
 
-### C. Halaman detail
+### KDS Internal
 
-Semua kasir dapat melihat:
+- Hanya item `KITCHEN_INTERNAL`.
+- Mendukung status produksi dan catatan item.
+- Menampilkan nomor order induk yang sama.
 
-- Item dan kuantitas.
-- Harga dan diskon.
-- Pajak atau biaya tambahan jika ada.
-- Total akhir.
-- Informasi pembayaran yang relevan.
-- Kasir penanggung jawab.
-- Waktu transaksi.
-- Status pesanan.
-- Riwayat pembatalan atau refund sesuai permission.
+### KDS Eksternal
 
-Jangan tampilkan data sensitif yang tidak diperlukan, seperti credential, token, atau data pembayaran rahasia.
+- Hanya item `KITCHEN_EXTERNAL` yang diizinkan.
+- Tidak memiliki akses ke laporan keuangan atau data POS yang tidak diperlukan.
+- Tidak dapat mengubah station tujuan item.
 
-### D. Tombol tindakan
+### BDS Bar
 
-Tampilkan tombol berdasarkan status dan permission.
+- Hanya item `BAR`.
+- Menampilkan jumlah, variasi, dan catatan minuman.
+- Mendukung status produksi yang konsisten dengan backend.
 
-Contoh:
+Jangan mengubah seluruh UI menjadi aplikasi baru jika halaman KDS/BDS yang ada dapat dikembangkan.
 
-**Pesanan selesai**
-- Detail.
-- Cetak ulang struk.
+## 9. Struk pelanggan
 
-**Pesanan belum dibayar milik kasir aktif**
-- Detail.
-- Edit, jika status masih memungkinkan.
+Struk tetap satu per order induk dan mencakup:
+- Nomor order
+- Seluruh item dari semua station
+- Kuantitas dan harga
+- Diskon, pajak, dan total sesuai mekanisme lama
+- Informasi pembayaran
+- Informasi outlet yang sudah digunakan
 
-**Pesanan belum dibayar milik kasir lain**
-- Detail saja.
+Label station boleh ditampilkan untuk keperluan operasional jika sesuai desain struk, tetapi bukan sebagai tiga transaksi terpisah.
 
-**Pesanan yang memerlukan refund atau pembatalan**
-- Tampilkan tindakan hanya jika role dan status mengizinkan.
+Jangan mengubah payload QRIS atau mekanisme cetak struk yang sudah berjalan dalam pekerjaan ini.
 
-Menyembunyikan tombol hanya untuk UX. Backend tetap harus menolak request yang tidak sah.
+## 10. Stok, pembayaran, dan pembatalan
 
-### E. Pesan error
+- Routing station tidak boleh memicu pembayaran.
+- Pertahankan titik pengurangan stok yang berlaku saat ini.
+- Pastikan retry checkout tidak membuat order ganda.
+- Pastikan item tidak mengurangi stok berulang saat Socket.IO tersambung kembali.
+- Pertahankan audit refund dan pembatalan.
+- Tetapkan aturan penanganan item yang dibatalkan setelah mulai diproses.
+- Jika ada integrasi vendor atau stok bahan baku, audit dampaknya sebelum implementasi.
 
-Jika kasir mencoba melakukan tindakan yang tidak diizinkan, tampilkan pesan yang jelas, misalnya:
+## 11. Tahapan implementasi
 
-- "Pesanan milik kasir lain hanya dapat dilihat."
-- "Pesanan yang sudah dibayar tidak dapat diedit."
-- "Transaksi tidak dapat dihapus. Gunakan prosedur pembatalan atau koreksi yang tersedia."
-- "Anda tidak memiliki izin untuk melakukan refund."
+### Tahap A — Audit
 
-Jangan menampilkan stack trace atau informasi internal backend.
+- Periksa model Prisma dan migrasi.
+- Periksa checkout, pembayaran, status order, stok, refund, dan struk.
+- Periksa KDS/BDS dan event Socket.IO.
+- Catat file yang perlu diubah dan risiko regresi.
 
----
+### Tahap B — Backup dan staging
 
-## 6. Implementasi backend
+- Backup database produksi.
+- Verifikasi backup dapat dipulihkan.
+- Siapkan staging dengan salinan data yang aman.
+- Jalankan migrasi hanya di staging terlebih dahulu.
 
-Gunakan router, controller, service, validasi, dan middleware yang sudah ada.
+### Tahap C — Backend
 
-### A. Riwayat pesanan
+- Tambahkan konfigurasi station.
+- Tambahkan snapshot station pada item bila diperlukan.
+- Implementasikan validasi dan otorisasi.
+- Implementasikan kalkulasi status order induk.
+- Implementasikan event Socket.IO yang aman dan idempoten.
 
-Pastikan endpoint daftar pesanan mengembalikan semua transaksi yang memang boleh dilihat kasir, bukan hanya pesanan yang dibuat oleh pengguna yang sedang login.
+### Tahap D — Frontend
 
-Jangan menghilangkan filter keamanan yang diperlukan untuk tenant, cabang, atau outlet jika struktur tersebut ada di aplikasi.
+- Perbarui POS, KDS Internal, KDS Eksternal, dan BDS.
+- Tambahkan progres station.
+- Pertahankan desain dan fitur lama yang tidak terkait.
 
-### B. Detail pesanan
+### Tahap E — Pengujian
 
-Semua kasir dapat membaca detail pesanan sesuai cakupan akses aplikasi.
+- Uji order satu station.
+- Uji order tiga station.
+- Uji pembayaran dan struk.
+- Uji status siap ketika semua station selesai.
+- Uji akses vendor, pembatalan, refund, stok, koneksi ulang, dan retry.
+- Uji regresi semua fitur utama.
 
-Backend wajib memvalidasi:
+### Tahap F — Rilis
 
-- Token autentikasi.
-- Status akun.
-- Role dan permission.
-- Cakupan outlet jika berlaku.
-- Keberadaan pesanan.
+- Sajikan hasil pengujian dan daftar perubahan.
+- Minta persetujuan owner.
+- Buat backup terbaru sebelum rilis.
+- Terapkan perubahan pada waktu yang disetujui.
+- Verifikasi health check, log, transaksi, KDS, dan BDS.
+- Siapkan prosedur rollback kode dan database.
 
-Jangan mengandalkan ID pesanan dari frontend sebagai bukti otorisasi.
+## 12. Kriteria penerimaan
 
-### C. Endpoint edit
+Implementasi dianggap berhasil jika:
 
-Untuk setiap endpoint edit pesanan:
+1. Satu order berisi item dari tiga station.
+2. Ketiga station hanya melihat item yang menjadi tanggung jawabnya.
+3. Pelanggan menerima satu struk dan melakukan satu pembayaran.
+4. Status order induk tidak menjadi `READY` sebelum semua item wajib produksi siap.
+5. Status setiap station tetap independen.
+6. Hak akses vendor terisolasi.
+7. Retry dan reconnect tidak menggandakan order atau pengurangan stok.
+8. Pembayaran, refund, struk, laporan, dan fitur lama tetap berfungsi.
+9. Backup dan rollback sudah diuji.
+10. Produksi tidak berubah tanpa persetujuan owner.
 
-1. Ambil pengguna terautentikasi dari middleware.
-2. Ambil pesanan dari database.
-3. Validasi kepemilikan atau mekanisme pengalihan resmi.
-4. Periksa status pesanan dan pembayaran.
-5. Tolak perubahan jika pesanan telah dibayar atau selesai.
-6. Validasi perubahan terhadap seluruh aturan transaksi.
-7. Jalankan operasi secara atomik jika melibatkan beberapa tabel.
+## 13. Batas perubahan
 
-Jika endpoint edit saat ini mengizinkan perubahan pesanan selesai, ubah perilakunya agar sesuai dengan kebijakan ini tanpa merusak edit pesanan terbuka yang masih sah.
+Dokumen ini adalah rancangan implementasi. Nama file, nama model, endpoint, dan enum final wajib ditentukan setelah audit source code aktual.
 
-### D. Endpoint hapus
+Dilarang mengasumsikan struktur database atau menimpa implementasi lama tanpa pemeriksaan.
 
-Cari seluruh endpoint penghapusan pesanan.
-
-Untuk transaksi selesai:
-
-- Tolak penghapusan langsung.
-- Jangan menghapus item pesanan, pembayaran, atau histori secara cascading.
-- Jangan menggunakan soft delete sebagai cara untuk menyembunyikan transaksi finansial.
-- Gunakan prosedur pembatalan atau reversal yang sesuai jika transaksi memang harus dikoreksi.
-
-Jika terdapat fitur hapus untuk pesanan draft, pertahankan hanya jika statusnya memang aman dan tidak ada transaksi pembayaran atau mutasi stok yang sudah terikat.
-
-### E. Pembatalan dan refund
-
-Pertahankan alur pembatalan dan refund yang sudah ada jika aman.
-
-Jika alur tersebut belum tersedia, dokumentasikan kebutuhan dan implementasikan secara terpisah dengan:
-
-- Permission yang jelas.
-- Pemeriksaan status sebelum tindakan.
-- Validasi nominal.
-- Pencegahan permintaan ganda.
-- Pencatatan alasan.
-- Audit trail.
-- Penanganan pembayaran dan persediaan.
-- Integrasi dengan penyedia pembayaran jika transaksi memakai payment gateway.
-
-Jangan menganggap pengubahan status pesanan sebagai refund uang yang benar-benar berhasil.
-
-### F. Konsistensi transaksi
-
-Untuk perubahan yang memengaruhi beberapa tabel, gunakan transaksi database dan mekanisme concurrency control yang sesuai.
-
-Periksa kembali status pesanan di dalam operasi yang aman dari race condition. Jangan hanya melakukan pemeriksaan awal di frontend.
-
-Gunakan constraint database dan idempotency key jika sesuai dengan alur transaksi yang sudah ada.
-
----
-
-## 7. Keamanan pengeditan dan penggabungan bill
-
-Jika Komazi POS memiliki fitur gabung bill:
-
-- Tentukan pesanan utama dan pesanan sumber secara eksplisit.
-- Validasi kepemilikan dan status setiap pesanan.
-- Jangan menggabungkan pesanan yang sudah dibayar melalui endpoint edit biasa.
-- Jangan menggabungkan transaksi yang sudah direfund atau dibatalkan.
-- Pastikan item, pembayaran, dan referensi transaksi tidak terduplikasi.
-- Catat hubungan antara pesanan sebelum dan sesudah penggabungan.
-- Terapkan aturan yang sama pada web dan aplikasi Android.
-
-Jika fitur penggabungan bill sudah memiliki kebijakan sendiri, audit dan pertahankan perilaku yang sah. Jangan mengubahnya tanpa menguji dampak terhadap laporan dan persediaan.
-
----
-
-## 8. Audit trail
-
-Catat tindakan penting berikut:
-
-- Perubahan pesanan yang masih terbuka.
-- Pengalihan tanggung jawab pesanan.
-- Permintaan edit yang ditolak jika sesuai dengan kebijakan logging.
-- Pembatalan.
-- Refund.
-- Koreksi administratif.
-- Perubahan yang berdampak pada persediaan.
-- Perubahan yang berdampak pada pembayaran atau laporan.
-
-Informasi audit minimal:
-
-- Waktu kejadian.
-- Pengguna yang melakukan tindakan.
-- ID pesanan.
-- Jenis tindakan.
-- Nilai sebelum dan sesudah jika terjadi perubahan.
-- Alasan tindakan.
-- Status hasil.
-- Referensi transaksi terkait.
-
-Gunakan audit log yang sudah ada. Jangan membuat sistem audit duplikat tanpa kebutuhan teknis.
-
-Jangan mencatat token, password, atau data sensitif lainnya.
-
----
-
-## 9. Pengujian wajib
-
-Gunakan database lokal atau staging dan akun uji Kasir A, Kasir B, Owner, serta Admin sesuai konfigurasi aktual.
-
-### A. Pengujian visibilitas
-
-1. Kasir A dapat melihat pesanan milik Kasir A.
-2. Kasir A dapat melihat pesanan milik Kasir B.
-3. Kasir B dapat melihat pesanan milik Kasir A.
-4. Kasir B dapat membuka detail pesanan milik Kasir A.
-5. Filter kasir tidak menghilangkan data yang memang berhak dilihat.
-6. Pembatasan outlet tetap berjalan jika aplikasi mendukung multi-outlet.
-
-### B. Pengujian edit
-
-1. Kasir A dapat mengedit pesanan terbuka miliknya jika status mengizinkan.
-2. Kasir A tidak dapat mengedit pesanan terbuka milik Kasir B.
-3. Kasir B tidak dapat mengedit pesanan terbuka milik Kasir A.
-4. Kasir A tidak dapat mengedit pesanan yang sudah dibayar.
-5. Kasir B tidak dapat mengedit pesanan yang sudah dibayar milik Kasir A.
-6. Memanggil endpoint secara langsung tetap ditolak meskipun tombol frontend dimanipulasi.
-7. Pesanan yang statusnya berubah saat proses edit berlangsung tidak boleh mengalami perubahan yang tidak sah.
-
-### C. Pengujian hapus
-
-1. Kasir A tidak dapat menghapus transaksi selesai miliknya.
-2. Kasir A tidak dapat menghapus transaksi selesai milik Kasir B.
-3. Kasir B tidak dapat menghapus transaksi selesai milik Kasir A.
-4. Endpoint penghapusan tidak dapat digunakan untuk menghilangkan histori pembayaran.
-5. Pesanan draft yang boleh dihapus tetap dapat ditangani sesuai aturan yang berlaku.
-
-### D. Pengujian refund dan pembatalan
-
-1. Pengguna tanpa izin tidak dapat melakukan refund.
-2. Refund yang melebihi nominal yang dapat dikembalikan ditolak.
-3. Permintaan refund ganda tidak menggandakan pengembalian dana.
-4. Pembatalan tidak menghapus riwayat pesanan.
-5. Stok dan laporan diperbarui sesuai aturan transaksi.
-6. Status pesanan tetap konsisten dengan status pembayaran.
-
-### E. Pengujian regresi
-
-Pastikan fitur lama tetap berjalan:
-
-- Login dan logout.
-- Seluruh role yang ada.
-- Checkout dan pembayaran.
-- Sesi kasir.
-- Riwayat pesanan.
-- Penggabungan bill.
-- Persediaan dan bahan baku.
-- KDS/BDS.
-- Cetak struk.
-- Laporan penjualan dan HPP.
-- Presensi dan HRIS.
-- Notifikasi.
-- API yang digunakan aplikasi Android Capacitor.
-
-Jalankan unit test, integration test, lint, type check jika tersedia, dan build production menggunakan script yang ditemukan di `package.json`.
-
-Laporkan hasil sebenarnya. Jangan mengklaim tes berhasil jika belum dijalankan.
-
----
-
-## 10. Migration dan deployment
-
-### Database
-
-- Jangan membuat ulang database.
-- Jangan menjalankan reset database.
-- Jangan menghapus transaksi historis.
-- Tambahkan kolom, relasi, atau indeks hanya jika diperlukan oleh hasil audit.
-- Jangan membuat migration untuk perubahan yang sebenarnya cukup ditangani oleh authorization di backend.
-- Uji migration di lokal atau staging sebelum production.
-
-### Deployment
-
-1. Backup database.
-2. Jalankan pengujian.
-3. Deploy backend.
-4. Verifikasi endpoint riwayat, edit, pembatalan, dan refund.
-5. Deploy frontend.
-6. Uji akun Kasir A dan Kasir B.
-7. Uji web dan APK Android.
-8. Periksa log backend.
-9. Verifikasi tidak ada perubahan tak terduga pada data transaksi.
-
-### Rollback
-
-Jika terjadi masalah:
-
-- Kembalikan versi kode sebelumnya bila diperlukan.
-- Jangan langsung menghapus migration yang sudah diterapkan.
-- Jangan memulihkan backup production tanpa menilai transaksi terbaru.
-- Buat migration korektif jika perubahan skema perlu diperbaiki.
-- Verifikasi kembali hak akses dan konsistensi data.
-
----
-
-## 11. Kriteria penerimaan akhir
-
-Implementasi dianggap selesai jika:
-
-- [ ] Semua kasir dapat melihat seluruh riwayat pesanan yang berada dalam cakupan aksesnya.
-- [ ] Semua kasir dapat membuka detail pesanan kasir lain.
-- [ ] Kasir tidak dapat mengedit pesanan milik kasir lain.
-- [ ] Kasir tidak dapat mengedit transaksi yang sudah dibayar atau selesai.
-- [ ] Transaksi selesai tidak dapat dihapus secara langsung.
-- [ ] Pesanan terbuka tetap dapat diedit oleh pemiliknya sesuai status.
-- [ ] Pembatalan dan refund mengikuti permission serta status transaksi.
-- [ ] Backend memvalidasi seluruh tindakan sensitif.
-- [ ] Audit trail mencatat tindakan penting.
-- [ ] Riwayat transaksi tetap utuh.
-- [ ] Laporan dan persediaan tidak mengalami penghitungan ganda.
-- [ ] Web dan APK Android tetap berfungsi.
-- [ ] Pengujian regresi selesai dan hasilnya didokumentasikan.
-
----
-
-## 12. Instruksi akhir untuk Antigravity/Gemini
-
-Baca repository Komazi POS secara menyeluruh, lalu implementasikan spesifikasi ini berdasarkan arsitektur dan aturan transaksi yang benar-benar ditemukan.
-
-Jangan berhenti pada analisis, mockup, atau dokumentasi saja. Lakukan perubahan source code, pengujian, dan perbaikan sesuai akses lingkungan yang tersedia.
-
-Setelah selesai, berikan laporan:
-
-1. File yang dibuat dan diubah.
-2. Perubahan authorization frontend dan backend.
-3. Endpoint yang disesuaikan.
-4. Migration yang dibuat, jika ada.
-5. Hasil pengujian dan build.
-6. Perilaku yang belum dapat diimplementasikan.
-7. Langkah deployment yang aman.
-
-**Hasil akhir:** Riwayat Pesanan Komazi POS transparan bagi kasir, terlindungi dari manipulasi, mempertahankan histori transaksi, dan tetap kompatibel dengan alur pembayaran, persediaan, laporan, serta aplikasi Android yang sudah berjalan.
+**Deployment produksi memerlukan persetujuan eksplisit owner.**

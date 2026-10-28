@@ -8,6 +8,11 @@
 import { getRoleScopedBusinessContext } from '../salesAnalyticsEngine.js';
 import { findPosKnowledge, formatPosKnowledgeForPrompt } from './posKnowledgeBase.js';
 import { rupiah } from '../../bot/utils/format.js';
+import { parseNaturalDateQuery } from '../../bot/utils/dateParser.js';
+import {
+  fetchHistoricalSalesData,
+  formatHistoricalSalesForPrompt,
+} from './historicalSalesEngine.js';
 
 /**
  * Mengambil konteks bisnis dan teknis operasional terpadu secara aman (Role-Scoped).
@@ -28,6 +33,18 @@ export async function getUnifiedAiContext({ user = {}, userQuery = '' } = {}) {
   const matchedSop = userQuery ? findPosKnowledge(userQuery) : null;
   const sopPromptContent = matchedSop ? formatPosKnowledgeForPrompt(matchedSop) : null;
 
+  // 2b. Deteksi kueri penjualan historis lampau
+  let historicalSales = null;
+  const parsedDate = userQuery ? parseNaturalDateQuery(userQuery) : null;
+  if (parsedDate && parsedDate.isHistorical) {
+    historicalSales = await fetchHistoricalSalesData({
+      startDate: parsedDate.startDate,
+      endDate: parsedDate.endDate,
+      label: parsedDate.label,
+      userRole: role,
+    });
+  }
+
   // 3. Waktu operasional saat ini (Asia/Jakarta WIB)
   const nowWib = new Date().toLocaleString('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -44,6 +61,7 @@ export async function getUnifiedAiContext({ user = {}, userQuery = '' } = {}) {
     businessContext,
     matchedSop,
     sopPromptContent,
+    historicalSales,
   };
 }
 
@@ -119,6 +137,11 @@ ${prevTop || '  - Tidak ada data produk'}
 === DATA PENJUALAN & OPERASIONAL KEMARIN (${yesterday?.dateFormatted || 'Kemarin'}) ===
 • Status: Tidak ada transaksi lunas tercatat pada hari kalender kemarin (kedai tutup/libur atau belum ada penjualan).${prevText}
       `.trim());
+    }
+
+    // Section 1c: Data Penjualan Historis yang Diminta Pengguna
+    if (unifiedContext.historicalSales) {
+      sections.push(formatHistoricalSalesForPrompt(unifiedContext.historicalSales, userName));
     }
   } else if (role === 'CASHIER') {
     if (yesterday?.hasSales) {

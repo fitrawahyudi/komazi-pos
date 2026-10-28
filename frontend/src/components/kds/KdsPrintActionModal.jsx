@@ -148,9 +148,8 @@ export default function KdsPrintActionModal({
         <div className="p-3 bg-komazi-surface-2/40 border-b border-komazi-border flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'
-              }`}
+              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'
+                }`}
             />
             <span className="text-komazi-muted">Status Printer:</span>
             <span className={`font-bold ${isConnected ? 'text-emerald-400' : 'text-neutral-400'}`}>

@@ -513,7 +513,7 @@ export async function createOrder(req, res) {
             discountAmount: parseFloat(discount) || 0,
           },
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     const hasKitchen = (outputOrder.items || []).some((i) => !(i.station?.type === 'BAR' || isDrinkItemHelper(i)));
@@ -558,7 +558,7 @@ export async function createOrder(req, res) {
 
     // Notifikasi Telegram jika pesanan berstatus PAID
     if (outputOrder.status === 'PAID') {
-      notifyPaidTransaction(outputOrder).catch(() => {});
+      notifyPaidTransaction(outputOrder).catch(() => { });
     }
 
     // Role-based Android Push & In-App Notification (NEW_ORDER)
@@ -579,7 +579,7 @@ export async function createOrder(req, res) {
         initiatorId: req.user?.id,
         excludeInitiator: true,
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     return successResponse(res, outputOrder, 'Pesanan berhasil dibuat', 201);
   } catch (err) {
@@ -1058,7 +1058,7 @@ export async function payOrder(req, res) {
       console.warn('[Socket.IO] Emit order:updated error on payOrder:', e);
     }
 
-    notifyPaidTransaction(outputUpdated).catch(() => {});
+    notifyPaidTransaction(outputUpdated).catch(() => { });
 
     // Role-based Android Push & In-App Notification (ORDER_PAID)
     dispatchNotification({
@@ -1073,7 +1073,7 @@ export async function payOrder(req, res) {
         url: '/orders',
       },
       context: { initiatorId: req.user?.id },
-    }).catch(() => {});
+    }).catch(() => { });
 
     logger.payment.success(`Payment confirmed | orderId=${outputUpdated.invoiceNo} amount=${outputUpdated.total}`, {
       orderId: outputUpdated.invoiceNo,
@@ -1101,7 +1101,7 @@ export async function payOrder(req, res) {
             discountAmount: parseFloat(discount) || 0,
           },
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return successResponse(res, outputUpdated, 'Pembayaran berhasil dikonfirmasi');
@@ -1220,7 +1220,7 @@ export async function voidOrder(req, res) {
         url: '/orders',
       },
       context: { initiatorId: req.user?.id },
-    }).catch(() => {});
+    }).catch(() => { });
 
     logger.order.warn(`Order voided | orderId=${updated.invoiceNo} reason="${reason}"`, {
       orderId: updated.invoiceNo,
@@ -1474,7 +1474,7 @@ export async function updateKitchenStatus(req, res) {
           url: '/orders',
         },
         context: { cashierId: outputOrder.cashierId },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // Broadcast realtime event ke semua stasiun KDS & monitor POS

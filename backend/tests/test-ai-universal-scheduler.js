@@ -77,8 +77,8 @@ function runTestSuite() {
   assert.strictEqual(reply1.includes('<code>0 22 * * *</code>'), false, 'Dilarang ada kode cron monospace');
   assert.strictEqual(reply1.includes('REMINDER (cron)'), false, 'Dilarang ada variabel sistem mentah');
 
-  // Pastikan bahasa ramah dan alami
-  assert.ok(reply1.includes('Mas Budi'), 'Harus menyapa pengguna secara akrab');
+  // Pastikan bahasa ramah dan alami dengan role
+  assert.ok(reply1.includes('Owner Budi'), 'Harus menyapa pengguna dengan role');
   assert.ok(reply1.includes('Periksa oven'), 'Harus menyebutkan tugas');
   console.log('  ✅ Output terverifikasi ramah dan bebas dari log developer');
 

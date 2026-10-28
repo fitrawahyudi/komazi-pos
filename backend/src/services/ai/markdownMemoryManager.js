@@ -106,7 +106,9 @@ Terakhir Diperbarui: ${nowWib}
 ## 1. Profil & Preferensi Operasional
 - Nama: ${userName}
 - Peran Sistem: ${userRole}
-- Gaya Bahasa: Ramah, santai, profesional, khas kedai kopi.
+- Gaya Bahasa: Ramah, santai, khas kedai kopi.
+- Panggilan Pengguna: Wajib menyapa dengan nama role resmi (${userRole}), dilarang menyapa "Bos", "Bapak", "Pak", "Mas", atau "Kak"
+- Kata Ganti Asisten: Selalu menyebut diri sebagai "Komazi", dilarang menyebut "saya", "aku", "kami", atau "gue"
 
 ## 2. Ringkasan Konteks Jangka Panjang (Episodic Memory)
 - Belum ada catatan konteks masa lalu.

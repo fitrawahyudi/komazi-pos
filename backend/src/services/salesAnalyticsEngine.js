@@ -1262,6 +1262,29 @@ export function generateFallbackNarrative(contextOrMetrics, query = '', userRole
     return `Mohon maaf ${displayName}, demi keamanan operasional dan privasi kedai, informasi rahasia seperti PIN otorisasi supervisor, kata sandi, dan kunci keamanan sistem tidak dapat diakses melalui asisten AI.`;
   }
 
+  // 1b. Laporan Penjualan Historis yang Diminta Pengguna
+  const historicalSales = contextOrMetrics?.historicalSales;
+  if (historicalSales) {
+    if (!historicalSales.isAllowed) {
+      return `Mohon maaf ${displayName}, informasi laporan omset dan finansial masa lalu kedai hanya dapat diakses oleh Store Manager atau Owner kedai.`;
+    }
+    if (historicalSales.hasSales) {
+      let text = `📊 **Laporan & Data Penjualan (${historicalSales.label}):**\n\n`;
+      text += `- **Total Omset**: **${historicalSales.totalRevenueFormatted}**\n`;
+      text += `- **Jumlah Transaksi Lunas**: **${historicalSales.totalTransactions} transaksi**\n`;
+      text += `- **Rata-rata Nilai Transaksi**: ${historicalSales.averageBasketFormatted}\n`;
+      if (historicalSales.topProducts && historicalSales.topProducts.length > 0) {
+        text += `\n**Menu Terlaris:**\n`;
+        historicalSales.topProducts.slice(0, 5).forEach((p, idx) => {
+          text += `- **#${idx + 1} ${p.name}**: ${p.qty} terjual\n`;
+        });
+      }
+      return text;
+    } else {
+      return `📌 **Laporan Penjualan (${historicalSales.label}):**\n\nPada periode ini, **tidak tercatat transaksi penjualan lunas** di sistem POS (kedai libur/tutup atau belum ada penjualan).`;
+    }
+  }
+
   // 2. Cek Pelanggaran Batasan Hak Akses (Role Boundary Enforcement)
   if (role === 'BARISTA' || role === 'KITCHEN') {
     if (q.includes('omset') || q.includes('omzet') || q.includes('pendapatan') || q.includes('penjualan') || q.includes('transaksi') || q.includes('uang') || q.includes('rupiah') || q.includes('laba') || q.includes('untung')) {

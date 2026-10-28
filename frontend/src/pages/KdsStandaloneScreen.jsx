@@ -137,7 +137,7 @@ export default function KdsStandaloneScreen() {
       if (isRelevant) {
         if (isSoundEnabled) playKitchenChime();
         const stationTitle = isBarista ? 'Bar (BDS)' : isKitchen ? 'Dapur (KDS)' : 'KDS';
-        NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => {});
+        NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => { });
 
         // Otomatis cetak tiket dapur jika auto-print aktif
         const {
@@ -200,11 +200,11 @@ export default function KdsStandaloneScreen() {
   // Initial mount & sync
   useEffect(() => {
     fetchBackendOrders();
-    NotificationService.init().catch(() => {});
+    NotificationService.init().catch(() => { });
 
     if (isAndroid || isNative) {
-      usePrinterStore.getState().loadPairedDevices?.().catch(() => {});
-      usePrinterStore.getState().autoConnectPrinter?.(true).catch(() => {});
+      usePrinterStore.getState().loadPairedDevices?.().catch(() => { });
+      usePrinterStore.getState().autoConnectPrinter?.(true).catch(() => { });
     }
 
     const handleSync = () => {
@@ -248,7 +248,7 @@ export default function KdsStandaloneScreen() {
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
       setIsFullscreen(true);
     } else {
       if (document.exitFullscreen) {
@@ -391,11 +391,10 @@ export default function KdsStandaloneScreen() {
 
                 {/* Socket Realtime Badge */}
                 <div
-                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors shrink-0 ${
-                    isConnected
+                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors shrink-0 ${isConnected
                       ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
                       : 'bg-red-500/15 text-red-400 border-red-500/40 animate-pulse'
-                  }`}
+                    }`}
                   title={isConnected ? 'Realtime Connected' : 'Reconnecting to Server'}
                 >
                   {isConnected ? <Wifi className="w-2.5 h-2.5" /> : <WifiOff className="w-2.5 h-2.5" />}
@@ -420,11 +419,10 @@ export default function KdsStandaloneScreen() {
                   key={key}
                   type="button"
                   onClick={() => setStationFilter(key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    stationFilter === key
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${stationFilter === key
                       ? 'bg-komazi-coral text-white shadow-md'
                       : 'text-komazi-muted hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{label}</span>
@@ -441,22 +439,20 @@ export default function KdsStandaloneScreen() {
             <button
               type="button"
               onClick={() => setScreenTab('ACTIVE')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                screenTab === 'ACTIVE'
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${screenTab === 'ACTIVE'
                   ? 'bg-komazi-coral text-white shadow-md'
                   : 'text-komazi-muted hover:text-white'
-              }`}
+                }`}
             >
               <span>Antrean Aktif ({activeOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setScreenTab('HISTORY')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                screenTab === 'HISTORY'
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${screenTab === 'HISTORY'
                   ? 'bg-komazi-coral text-white shadow-md'
                   : 'text-komazi-muted hover:text-white'
-              }`}
+                }`}
             >
               <span>Riwayat Selesai</span>
             </button>
@@ -473,11 +469,10 @@ export default function KdsStandaloneScreen() {
           <button
             type="button"
             onClick={() => setIsPrinterModalOpen(true)}
-            className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
-              isPrinterConnected
+            className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${isPrinterConnected
                 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
                 : 'bg-[#1A1A1A] hover:bg-[#252525] text-neutral-400 border-komazi-border hover:text-white'
-            }`}
+              }`}
             title={
               isPrinterConnected
                 ? `Printer Bluetooth Terhubung: ${connectedDeviceName || 'Printer'}`
@@ -486,9 +481,8 @@ export default function KdsStandaloneScreen() {
           >
             <Printer className="w-4 h-4" />
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                isPrinterConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'
-              }`}
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPrinterConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'
+                }`}
             />
             <span className="hidden xl:inline">
               {isPrinterConnected ? 'Printer' : 'Hubungkan Printer'}
@@ -498,11 +492,10 @@ export default function KdsStandaloneScreen() {
           <button
             type="button"
             onClick={() => setIsSoundEnabled(!isSoundEnabled)}
-            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-              isSoundEnabled
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${isSoundEnabled
                 ? 'bg-[#1A1A1A] text-emerald-400 border-emerald-500/30'
                 : 'bg-[#1A1A1A] text-neutral-500 border-komazi-border'
-            }`}
+              }`}
             title={isSoundEnabled ? 'Suara Lonceng Aktif' : 'Suara Lonceng Dimatikan'}
           >
             {isSoundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -569,19 +562,17 @@ export default function KdsStandaloneScreen() {
           <button
             type="button"
             onClick={() => setScreenTab('ACTIVE')}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              screenTab === 'ACTIVE'
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${screenTab === 'ACTIVE'
                 ? 'bg-komazi-coral text-white shadow-md'
                 : 'text-komazi-muted hover:text-white'
-            }`}
+              }`}
           >
             <span>Antrean Aktif</span>
             <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black ${
-                screenTab === 'ACTIVE'
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black ${screenTab === 'ACTIVE'
                   ? 'bg-white/20 text-white'
                   : 'bg-neutral-800 text-neutral-400'
-              }`}
+                }`}
             >
               {activeOrders.length}
             </span>
@@ -589,11 +580,10 @@ export default function KdsStandaloneScreen() {
           <button
             type="button"
             onClick={() => setScreenTab('HISTORY')}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              screenTab === 'HISTORY'
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${screenTab === 'HISTORY'
                 ? 'bg-komazi-coral text-white shadow-md'
                 : 'text-komazi-muted hover:text-white'
-            }`}
+              }`}
           >
             <span>Riwayat Selesai</span>
           </button>
@@ -665,11 +655,10 @@ export default function KdsStandaloneScreen() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter((prev) => (prev === 'PENDING' ? 'ALL' : 'PENDING'))}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                      statusFilter === 'PENDING'
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${statusFilter === 'PENDING'
                         ? 'bg-neutral-800 text-white border border-neutral-600 shadow-sm'
                         : 'text-neutral-400 hover:text-white'
-                    }`}
+                      }`}
                     title="Filter pesanan Menunggu / Pending"
                   >
                     <span className="w-2 h-2 rounded-full bg-neutral-500" />
@@ -683,11 +672,10 @@ export default function KdsStandaloneScreen() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter((prev) => (prev === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS'))}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                      statusFilter === 'IN_PROGRESS'
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${statusFilter === 'IN_PROGRESS'
                         ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-sm'
                         : 'text-amber-400 hover:text-amber-300'
-                    }`}
+                      }`}
                     title="Filter pesanan Sedang Diproses"
                   >
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
@@ -701,11 +689,10 @@ export default function KdsStandaloneScreen() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter((prev) => (prev === 'READY' ? 'ALL' : 'READY'))}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                      statusFilter === 'READY'
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${statusFilter === 'READY'
                         ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-sm'
                         : 'text-emerald-400 hover:text-emerald-300'
-                    }`}
+                      }`}
                     title="Filter pesanan Siap Saji"
                   >
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -719,11 +706,10 @@ export default function KdsStandaloneScreen() {
                       <button
                         type="button"
                         onClick={() => setStatusFilter((prev) => (prev === 'HOLD' ? 'ALL' : 'HOLD'))}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                          statusFilter === 'HOLD'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${statusFilter === 'HOLD'
                             ? 'bg-blue-500/25 text-blue-300 border border-blue-500/50 shadow-sm'
                             : 'text-blue-400 hover:text-blue-300'
-                        }`}
+                          }`}
                         title="Filter pesanan Hold Bill"
                       >
                         <span className="w-2 h-2 rounded-full bg-blue-400" />
@@ -753,11 +739,10 @@ export default function KdsStandaloneScreen() {
                   <button
                     type="button"
                     onClick={() => setIsMobileSearchOpen(true)}
-                    className={`flex sm:hidden p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                      searchQuery
+                    className={`flex sm:hidden p-1.5 rounded-lg border transition-colors cursor-pointer ${searchQuery
                         ? 'bg-komazi-coral/20 text-komazi-coral border-komazi-coral/40'
                         : 'bg-[#181818] hover:bg-[#222222] text-neutral-400 border-komazi-border hover:text-white'
-                    }`}
+                      }`}
                     title="Cari Meja / Invoice"
                   >
                     <Search className="w-3.5 h-3.5" />

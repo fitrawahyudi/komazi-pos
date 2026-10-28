@@ -61,11 +61,10 @@ export default function KdsOrderDetailModal({
                   {order.invoiceNo || `#${order.id}`}
                 </h3>
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                    isDineIn
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${isDineIn
                       ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                       : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                  }`}
+                    }`}
                 >
                   {isDineIn ? <Store className="w-2.5 h-2.5" /> : <ShoppingBag className="w-2.5 h-2.5" />}
                   <span>{formatOrderType(order.orderType)}</span>
@@ -154,11 +153,10 @@ export default function KdsOrderDetailModal({
                           </span>
                         )}
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 ${
-                            isDrink
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 ${isDrink
                               ? 'bg-komazi-teal/15 text-komazi-teal-light border border-komazi-teal/30'
                               : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                          }`}
+                            }`}
                         >
                           {isDrink ? <Coffee className="w-2.5 h-2.5" /> : <Utensils className="w-2.5 h-2.5" />}
                           <span>{isDrink ? 'BAR' : 'KITCHEN'}</span>

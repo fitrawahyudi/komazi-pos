@@ -93,8 +93,8 @@ export function isItemForStation(item, stationType) {
  */
 export function calculateOrderStatus(itemsOrOrder, isPaid = true) {
   const items = Array.isArray(itemsOrOrder) ? itemsOrOrder : (itemsOrOrder?.items || []);
-  const paid = Array.isArray(itemsOrOrder) 
-    ? Boolean(isPaid) 
+  const paid = Array.isArray(itemsOrOrder)
+    ? Boolean(isPaid)
     : (Boolean(itemsOrOrder?.paidAt) || itemsOrOrder?.status === 'PAID' || Boolean(isPaid));
 
   const activeItems = items.filter((item) => item.status !== 'CANCELLED');

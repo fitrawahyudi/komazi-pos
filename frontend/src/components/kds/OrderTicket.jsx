@@ -62,50 +62,50 @@ export default function OrderTicket({
     status === 'SERVED'
       ? 'border-neutral-800 opacity-60'
       : isDelayed
-      ? 'border-red-500 shadow-red-500/20'
-      : status === 'READY'
-      ? 'border-emerald-500/80 shadow-emerald-500/20'
-      : status === 'IN_PROGRESS'
-      ? 'border-amber-500/80 shadow-amber-500/20'
-      : isHold
-      ? 'border-blue-500/60'
-      : tvMode
-      ? 'border-white/10'
-      : 'border-komazi-border';
+        ? 'border-red-500 shadow-red-500/20'
+        : status === 'READY'
+          ? 'border-emerald-500/80 shadow-emerald-500/20'
+          : status === 'IN_PROGRESS'
+            ? 'border-amber-500/80 shadow-amber-500/20'
+            : isHold
+              ? 'border-blue-500/60'
+              : tvMode
+                ? 'border-white/10'
+                : 'border-komazi-border';
 
   // Penentuan background header
   const headerBg =
     status === 'SERVED'
       ? 'bg-neutral-900/60 border-neutral-800'
       : isDelayed
-      ? 'bg-red-500/15 border-red-500/30'
-      : status === 'READY'
-      ? 'bg-emerald-500/15 border-emerald-500/30'
-      : status === 'IN_PROGRESS'
-      ? 'bg-amber-500/15 border-amber-500/30'
-      : isHold
-      ? 'bg-blue-500/15 border-blue-500/30'
-      : tvMode
-      ? 'bg-[#181818] border-white/10'
-      : 'bg-komazi-surface-2 border-komazi-border';
+        ? 'bg-red-500/15 border-red-500/30'
+        : status === 'READY'
+          ? 'bg-emerald-500/15 border-emerald-500/30'
+          : status === 'IN_PROGRESS'
+            ? 'bg-amber-500/15 border-amber-500/30'
+            : isHold
+              ? 'bg-blue-500/15 border-blue-500/30'
+              : tvMode
+                ? 'bg-[#181818] border-white/10'
+                : 'bg-komazi-surface-2 border-komazi-border';
 
   const cardBg = tvMode
     ? isDelayed
       ? 'bg-[#1D1111]'
       : status === 'READY'
-      ? 'bg-[#111C15]'
-      : status === 'IN_PROGRESS'
-      ? 'bg-[#1C1612]'
-      : isHold
-      ? 'bg-[#121622]'
-      : 'bg-[#141414]'
+        ? 'bg-[#111C15]'
+        : status === 'IN_PROGRESS'
+          ? 'bg-[#1C1612]'
+          : isHold
+            ? 'bg-[#121622]'
+            : 'bg-[#141414]'
     : 'bg-komazi-surface';
 
   const tableOrTypeLabel = order.tableNo
     ? `MEJA ${order.tableNo}`
     : (order.type || order.orderType) === 'TAKE_AWAY'
-    ? 'TAKE AWAY'
-    : 'DINE IN';
+      ? 'TAKE AWAY'
+      : 'DINE IN';
 
   const isCompactTicket = displayedItems.length < 5;
   const cardHeightClass = isCompactTicket
@@ -181,17 +181,16 @@ export default function OrderTicket({
           {/* Timer & Delay Warning Badge */}
           <div className="flex flex-col items-end gap-1">
             <div
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold shadow-sm ${
-                status === 'SERVED'
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold shadow-sm ${status === 'SERVED'
                   ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
                   : isDelayed
-                  ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/25'
-                  : isWarning
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : tvMode
-                  ? 'bg-[#222] text-neutral-300 border border-white/10'
-                  : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
-              }`}
+                    ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/25'
+                    : isWarning
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : tvMode
+                        ? 'bg-[#222] text-neutral-300 border border-white/10'
+                        : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
+                }`}
             >
               <Clock className="w-3.5 h-3.5" />
               <span>{orderTimeFormatted}</span>
@@ -232,21 +231,19 @@ export default function OrderTicket({
                 }
               }}
               title={isClickable ? `Klik untuk BUMP status ${item.productName || item.name}` : undefined}
-              className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between gap-1.5 select-none ${
-                isClickable
+              className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between gap-1.5 select-none ${isClickable
                   ? 'cursor-pointer hover:border-komazi-coral/60 hover:bg-komazi-surface-3 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-komazi-coral focus-visible:outline-none'
                   : ''
-              } ${
-                isItemDone
+                } ${isItemDone
                   ? 'bg-neutral-900/40 border-neutral-800 opacity-40 line-through'
                   : isItemReady
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : isItemPrep
-                  ? 'bg-amber-500/10 border-amber-500/30'
-                  : tvMode
-                  ? 'bg-[#1C1C1C] border-white/10'
-                  : 'bg-komazi-surface-2 border-komazi-border'
-              }`}
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : isItemPrep
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : tvMode
+                        ? 'bg-[#1C1C1C] border-white/10'
+                        : 'bg-komazi-surface-2 border-komazi-border'
+                }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-2.5 min-w-0 flex-1">
@@ -273,15 +270,14 @@ export default function OrderTicket({
                 {/* Item-level BUMP Status Pill */}
                 {!isItemDone ? (
                   <div
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 shrink-0 transition-all ${
-                      isItemReady
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 shrink-0 transition-all ${isItemReady
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                         : isItemPrep
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                        : tvMode
-                        ? 'bg-[#262626] text-neutral-400 border border-white/10'
-                        : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
-                    }`}
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : tvMode
+                            ? 'bg-[#262626] text-neutral-400 border border-white/10'
+                            : 'bg-komazi-surface text-komazi-muted border border-komazi-border'
+                      }`}
                   >
                     <span>{itemStatus}</span>
                     {isClickable && <ArrowRight className="w-3 h-3 text-komazi-coral" />}
@@ -316,13 +312,12 @@ export default function OrderTicket({
           <button
             type="button"
             onClick={() => onBumpTicket && onBumpTicket(order.id, station)}
-            className={`w-full py-2.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
-              status === 'READY'
+            className={`w-full py-2.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95 ${status === 'READY'
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
                 : status === 'IN_PROGRESS'
-                ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
-                : 'bg-komazi-coral hover:bg-komazi-coral-dark text-white shadow-komazi-coral/20'
-            }`}
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                  : 'bg-komazi-coral hover:bg-komazi-coral-dark text-white shadow-komazi-coral/20'
+              }`}
           >
             {status === 'READY' ? (
               <>

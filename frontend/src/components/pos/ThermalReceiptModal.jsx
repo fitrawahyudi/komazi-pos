@@ -144,19 +144,19 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
     const checkJobId = isMerch
       ? `${orderJobId}_PERTINGGAL`
       : isBar
-      ? `${orderJobId}_BARISTA`
-      : isKitchen
-      ? `${orderJobId}_KITCHEN`
-      : orderJobId;
+        ? `${orderJobId}_BARISTA`
+        : isKitchen
+          ? `${orderJobId}_KITCHEN`
+          : orderJobId;
 
     if (!isBoth && printQueue.hasPrinted(checkJobId)) {
       const typeLabel = isMerch
         ? 'pertinggal'
         : isBar
-        ? 'tiket barista'
-        : isKitchen
-        ? 'tiket dapur'
-        : 'pelanggan';
+          ? 'tiket barista'
+          : isKitchen
+            ? 'tiket dapur'
+            : 'pelanggan';
       const confirmReprint = window.confirm(
         `Struk/tiket ${typeLabel} untuk pesanan ini sudah pernah dicetak. Apakah Anda ingin mencetak ulang (reprint)?`
       );
@@ -250,10 +250,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
           documentType: isMerch
             ? 'MERCHANT_RECEIPT'
             : isBar
-            ? 'BARISTA_TICKET'
-            : isKitchen
-            ? 'KITCHEN_TICKET'
-            : 'RECEIPT',
+              ? 'BARISTA_TICKET'
+              : isKitchen
+                ? 'KITCHEN_TICKET'
+                : 'RECEIPT',
           status: 'PRINTED',
           requestedBy: order?.cashierName || order?.cashier?.name || order?.shift?.cashier?.name || 'Kasir',
         });
@@ -268,10 +268,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
           documentType: isMerch
             ? 'MERCHANT_RECEIPT'
             : isBar
-            ? 'BARISTA_TICKET'
-            : isKitchen
-            ? 'KITCHEN_TICKET'
-            : 'RECEIPT',
+              ? 'BARISTA_TICKET'
+              : isKitchen
+                ? 'KITCHEN_TICKET'
+                : 'RECEIPT',
           status: 'FAILED',
           errorCode: 'ERR_PRINT_FAILED',
           errorMessage: err.message,
@@ -499,7 +499,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
     >
       <div className="min-h-full flex items-center justify-center">
         <div className="w-full max-w-4xl lg:max-w-5xl rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[calc(100dvh-2rem)] my-auto">
-          
+
           {/* ─── KOLOM KIRI: STAGE PRATINJAU KERTAS STRUK (WYSIWYG 1:1) ─── */}
           <div className="flex-1 md:w-7/12 lg:w-3/5 bg-neutral-950 flex flex-col border-b md:border-b-0 md:border-r border-komazi-border min-h-0 overflow-hidden">
             {/* Canvas Stage Header */}
@@ -517,9 +517,8 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
               {/* THE RECEIPT PAPER (WYSIWYG 1:1 Monospace POS Receipt) */}
               <div
                 id="printable-receipt"
-                className={`bg-white text-black font-mono text-[11px] leading-[1.3] shadow-2xl rounded-sm p-4 sm:p-5 select-text print:m-0 print:p-0 print:shadow-none transition-all ${
-                  paperWidth === '58mm' ? 'w-[290px] max-w-[290px] receipt-58mm' : 'w-[390px] max-w-[390px] receipt-80mm'
-                }`}
+                className={`bg-white text-black font-mono text-[11px] leading-[1.3] shadow-2xl rounded-sm p-4 sm:p-5 select-text print:m-0 print:p-0 print:shadow-none transition-all ${paperWidth === '58mm' ? 'w-[290px] max-w-[290px] receipt-58mm' : 'w-[390px] max-w-[390px] receipt-80mm'
+                  }`}
                 style={{
                   fontFamily: "'Courier New', Courier, monospace",
                   letterSpacing: '-0.02em',
@@ -828,7 +827,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                             !footerText.toLowerCase().includes('@komazi') &&
                             !footerText.toLowerCase().includes('instagram') && (
                               <div>Follow IG: @komazicoffee</div>
-                          )}
+                            )}
                           {settings?.receiptShowBarcode !== false && (
                             <>
                               <div className="tracking-[3px] font-mono text-[8px] text-neutral-800 pt-1 select-none">
@@ -882,11 +881,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <button
                     type="button"
                     onClick={() => setReceiptType('customer')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
-                      receiptType === 'customer'
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${receiptType === 'customer'
                         ? 'bg-komazi-coral/15 border-komazi-coral text-white shadow-xs'
                         : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <Receipt className={`w-4 h-4 ${receiptType === 'customer' ? 'text-komazi-coral' : 'text-komazi-muted'}`} />
@@ -902,11 +900,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <button
                     type="button"
                     onClick={() => setReceiptType('merchant')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
-                      receiptType === 'merchant'
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${receiptType === 'merchant'
                         ? 'bg-amber-500/15 border-amber-500 text-white shadow-xs'
                         : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
-                    }`}
+                      }`}
                     title="Struk Pertinggal / Salinan Kasir untuk Arsip"
                   >
                     <div className="flex items-center justify-between mb-1.5">
@@ -923,19 +920,17 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <button
                     type="button"
                     onClick={() => setReceiptType('barista')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
-                      receiptType === 'barista'
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${receiptType === 'barista'
                         ? 'bg-cyan-500/15 border-cyan-500 text-white shadow-xs'
                         : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
-                    }`}
+                      }`}
                     title="Tiket Pesanan Barista / Minuman"
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <Coffee className={`w-4 h-4 ${receiptType === 'barista' ? 'text-cyan-400' : 'text-komazi-muted'}`} />
                       <div className="flex items-center gap-1">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                          baristaItems.length > 0 ? 'bg-cyan-500/20 text-cyan-300' : 'bg-neutral-800 text-neutral-500'
-                        }`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${baristaItems.length > 0 ? 'bg-cyan-500/20 text-cyan-300' : 'bg-neutral-800 text-neutral-500'
+                          }`}>
                           {baristaItems.length}
                         </span>
                         {receiptType === 'barista' && (
@@ -951,19 +946,17 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <button
                     type="button"
                     onClick={() => setReceiptType('kitchen')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
-                      receiptType === 'kitchen'
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${receiptType === 'kitchen'
                         ? 'bg-orange-500/15 border-orange-500 text-white shadow-xs'
                         : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:border-neutral-600 hover:text-neutral-200'
-                    }`}
+                      }`}
                     title="Tiket Pesanan Dapur / Makanan"
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <ChefHat className={`w-4 h-4 ${receiptType === 'kitchen' ? 'text-orange-400' : 'text-komazi-muted'}`} />
                       <div className="flex items-center gap-1">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                          kitchenItems.length > 0 ? 'bg-orange-500/20 text-orange-300' : 'bg-neutral-800 text-neutral-500'
-                        }`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${kitchenItems.length > 0 ? 'bg-orange-500/20 text-orange-300' : 'bg-neutral-800 text-neutral-500'
+                          }`}>
                           {kitchenItems.length}
                         </span>
                         {receiptType === 'kitchen' && (
@@ -980,28 +973,26 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
               {/* 2. Format Kertas Thermal (58mm vs 80mm) */}
               <div className="space-y-2">
                 <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
-                  Ukuran Kertas 
+                  Ukuran Kertas
                 </label>
                 <div className="grid grid-cols-2 gap-2 bg-komazi-surface-2 p-1 rounded-xl border border-komazi-border">
                   <button
                     type="button"
                     onClick={() => setPaperWidth('58mm')}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      paperWidth === '58mm'
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${paperWidth === '58mm'
                         ? 'bg-komazi-surface text-white border border-komazi-border shadow-xs'
                         : 'text-komazi-muted hover:text-white'
-                    }`}
+                      }`}
                   >
                     <span>58 mm</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPaperWidth('80mm')}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      paperWidth === '80mm'
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${paperWidth === '80mm'
                         ? 'bg-komazi-surface text-white border border-komazi-border shadow-xs'
                         : 'text-komazi-muted hover:text-white'
-                    }`}
+                      }`}
                   >
                     <span>80 mm</span>
                   </button>
@@ -1017,11 +1008,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <button
                     type="button"
                     onClick={() => setShowQrisOnReceipt(!showQrisOnReceipt)}
-                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
-                      showQrisOnReceipt
+                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${showQrisOnReceipt
                         ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
                         : 'bg-komazi-surface-2 border-komazi-border text-komazi-muted hover:text-neutral-200'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <QrCode className="w-4 h-4 shrink-0 text-emerald-400" />
@@ -1059,11 +1049,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                       setConnectionType('USB');
                       if (!isConnected || connectionType !== 'USB') openUsbModal();
                     }}
-                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      connectionType === 'USB'
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${connectionType === 'USB'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                         : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                    }`}
+                      }`}
                     title="Cetak langsung lewat kabel USB atau port Serial COM"
                   >
                     <Usb className="w-3.5 h-3.5 text-amber-400" />
@@ -1076,11 +1065,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                       setConnectionType('BLUETOOTH');
                       if (!isConnected || connectionType !== 'BLUETOOTH') openBluetoothModal();
                     }}
-                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      connectionType === 'BLUETOOTH'
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${connectionType === 'BLUETOOTH'
                         ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
                         : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                    }`}
+                      }`}
                     title="Cetak via Bluetooth thermal ESC/POS"
                   >
                     <Bluetooth className="w-3.5 h-3.5 text-blue-400" />
@@ -1093,11 +1081,10 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                       setConnectionType('BROWSER');
                       toast.info('Mode Cetak Driver Sistem / Browser aktif');
                     }}
-                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      connectionType === 'BROWSER'
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${connectionType === 'BROWSER'
                         ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
                         : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                    }`}
+                      }`}
                     title="Cetak lewat driver printer Windows/Mac atau dialog browser (Bisa di HTTP)"
                   >
                     <Printer className="w-3.5 h-3.5 text-purple-400" />
@@ -1124,8 +1111,8 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                             {connectionType === 'USB'
                               ? 'Kabel USB Belum Terhubung'
                               : connectionType === 'BLUETOOTH'
-                              ? 'Bluetooth Belum Terhubung'
-                              : 'Driver Cetak Browser (Universal - Siap)'}
+                                ? 'Bluetooth Belum Terhubung'
+                                : 'Driver Cetak Browser (Universal - Siap)'}
                           </span>
                         </>
                       )}
@@ -1175,12 +1162,12 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                 {isKitchenStationTicket && stationTicketItems.length === 0
                   ? `Tidak Ada Item ${isBaristaTicket ? 'Barista' : 'Dapur'}`
                   : isBaristaTicket
-                  ? 'Cetak Struk Barista'
-                  : isKitchenTicket
-                  ? 'Cetak Struk Dapur'
-                  : receiptType === 'merchant'
-                  ? 'Cetak Struk Pertinggal'
-                  : 'Cetak Struk Pelanggan'}
+                    ? 'Cetak Struk Barista'
+                    : isKitchenTicket
+                      ? 'Cetak Struk Dapur'
+                      : receiptType === 'merchant'
+                        ? 'Cetak Struk Pertinggal'
+                        : 'Cetak Struk Pelanggan'}
               </LoadingButton>
 
               <div className="flex items-center gap-2">

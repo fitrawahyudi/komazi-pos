@@ -243,7 +243,7 @@ export default function KdsPage() {
       if (isRelevant) {
         playKitchenChime();
         const stationTitle = isBarista ? 'Bar (BDS)' : isKitchen ? 'Dapur (KDS)' : 'KDS';
-        NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => {});
+        NotificationService.notifyNewKdsOrder(newOrder, stationTitle).catch(() => { });
 
         // Otomatis cetak tiket dapur jika auto-print aktif
         const {
@@ -312,11 +312,11 @@ export default function KdsPage() {
   // Sinkronisasi awal & event bus local
   useEffect(() => {
     fetchBackendOrders();
-    NotificationService.init().catch(() => {});
+    NotificationService.init().catch(() => { });
 
     if (isAndroid || isNative) {
-      usePrinterStore.getState().loadPairedDevices?.().catch(() => {});
-      usePrinterStore.getState().autoConnectPrinter?.(true).catch(() => {});
+      usePrinterStore.getState().loadPairedDevices?.().catch(() => { });
+      usePrinterStore.getState().autoConnectPrinter?.(true).catch(() => { });
     }
 
     const handleSync = () => {
@@ -390,8 +390,8 @@ export default function KdsPage() {
           curStatus === 'PENDING'
             ? 'IN_PROGRESS'
             : curStatus === 'IN_PROGRESS'
-            ? 'READY'
-            : 'SERVED';
+              ? 'READY'
+              : 'SERVED';
         updateKitchenStatus(orderId, next, targetStation);
       }
     }
@@ -543,16 +543,16 @@ export default function KdsPage() {
             isBarista || effectiveViewMode === 'BAR'
               ? barServed
               : isKitchen || effectiveViewMode === 'KITCHEN'
-              ? kitchenServed
-              : barServed || kitchenServed;
+                ? kitchenServed
+                : barServed || kitchenServed;
           if (!matchTab) return false;
         } else {
           const matchTab =
             isBarista || effectiveViewMode === 'BAR'
               ? barActive
               : isKitchen || effectiveViewMode === 'KITCHEN'
-              ? kitchenActive
-              : barActive || kitchenActive;
+                ? kitchenActive
+                : barActive || kitchenActive;
           if (!matchTab) return false;
         }
 
@@ -636,10 +636,10 @@ export default function KdsPage() {
 
   const hasActiveFilters = Boolean(
     searchQuery.trim() ||
-      statusFilter !== 'ALL' ||
-      orderTypeFilter !== 'ALL' ||
-      selectedProductFilter ||
-      sortBy !== 'FIFO'
+    statusFilter !== 'ALL' ||
+    orderTypeFilter !== 'ALL' ||
+    selectedProductFilter ||
+    sortBy !== 'FIFO'
   );
 
   const resetAllFilters = () => {
@@ -723,11 +723,10 @@ export default function KdsPage() {
 
             {/* Socket Status Indicator */}
             <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
-                isConnected
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${isConnected
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                   : 'bg-red-500/10 text-red-400 border-red-500/30 animate-pulse'
-              }`}
+                }`}
               title={isConnected ? 'Koneksi Langsung Aktif (Pesanan otomatis masuk)' : 'Koneksi terputus, sedang mencoba menyambungkan kembali'}
             >
               {isConnected ? (
@@ -747,8 +746,8 @@ export default function KdsPage() {
             {isBarista
               ? 'Antrean khusus barista — pesanan minuman (kopi, teh, latte) tampil otomatis.'
               : isKitchen
-              ? 'Antrean khusus dapur — pesanan makanan, pastry & snack tampil otomatis.'
-              : 'Antrean pesanan dapur & bar secara real-time.'}
+                ? 'Antrean khusus dapur — pesanan makanan, pastry & snack tampil otomatis.'
+                : 'Antrean pesanan dapur & bar secara real-time.'}
           </p>
         </div>
 
@@ -769,11 +768,10 @@ export default function KdsPage() {
           <button
             type="button"
             onClick={() => setIsPrinterModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
-              isPrinterConnected
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${isPrinterConnected
                 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
                 : 'bg-komazi-surface-2 hover:bg-komazi-border text-neutral-400 border-komazi-border hover:text-white'
-            }`}
+              }`}
             title={
               isPrinterConnected
                 ? `Printer Bluetooth Terhubung: ${connectedDeviceName || 'Printer'}`
@@ -782,9 +780,8 @@ export default function KdsPage() {
           >
             <Printer className="w-3.5 h-3.5" />
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                isPrinterConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'
-              }`}
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPrinterConnected ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'
+                }`}
             />
             <span className="hidden sm:inline">
               {isPrinterConnected ? 'Printer' : 'Hubungkan Printer'}
@@ -820,11 +817,10 @@ export default function KdsPage() {
                   key={key}
                   type="button"
                   onClick={() => setViewMode(key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    effectiveViewMode === key
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${effectiveViewMode === key
                       ? 'bg-komazi-coral text-white shadow-sm'
                       : 'text-komazi-muted hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{label}</span>
@@ -841,22 +837,20 @@ export default function KdsPage() {
           <button
             type="button"
             onClick={() => setStatusTab('ACTIVE')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              statusTab === 'ACTIVE'
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusTab === 'ACTIVE'
                 ? 'bg-komazi-coral text-white shadow-sm'
                 : 'text-komazi-muted hover:text-white'
-            }`}
+              }`}
           >
             Antrean Aktif ({activeOrdersAll.length})
           </button>
           <button
             type="button"
             onClick={() => setStatusTab('SERVED')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              statusTab === 'SERVED'
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusTab === 'SERVED'
                 ? 'bg-komazi-coral text-white shadow-sm'
                 : 'text-komazi-muted hover:text-white'
-            }`}
+              }`}
           >
             Riwayat Selesai
           </button>
@@ -879,465 +873,459 @@ export default function KdsPage() {
         <>
           {/* ── Stats Bar (Clickable for Instant Filter) ── */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          {
-            key: 'PENDING',
-            label: 'Antrian',
-            value: pendingCount,
-            color: 'text-neutral-300',
-            bg: 'bg-komazi-surface-2 border-komazi-border',
-            activeBg: 'bg-neutral-800/80 border-neutral-500 ring-2 ring-neutral-400/40',
-          },
-          {
-            key: 'IN_PROGRESS',
-            label: 'Diproses',
-            value: inProgressCount,
-            color: 'text-komazi-coral',
-            bg: 'bg-komazi-coral/10 border-komazi-coral/30',
-            activeBg: 'bg-komazi-coral/25 border-komazi-coral ring-2 ring-komazi-coral/50',
-          },
-          {
-            key: 'READY',
-            label: 'Siap Saji',
-            value: readyCount,
-            color: 'text-emerald-400',
-            bg: 'bg-emerald-500/10 border-emerald-500/30',
-            activeBg: 'bg-emerald-500/25 border-emerald-400 ring-2 ring-emerald-400/50',
-          },
-          {
-            key: 'DELAYED',
-            label: 'Terlambat (>5/10m)',
-            value: delayedCount,
-            color: 'text-red-400',
-            bg: delayedCount > 0 ? 'bg-red-500/15 border-red-500/40 animate-pulse' : 'bg-red-500/10 border-red-500/30',
-            activeBg: 'bg-red-500/30 border-red-500 ring-2 ring-red-500/50',
-          },
-          {
-            key: 'HOLD',
-            label: 'Hold Bill',
-            value: holdCount,
-            color: 'text-blue-400',
-            bg: 'bg-blue-500/10 border-blue-500/30',
-            activeBg: 'bg-blue-500/25 border-blue-400 ring-2 ring-blue-400/50',
-          },
-        ].map(({ key, label, value, color, bg, activeBg }) => {
-          const isSelected = statusTab === 'ACTIVE' && statusFilter === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                if (statusTab !== 'ACTIVE') setStatusTab('ACTIVE');
-                setStatusFilter(isSelected ? 'ALL' : key);
-              }}
-              className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-left transition-all ${
-                isSelected ? activeBg : bg
-              } hover:brightness-110 active:scale-[0.98] cursor-pointer`}
-              title={`Klik untuk memfilter status: ${label}`}
-            >
-              <div className="min-w-0">
-                <span className="text-[11px] text-komazi-muted font-medium block truncate">{label}</span>
-                <span className={`font-black text-xl font-mono tabular-nums ${color}`}>{value}</span>
-              </div>
-              {isSelected && (
-                <div className="w-2 h-2 rounded-full bg-komazi-coral shrink-0 ml-1 shadow-sm" />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Search & Filter Control Bar ── */}
-      <div className="bg-komazi-surface border border-komazi-border rounded-2xl p-3 sm:p-4 space-y-3 shadow-sm">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* 1. Search Box */}
-          <div className="relative flex-1 min-w-[260px]">
-            <Search className="w-4 h-4 text-komazi-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari meja, no invoice (#12), nama pemesan, atau menu (tekan '/' untuk cari)..."
-              className="w-full bg-komazi-surface-2 border border-komazi-border text-xs rounded-xl pl-10 pr-9 py-2.5 text-komazi-text placeholder:text-komazi-muted focus:outline-none focus:border-komazi-coral focus:ring-1 focus:ring-komazi-coral transition-colors"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-komazi-muted hover:text-white transition-colors p-0.5 rounded-md"
-                title="Hapus pencarian (Esc)"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* 2. Order Type, Sorting Dropdowns & Batch Summary */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Tipe Pesanan Filter */}
-            <div className="relative">
-              <select
-                value={orderTypeFilter}
-                onChange={(e) => setOrderTypeFilter(e.target.value)}
-                className="appearance-none bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-xs font-bold text-komazi-text rounded-xl pl-3 pr-8 py-2.5 cursor-pointer focus:outline-none focus:border-komazi-coral transition-colors"
-                title="Filter berdasarkan tipe pesanan"
-              >
-                {orderTypeOptions.map((opt) => (
-                  <option key={opt.key} value={opt.key}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            {/* Urutan (Sorting) */}
-            <div className="relative">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="appearance-none bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-xs font-bold text-komazi-text rounded-xl pl-3 pr-8 py-2.5 cursor-pointer focus:outline-none focus:border-komazi-coral transition-colors"
-                title="Urutan antrean tiket"
-              >
-                {sortOptions.map((opt) => (
-                  <option key={opt.key} value={opt.key}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <ArrowUpDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            {/* Batch Summary Toggle */}
-            {statusTab === 'ACTIVE' && aggregatedItems.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowItemSummary((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                  showItemSummary || selectedProductFilter
-                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-sm'
-                    : 'bg-komazi-surface-2 hover:bg-komazi-surface-3 border-komazi-border text-komazi-muted hover:text-white'
-                }`}
-                title="Tampilkan ringkasan total item per menu (Batch Cooking)"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Ringkasan Menu</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-amber-400/20 text-[10px] font-black text-amber-300">
-                  {aggregatedItems.length}
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Quick Status Filter Pills (Only in ACTIVE tab) */}
-        {statusTab === 'ACTIVE' && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-1 border-t border-komazi-border/50">
-            <span className="text-[11px] font-bold text-komazi-muted shrink-0 mr-1 flex items-center gap-1">
-              <Filter className="w-3 h-3 text-komazi-coral" /> Status:
-            </span>
-            {statusFilterOptions.map((opt) => {
-              const isActive = statusFilter === opt.key;
-              const Icon = opt.icon;
+            {[
+              {
+                key: 'PENDING',
+                label: 'Antrian',
+                value: pendingCount,
+                color: 'text-neutral-300',
+                bg: 'bg-komazi-surface-2 border-komazi-border',
+                activeBg: 'bg-neutral-800/80 border-neutral-500 ring-2 ring-neutral-400/40',
+              },
+              {
+                key: 'IN_PROGRESS',
+                label: 'Diproses',
+                value: inProgressCount,
+                color: 'text-komazi-coral',
+                bg: 'bg-komazi-coral/10 border-komazi-coral/30',
+                activeBg: 'bg-komazi-coral/25 border-komazi-coral ring-2 ring-komazi-coral/50',
+              },
+              {
+                key: 'READY',
+                label: 'Siap Saji',
+                value: readyCount,
+                color: 'text-emerald-400',
+                bg: 'bg-emerald-500/10 border-emerald-500/30',
+                activeBg: 'bg-emerald-500/25 border-emerald-400 ring-2 ring-emerald-400/50',
+              },
+              {
+                key: 'DELAYED',
+                label: 'Terlambat (>5/10m)',
+                value: delayedCount,
+                color: 'text-red-400',
+                bg: delayedCount > 0 ? 'bg-red-500/15 border-red-500/40 animate-pulse' : 'bg-red-500/10 border-red-500/30',
+                activeBg: 'bg-red-500/30 border-red-500 ring-2 ring-red-500/50',
+              },
+              {
+                key: 'HOLD',
+                label: 'Hold Bill',
+                value: holdCount,
+                color: 'text-blue-400',
+                bg: 'bg-blue-500/10 border-blue-500/30',
+                activeBg: 'bg-blue-500/25 border-blue-400 ring-2 ring-blue-400/50',
+              },
+            ].map(({ key, label, value, color, bg, activeBg }) => {
+              const isSelected = statusTab === 'ACTIVE' && statusFilter === key;
               return (
                 <button
-                  key={opt.key}
+                  key={key}
                   type="button"
-                  onClick={() => setStatusFilter(isActive && opt.key !== 'ALL' ? 'ALL' : opt.key)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all shrink-0 ${
-                    isActive
-                      ? 'bg-komazi-coral text-white border-komazi-coral shadow-sm'
-                      : 'bg-komazi-surface-2 hover:bg-komazi-surface-3 border-komazi-border text-komazi-muted hover:text-white'
-                  }`}
+                  onClick={() => {
+                    if (statusTab !== 'ACTIVE') setStatusTab('ACTIVE');
+                    setStatusFilter(isSelected ? 'ALL' : key);
+                  }}
+                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-left transition-all ${isSelected ? activeBg : bg
+                    } hover:brightness-110 active:scale-[0.98] cursor-pointer`}
+                  title={`Klik untuk memfilter status: ${label}`}
                 >
-                  {Icon && <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : opt.color}`} />}
-                  <span>{opt.label}</span>
-                  {opt.count !== undefined && (
-                    <span
-                      className={`px-1.5 py-0.2 text-[10px] font-black rounded-full ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : opt.badgePulse
-                          ? 'bg-red-500/20 text-red-400 animate-pulse'
-                          : 'bg-komazi-border text-neutral-400'
-                      }`}
-                    >
-                      {opt.count}
-                    </span>
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-komazi-muted font-medium block truncate">{label}</span>
+                    <span className={`font-black text-xl font-mono tabular-nums ${color}`}>{value}</span>
+                  </div>
+                  {isSelected && (
+                    <div className="w-2 h-2 rounded-full bg-komazi-coral shrink-0 ml-1 shadow-sm" />
                   )}
                 </button>
               );
             })}
           </div>
-        )}
 
-        {/* Batch Production / Item Summary Strip */}
-        {(showItemSummary || selectedProductFilter) && statusTab === 'ACTIVE' && aggregatedItems.length > 0 && (
-          <div className="p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/80 space-y-1.5 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-[11px] font-bold text-komazi-text uppercase tracking-wider">
-                  Total Item Antrean (Klik untuk Filter Tiket):
-                </span>
+          {/* ── Search & Filter Control Bar ── */}
+          <div className="bg-komazi-surface border border-komazi-border rounded-2xl p-3 sm:p-4 space-y-3 shadow-sm">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* 1. Search Box */}
+              <div className="relative flex-1 min-w-[260px]">
+                <Search className="w-4 h-4 text-komazi-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari meja, no invoice (#12), nama pemesan, atau menu (tekan '/' untuk cari)..."
+                  className="w-full bg-komazi-surface-2 border border-komazi-border text-xs rounded-xl pl-10 pr-9 py-2.5 text-komazi-text placeholder:text-komazi-muted focus:outline-none focus:border-komazi-coral focus:ring-1 focus:ring-komazi-coral transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-komazi-muted hover:text-white transition-colors p-0.5 rounded-md"
+                    title="Hapus pencarian (Esc)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-              {selectedProductFilter && (
+
+              {/* 2. Order Type, Sorting Dropdowns & Batch Summary */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Tipe Pesanan Filter */}
+                <div className="relative">
+                  <select
+                    value={orderTypeFilter}
+                    onChange={(e) => setOrderTypeFilter(e.target.value)}
+                    className="appearance-none bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-xs font-bold text-komazi-text rounded-xl pl-3 pr-8 py-2.5 cursor-pointer focus:outline-none focus:border-komazi-coral transition-colors"
+                    title="Filter berdasarkan tipe pesanan"
+                  >
+                    {orderTypeOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {/* Urutan (Sorting) */}
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="appearance-none bg-komazi-surface-2 hover:bg-komazi-surface-3 border border-komazi-border text-xs font-bold text-komazi-text rounded-xl pl-3 pr-8 py-2.5 cursor-pointer focus:outline-none focus:border-komazi-coral transition-colors"
+                    title="Urutan antrean tiket"
+                  >
+                    {sortOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ArrowUpDown className="w-3.5 h-3.5 text-komazi-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {/* Batch Summary Toggle */}
+                {statusTab === 'ACTIVE' && aggregatedItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowItemSummary((prev) => !prev)}
+                    className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all ${showItemSummary || selectedProductFilter
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-sm'
+                        : 'bg-komazi-surface-2 hover:bg-komazi-surface-3 border-komazi-border text-komazi-muted hover:text-white'
+                      }`}
+                    title="Tampilkan ringkasan total item per menu (Batch Cooking)"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Ringkasan Menu</span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-amber-400/20 text-[10px] font-black text-amber-300">
+                      {aggregatedItems.length}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Status Filter Pills (Only in ACTIVE tab) */}
+            {statusTab === 'ACTIVE' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-1 border-t border-komazi-border/50">
+                <span className="text-[11px] font-bold text-komazi-muted shrink-0 mr-1 flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-komazi-coral" /> Status:
+                </span>
+                {statusFilterOptions.map((opt) => {
+                  const isActive = statusFilter === opt.key;
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setStatusFilter(isActive && opt.key !== 'ALL' ? 'ALL' : opt.key)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all shrink-0 ${isActive
+                          ? 'bg-komazi-coral text-white border-komazi-coral shadow-sm'
+                          : 'bg-komazi-surface-2 hover:bg-komazi-surface-3 border-komazi-border text-komazi-muted hover:text-white'
+                        }`}
+                    >
+                      {Icon && <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : opt.color}`} />}
+                      <span>{opt.label}</span>
+                      {opt.count !== undefined && (
+                        <span
+                          className={`px-1.5 py-0.2 text-[10px] font-black rounded-full ${isActive
+                              ? 'bg-white/20 text-white'
+                              : opt.badgePulse
+                                ? 'bg-red-500/20 text-red-400 animate-pulse'
+                                : 'bg-komazi-border text-neutral-400'
+                            }`}
+                        >
+                          {opt.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Batch Production / Item Summary Strip */}
+            {(showItemSummary || selectedProductFilter) && statusTab === 'ACTIVE' && aggregatedItems.length > 0 && (
+              <div className="p-2.5 rounded-xl bg-komazi-surface-2/60 border border-komazi-border/80 space-y-1.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[11px] font-bold text-komazi-text uppercase tracking-wider">
+                      Total Item Antrean (Klik untuk Filter Tiket):
+                    </span>
+                  </div>
+                  {selectedProductFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProductFilter(null)}
+                      className="text-[11px] text-komazi-coral hover:underline font-bold"
+                    >
+                      Tampilkan Semua Menu
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  {aggregatedItems.map((item) => {
+                    const isSelected = selectedProductFilter?.toLowerCase() === item.name.toLowerCase();
+                    return (
+                      <button
+                        key={item.name}
+                        type="button"
+                        onClick={() => setSelectedProductFilter(isSelected ? null : item.name)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all shrink-0 ${isSelected
+                            ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 font-bold shadow-sm ring-1 ring-emerald-500/50'
+                            : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white hover:border-komazi-border/80'
+                          }`}
+                      >
+                        <span>{item.isDrink ? '☕' : '🍳'}</span>
+                        <span className="truncate max-w-[150px]">{item.name}</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded font-mono font-black text-[10px] ${isSelected ? 'bg-emerald-500/30 text-white' : 'bg-komazi-surface-2 text-komazi-coral'
+                            }`}
+                        >
+                          x{item.qty}
+                        </span>
+                        {isSelected && <X className="w-3 h-3 text-emerald-300 ml-0.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Active Filters Pill Bar & Summary Counter */}
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs border-t border-komazi-border/50">
+                <span className="text-komazi-muted text-[11px] font-semibold flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-komazi-coral" /> Filter Aktif:
+                </span>
+                {searchQuery && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
+                    <span>
+                      Cari: <strong className="text-komazi-coral">"{searchQuery}"</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="hover:text-red-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {statusFilter !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
+                    <span>
+                      Status:{' '}
+                      <strong className="text-komazi-coral">
+                        {statusFilterOptions.find((o) => o.key === statusFilter)?.label}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('ALL')}
+                      className="hover:text-red-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {orderTypeFilter !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
+                    <span>
+                      Tipe:{' '}
+                      <strong className="text-komazi-coral">
+                        {orderTypeOptions.find((o) => o.key === orderTypeFilter)?.label}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOrderTypeFilter('ALL')}
+                      className="hover:text-red-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {selectedProductFilter && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+                    <span>
+                      Menu: <strong className="text-emerald-400">"{selectedProductFilter}"</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProductFilter(null)}
+                      className="hover:text-red-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {sortBy !== 'FIFO' && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
+                    <span>
+                      Urut:{' '}
+                      <strong className="text-komazi-coral">
+                        {sortOptions.find((o) => o.key === sortBy)?.label}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSortBy('FIFO')}
+                      className="hover:text-red-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
                 <button
                   type="button"
-                  onClick={() => setSelectedProductFilter(null)}
-                  className="text-[11px] text-komazi-coral hover:underline font-bold"
+                  onClick={resetAllFilters}
+                  className="text-[11px] text-komazi-coral hover:underline font-bold ml-1"
                 >
-                  Tampilkan Semua Menu
+                  Reset Semua
+                </button>
+                <span className="ml-auto text-[11px] text-komazi-muted font-medium">
+                  Menampilkan {displayedOrders.length} dari{' '}
+                  {statusTab === 'ACTIVE' ? activeOrdersAll.length : orders.length} pesanan
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Content ── */}
+          {displayedOrders.length === 0 ? (
+            <div className="text-center py-20 px-4 rounded-3xl border border-dashed border-komazi-border bg-komazi-surface/50 space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-center text-komazi-muted mx-auto shadow-inner">
+                {hasActiveFilters ? (
+                  <SearchX className="w-8 h-8 text-komazi-coral opacity-80" />
+                ) : (
+                  <CheckCircle2 className="w-9 h-9 text-emerald-400 opacity-80" />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-bold text-komazi-text">
+                  {hasActiveFilters
+                    ? 'Tidak Ada Pesanan yang Cocok'
+                    : statusTab === 'SERVED'
+                      ? 'Belum Ada Pesanan yang Selesai'
+                      : isBarista
+                        ? 'Semua Pesanan Bar Selesai!'
+                        : isKitchen
+                          ? 'Semua Pesanan Dapur Selesai!'
+                          : 'Antrean Dapur & Bar Sedang Kosong'}
+                </h2>
+                <p className="text-xs text-komazi-muted max-w-md mx-auto">
+                  {hasActiveFilters
+                    ? 'Coba sesuaikan kata kunci pencarian atau reset filter aktif.'
+                    : statusTab === 'SERVED'
+                      ? 'Pesanan yang telah diselesaikan akan tampil di sini.'
+                      : 'Tidak ada pesanan aktif. Pesanan baru dari POS akan langsung masuk secara realtime.'}
+                </p>
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetAllFilters}
+                  className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs transition-colors shadow-md inline-flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Filter & Pencarian</span>
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              {aggregatedItems.map((item) => {
-                const isSelected = selectedProductFilter?.toLowerCase() === item.name.toLowerCase();
-                return (
-                  <button
-                    key={item.name}
-                    type="button"
-                    onClick={() => setSelectedProductFilter(isSelected ? null : item.name)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all shrink-0 ${
-                      isSelected
-                        ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 font-bold shadow-sm ring-1 ring-emerald-500/50'
-                        : 'bg-komazi-surface border-komazi-border text-komazi-muted hover:text-white hover:border-komazi-border/80'
-                    }`}
-                  >
-                    <span>{item.isDrink ? '☕' : '🍳'}</span>
-                    <span className="truncate max-w-[150px]">{item.name}</span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded font-mono font-black text-[10px] ${
-                        isSelected ? 'bg-emerald-500/30 text-white' : 'bg-komazi-surface-2 text-komazi-coral'
-                      }`}
-                    >
-                      x{item.qty}
-                    </span>
-                    {isSelected && <X className="w-3 h-3 text-emerald-300 ml-0.5" />}
-                  </button>
-                );
-              })}
+          ) : effectiveViewMode === 'SPLIT' && !isBarista && !isKitchen ? (
+            <div className="flex flex-col lg:flex-row gap-5">
+              <StationPanel
+                title="☕ Barista / Bar"
+                icon={Coffee}
+                station="BAR"
+                accentColor={{
+                  header: 'bg-komazi-teal/10 border-komazi-teal/30',
+                  icon: 'bg-komazi-teal/20 border border-komazi-teal/30 text-komazi-teal-light',
+                  title: 'text-komazi-teal-light',
+                  badge: 'bg-komazi-teal/10 border-komazi-teal/30 text-komazi-teal-light',
+                }}
+                orders={displayedOrders}
+                currentTime={currentTime}
+                onBumpItem={handleBumpItem}
+                onBumpTicket={handleBumpTicket}
+                onRequeueStatus={handleRequeueStatus}
+                onPrintTicket={(order) => setPrintOrderTarget(order)}
+                canBump={canBump}
+                hasActiveFilters={hasActiveFilters}
+              />
+
+              <div className="w-px bg-komazi-border shrink-0 self-stretch hidden lg:block" />
+
+              <StationPanel
+                title="🍳 Dapur / Snack"
+                icon={Utensils}
+                station="KITCHEN"
+                accentColor={{
+                  header: 'bg-amber-500/10 border-amber-500/30',
+                  icon: 'bg-amber-500/15 border border-amber-500/30 text-amber-400',
+                  title: 'text-amber-400',
+                  badge: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+                }}
+                orders={displayedOrders}
+                currentTime={currentTime}
+                onBumpItem={handleBumpItem}
+                onBumpTicket={handleBumpTicket}
+                onRequeueStatus={handleRequeueStatus}
+                onPrintTicket={(order) => setPrintOrderTarget(order)}
+                canBump={canBump}
+                hasActiveFilters={hasActiveFilters}
+              />
             </div>
-          </div>
-        )}
-
-        {/* Active Filters Pill Bar & Summary Counter */}
-        {hasActiveFilters && (
-          <div className="flex flex-wrap items-center gap-2 pt-1 text-xs border-t border-komazi-border/50">
-            <span className="text-komazi-muted text-[11px] font-semibold flex items-center gap-1">
-              <Filter className="w-3 h-3 text-komazi-coral" /> Filter Aktif:
-            </span>
-            {searchQuery && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
-                <span>
-                  Cari: <strong className="text-komazi-coral">"{searchQuery}"</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="hover:text-red-400"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {statusFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
-                <span>
-                  Status:{' '}
-                  <strong className="text-komazi-coral">
-                    {statusFilterOptions.find((o) => o.key === statusFilter)?.label}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('ALL')}
-                  className="hover:text-red-400"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {orderTypeFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
-                <span>
-                  Tipe:{' '}
-                  <strong className="text-komazi-coral">
-                    {orderTypeOptions.find((o) => o.key === orderTypeFilter)?.label}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setOrderTypeFilter('ALL')}
-                  className="hover:text-red-400"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {selectedProductFilter && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
-                <span>
-                  Menu: <strong className="text-emerald-400">"{selectedProductFilter}"</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedProductFilter(null)}
-                  className="hover:text-red-400"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {sortBy !== 'FIFO' && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-komazi-surface-2 border border-komazi-border text-komazi-text text-xs">
-                <span>
-                  Urut:{' '}
-                  <strong className="text-komazi-coral">
-                    {sortOptions.find((o) => o.key === sortBy)?.label}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSortBy('FIFO')}
-                  className="hover:text-red-400"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={resetAllFilters}
-              className="text-[11px] text-komazi-coral hover:underline font-bold ml-1"
-            >
-              Reset Semua
-            </button>
-            <span className="ml-auto text-[11px] text-komazi-muted font-medium">
-              Menampilkan {displayedOrders.length} dari{' '}
-              {statusTab === 'ACTIVE' ? activeOrdersAll.length : orders.length} pesanan
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* ── Content ── */}
-      {displayedOrders.length === 0 ? (
-        <div className="text-center py-20 px-4 rounded-3xl border border-dashed border-komazi-border bg-komazi-surface/50 space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-komazi-surface-2 border border-komazi-border flex items-center justify-center text-komazi-muted mx-auto shadow-inner">
-            {hasActiveFilters ? (
-              <SearchX className="w-8 h-8 text-komazi-coral opacity-80" />
-            ) : (
-              <CheckCircle2 className="w-9 h-9 text-emerald-400 opacity-80" />
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <h2 className="text-lg font-bold text-komazi-text">
-              {hasActiveFilters
-                ? 'Tidak Ada Pesanan yang Cocok'
-                : statusTab === 'SERVED'
-                ? 'Belum Ada Pesanan yang Selesai'
-                : isBarista
-                ? 'Semua Pesanan Bar Selesai!'
-                : isKitchen
-                ? 'Semua Pesanan Dapur Selesai!'
-                : 'Antrean Dapur & Bar Sedang Kosong'}
-            </h2>
-            <p className="text-xs text-komazi-muted max-w-md mx-auto">
-              {hasActiveFilters
-                ? 'Coba sesuaikan kata kunci pencarian atau reset filter aktif.'
-                : statusTab === 'SERVED'
-                ? 'Pesanan yang telah diselesaikan akan tampil di sini.'
-                : 'Tidak ada pesanan aktif. Pesanan baru dari POS akan langsung masuk secara realtime.'}
-            </p>
-          </div>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={resetAllFilters}
-              className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs transition-colors shadow-md inline-flex items-center gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Filter & Pencarian</span>
-            </button>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+                {paginatedOrders.map((order) => {
+                  const stationFilterMode = isBarista ? 'BAR' : isKitchen ? 'KITCHEN' : effectiveViewMode;
+                  const hasItems = (order.items || []).some((item) => {
+                    if (stationFilterMode === 'ALL') return true;
+                    const isBar = item.station?.type === 'BAR' || isDrinkItem(item);
+                    if (stationFilterMode === 'BAR') return isBar;
+                    if (stationFilterMode === 'KITCHEN') return !isBar;
+                    return true;
+                  });
+                  if (!hasItems) return null;
+                  return (
+                    <OrderTicket
+                      key={order.id}
+                      order={order}
+                      station={stationFilterMode}
+                      currentTime={currentTime}
+                      onBumpItem={handleBumpItem}
+                      onBumpTicket={handleBumpTicket}
+                      onRequeueStatus={handleRequeueStatus}
+                      onPrintTicket={(orderToPrint) => setPrintOrderTarget(orderToPrint)}
+                      canBump={canBump}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           )}
-        </div>
-      ) : effectiveViewMode === 'SPLIT' && !isBarista && !isKitchen ? (
-        <div className="flex flex-col lg:flex-row gap-5">
-          <StationPanel
-            title="☕ Barista / Bar"
-            icon={Coffee}
-            station="BAR"
-            accentColor={{
-              header: 'bg-komazi-teal/10 border-komazi-teal/30',
-              icon: 'bg-komazi-teal/20 border border-komazi-teal/30 text-komazi-teal-light',
-              title: 'text-komazi-teal-light',
-              badge: 'bg-komazi-teal/10 border-komazi-teal/30 text-komazi-teal-light',
-            }}
-            orders={displayedOrders}
-            currentTime={currentTime}
-            onBumpItem={handleBumpItem}
-            onBumpTicket={handleBumpTicket}
-            onRequeueStatus={handleRequeueStatus}
-            onPrintTicket={(order) => setPrintOrderTarget(order)}
-            canBump={canBump}
-            hasActiveFilters={hasActiveFilters}
-          />
-
-          <div className="w-px bg-komazi-border shrink-0 self-stretch hidden lg:block" />
-
-          <StationPanel
-            title="🍳 Dapur / Snack"
-            icon={Utensils}
-            station="KITCHEN"
-            accentColor={{
-              header: 'bg-amber-500/10 border-amber-500/30',
-              icon: 'bg-amber-500/15 border border-amber-500/30 text-amber-400',
-              title: 'text-amber-400',
-              badge: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
-            }}
-            orders={displayedOrders}
-            currentTime={currentTime}
-            onBumpItem={handleBumpItem}
-            onBumpTicket={handleBumpTicket}
-            onRequeueStatus={handleRequeueStatus}
-            onPrintTicket={(order) => setPrintOrderTarget(order)}
-            canBump={canBump}
-            hasActiveFilters={hasActiveFilters}
-          />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-            {paginatedOrders.map((order) => {
-              const stationFilterMode = isBarista ? 'BAR' : isKitchen ? 'KITCHEN' : effectiveViewMode;
-              const hasItems = (order.items || []).some((item) => {
-                if (stationFilterMode === 'ALL') return true;
-                const isBar = item.station?.type === 'BAR' || isDrinkItem(item);
-                if (stationFilterMode === 'BAR') return isBar;
-                if (stationFilterMode === 'KITCHEN') return !isBar;
-                return true;
-              });
-              if (!hasItems) return null;
-              return (
-                <OrderTicket
-                  key={order.id}
-                  order={order}
-                  station={stationFilterMode}
-                  currentTime={currentTime}
-                  onBumpItem={handleBumpItem}
-                  onBumpTicket={handleBumpTicket}
-                  onRequeueStatus={handleRequeueStatus}
-                  onPrintTicket={(orderToPrint) => setPrintOrderTarget(orderToPrint)}
-                  canBump={canBump}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
         </>
       )}
 
@@ -1349,7 +1337,7 @@ export default function KdsPage() {
           initialTab="profile"
           kdsProps={{
             isSoundEnabled: true,
-            setIsSoundEnabled: () => {},
+            setIsSoundEnabled: () => { },
             stationFilter: effectiveViewMode,
             setStationFilter: setViewMode,
             isStaffOnly: isBarista || isKitchen,
@@ -1374,3 +1362,4 @@ export default function KdsPage() {
     </div>
   );
 }
+

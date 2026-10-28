@@ -110,7 +110,7 @@ export default function OrderDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl overflow-hidden text-komazi-text">
-        
+
         {/* 1. MODAL HEADER */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-komazi-border bg-komazi-surface-2/60">
           <div className="flex items-center gap-3">
@@ -150,7 +150,7 @@ export default function OrderDetailModal({
 
         {/* 2. SCROLLABLE BODY */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          
+
           {/* Banner: Void Notice if VOIDED */}
           {order.status === 'VOIDED' && (
             <div className="p-3.5 rounded-xl bg-danger/10 border border-danger/30 flex items-start gap-3 text-xs text-danger">
@@ -291,11 +291,10 @@ export default function OrderDetailModal({
                   >
                     <div className="flex items-start gap-2.5 min-w-0">
                       <div
-                        className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
-                          isBar
+                        className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${isBar
                             ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                             : 'bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30'
-                        }`}
+                          }`}
                         title={isBar ? 'Station Barista' : 'Station Kitchen'}
                       >
                         {isBar ? (

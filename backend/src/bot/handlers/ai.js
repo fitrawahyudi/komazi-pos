@@ -10,7 +10,8 @@ import { aiLimiter } from '../middlewares/aiLimiter.js';
 import { getOpenclawConfig } from '../ai/openclawConfig.js';
 import { sendOpenClawChat, OpenClawError } from '../ai/openclawClient.js';
 import { buildAiSystemContext } from '../ai/aiContextService.js';
-import { formatScheduleNaturalReply } from '../../services/ai/aiToneFormatter.js';
+import { formatScheduleNaturalReply, formatFriendlySalutation, formatMarkdownTables } from '../../services/ai/aiToneFormatter.js';
+import { sanitizeAiResponse } from '../../services/aiService.js';
 import {
   getHistory,
   getHistoryAsync,
@@ -30,14 +31,42 @@ import { tryHandleOperationalAction } from './aiActions.js';
 
 /**
  * Memformat teks output AI agar aman untuk parser HTML Telegram.
- * Mengonversi markdown sederhana (**bold**, `code`) menjadi tag HTML Telegram.
+ * Mengonversi tabel markdown menjadi blok <pre> monospace yang rapi dan memformat tag HTML Telegram.
  */
-function formatAiTextForTelegram(raw) {
+export function formatAiTextForTelegram(raw, user = null) {
   if (!raw) return '';
 
-  let formatted = esc(raw);
+  // 1. Sanitasi respons AI (persona Komazi, anti-leak provider, bebas kata "saya" & "Bapak")
+  const sanitized = sanitizeAiResponse(raw, user);
+
+  // 2. Format tabel markdown menjadi blok <pre>...</pre>
+  const withTables = formatMarkdownTables(sanitized);
+
+  // 3. Lindungi blok <pre>...</pre> agar isi di dalamnya tidak rusak oleh escape atau inline formatter
+  const preBlocks = [];
+  let protectedText = withTables.replace(/<pre>([\s\S]*?)<\/pre>/g, (match, content) => {
+    preBlocks.push(content);
+    return `___PRE_BLOCK_${preBlocks.length - 1}___`;
+  });
+
+  // Tangani juga blok kode markdown ``` ... ``` yang mungkin dikirim oleh LLM
+  protectedText = protectedText.replace(/```(?:[a-zA-Z]*\n)?([\s\S]*?)```/g, (match, content) => {
+    preBlocks.push(content.trim());
+    return `___PRE_BLOCK_${preBlocks.length - 1}___`;
+  });
+
+  // 4. Escape teks umum untuk parser HTML Telegram
+  let formatted = esc(protectedText);
+
+  // 5. Konversi format markdown inline Telegram
   formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
   formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+
+  // 6. Kembalikan blok <pre> dengan isi yang di-escape agar valid di Telegram HTML
+  formatted = formatted.replace(/___PRE_BLOCK_(\d+)___/g, (match, index) => {
+    const rawContent = preBlocks[Number(index)] || '';
+    return `<pre>${esc(rawContent)}</pre>`;
+  });
 
   return formatted;
 }
@@ -172,17 +201,26 @@ export async function executeAiQuery(ctx, rawQuery, options = {}) {
     },
     async () => {
       try {
-        const [systemPrompt, history] = await Promise.all([
-          buildAiSystemContext(ctx.user, userQuery),
-          getHistoryAsync(ctx.user.id),
-        ]);
+        // Resolusikan nama dan profil user yang akurat (cegah fallback "User" / "Admin")
+        const effectiveUser = ctx.user
+          ? {
+              ...ctx.user,
+              name: (ctx.user.name && !['user', 'admin', 'administrator'].includes(ctx.user.name.toLowerCase()))
+                ? ctx.user.name
+                : (ctx.from?.first_name || ctx.user.name || ''),
+            }
+          : (ctx.from ? { role: 'STAFF', name: ctx.from.first_name } : null);
+
+        const history = await getHistoryAsync(ctx.user?.id || ctx.from?.id);
+        const systemPrompt = await buildAiSystemContext(effectiveUser, userQuery, { history });
 
         let effectiveSystemPrompt = systemPrompt;
         if (parsedSchedule) {
+          const userSalutation = formatFriendlySalutation(effectiveUser);
           effectiveSystemPrompt +=
             `\n\n[PEMBERITAHUAN SISTEM JADWAL/PENGINGAT]:\n` +
-            `Staf meminta membuat jadwal atau pengingat: "${parsedSchedule.name}" pada "${parsedSchedule.timeDescription}". ` +
-            `Konfirmasikan pengingat ini secara ramah, santai, dan bersahabat seperti chatbot asisten pribadi. Jangan gunakan format log developer! Beritahu bahwa tombol konfirmasi sudah tersedia di bawah pesan ini jika mereka ingin mengaktifkannya.`;
+            `Staf (${userSalutation}) meminta membuat jadwal atau pengingat: "${parsedSchedule.name}" pada "${parsedSchedule.timeDescription}". ` +
+            `Konfirmasikan pengingat ini secara ramah dan bersahabat sebagai Komazi. Dilarang menyapa "Bos" atau "Bapak" dan dilarang menyebut diri "saya", gunakan sapaan "${userSalutation}" dan sebut diri "Komazi"! Jangan gunakan format log developer! Beritahu bahwa tombol konfirmasi sudah tersedia di bawah pesan ini jika ingin mengaktifkannya.`;
         }
 
         const messages = [
@@ -193,13 +231,14 @@ export async function executeAiQuery(ctx, rawQuery, options = {}) {
 
         const response = await sendOpenClawChat({
           messages,
-          userId: ctx.user.id,
+          userId: ctx.user?.id || ctx.from?.id,
+          user: effectiveUser,
         });
 
         // Simpan giliran percakapan ke riwayat multi-turn & berkas Markdown
-        appendTurn(ctx.user.id, userQuery, response.text, ctx.user);
+        appendTurn(ctx.user?.id || ctx.from?.id, userQuery, response.text, effectiveUser);
 
-        const formattedReply = formatAiTextForTelegram(response.text);
+        const formattedReply = formatAiTextForTelegram(response.text, effectiveUser);
 
         let finalCaption = `${formattedReply}${queryNotice}`;
 

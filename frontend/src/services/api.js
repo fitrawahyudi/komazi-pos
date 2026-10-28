@@ -86,7 +86,7 @@ function notifyRequestStart() {
       watchdogResetTimer = null;
       try {
         useUiStore.getState().stopTopBarLoading();
-      } catch {}
+      } catch { }
     }, 7000);
   }
 
@@ -96,7 +96,7 @@ function notifyRequestStart() {
       loadingStartTimer = null;
       try {
         useUiStore.getState().startTopBarLoading();
-      } catch {}
+      } catch { }
     }, 100);
   }
 }
@@ -114,7 +114,7 @@ function notifyRequestEnd() {
     }
     try {
       useUiStore.getState().stopTopBarLoading();
-    } catch {}
+    } catch { }
   }
 }
 
@@ -181,7 +181,7 @@ export async function request(endpoint, options = {}) {
                 },
               })
             );
-          } catch {}
+          } catch { }
         }
       }
 

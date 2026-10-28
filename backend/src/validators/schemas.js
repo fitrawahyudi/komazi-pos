@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const loginSchema = z.object({
   username: z.string().min(1, 'Username wajib diisi'),
   password: z.string().min(1, 'Password wajib diisi'),
-});                                                                                                                            
+});
 
 export const createUserSchema = z.object({
   name: z.string().min(1, 'Nama wajib diisi'),
@@ -187,7 +187,7 @@ export const createCashMovementSchema = z.object({
   reason: z.string().min(2, 'Keterangan / alasan wajib diisi'),
   shiftId: z.coerce.number().int().optional(),
 });
-                        
+
 export const workspaceCheckInSchema = z.object({
   areaId: z.number().int(),
   packageId: z.number().int(),
