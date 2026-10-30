@@ -528,9 +528,9 @@ export default function CartSidebar({
             </div>
           </div>
         ) : (
-          items.map((item) => (
+          items.map((item, index) => (
             <div
-              key={item.key}
+              key={item.key || `cart-item-${item.productId || index}-${index}`}
               className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2 group transition-colors hover:border-komazi-muted/30"
             >
               <div className="flex items-start justify-between gap-2">

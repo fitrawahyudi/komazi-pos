@@ -96,7 +96,9 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
 
   // Station item filtering (Barista vs Dapur)
   const { products = [], stations = [] } = usePosStore();
-  const orderItems = Array.isArray(order?.items) ? order.items : [];
+  const orderItems = Array.isArray(order?.items)
+    ? order.items.filter((item) => item.status !== 'CANCELLED')
+    : [];
 
   const baristaItems = orderItems.filter((item) => isBaristaItem(item, { products, stations }));
   const kitchenItems = orderItems.filter((item) => isKitchenItem(item, { products, stations }));
@@ -679,7 +681,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                   <>
                     {/* Line Items Struk Penjualan (Pelanggan / Pertinggal) */}
                     <div className="space-y-1.5 my-1.5">
-                      {(order.items || []).map((item, idx) => {
+                      {(orderItems || []).map((item, idx) => {
                         const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
                         const unitPrice = Number(item.price || item.unitPrice || 0);
                         const itemName = item.name || item.productName || 'Item';

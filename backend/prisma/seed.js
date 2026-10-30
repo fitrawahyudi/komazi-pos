@@ -117,6 +117,66 @@ async function main() {
   }
   console.log(`✅ Categories seeded successfully (${categoriesData.length} categories)`);
 
+  // 4. Seed Ingredients
+  const ingredientMap = new Map();
+  for (const ing of ingredientsData) {
+    const existing = await prisma.ingredient.findFirst({
+      where: { name: ing.name },
+    });
+    let saved;
+    if (existing) {
+      saved = await prisma.ingredient.update({
+        where: { id: existing.id },
+        data: {
+          unit: ing.unit,
+          stock: ing.stock,
+          minStock: ing.minStock,
+          costPerUnit: ing.costPerUnit,
+        },
+      });
+    } else {
+      saved = await prisma.ingredient.create({
+        data: {
+          name: ing.name,
+          unit: ing.unit,
+          stock: ing.stock,
+          minStock: ing.minStock,
+          costPerUnit: ing.costPerUnit,
+        },
+      });
+    }
+    ingredientMap.set(saved.name, saved.id);
+  }
+  console.log(`✅ Ingredients seeded successfully (${ingredientsData.length} ingredients)`);
+
+  // 5. Seed / Link Recipes (BOM) for Products
+  let linkedCount = 0;
+  for (const prodData of productsData) {
+    if (!prodData.recipe || prodData.recipe.length === 0) continue;
+    const product = await prisma.product.findFirst({
+      where: { name: prodData.name },
+    });
+    if (product) {
+      await prisma.productRecipeItem.deleteMany({
+        where: { productId: product.id },
+      });
+      for (const item of prodData.recipe) {
+        const ingId = ingredientMap.get(item.ingredientName);
+        if (ingId) {
+          await prisma.productRecipeItem.create({
+            data: {
+              productId: product.id,
+              ingredientId: ingId,
+              quantity: item.quantity,
+            },
+          });
+        }
+      }
+      linkedCount++;
+    }
+  }
+  console.log(`✅ Linked BOM recipes for ${linkedCount} products`);
+
   console.log('🎉 Komazi POS database seed completed successfully!');
 }
 

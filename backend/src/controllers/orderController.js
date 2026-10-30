@@ -110,7 +110,7 @@ function formatOrderForResponse(order, canViewCost) {
   // Ensure cashierName is explicitly set for frontend displays, receipt print, and owner/manager audits
   sanitized.cashierName = order.cashierName || order.cashier?.name || order.shift?.cashier?.name || null;
   if (sanitized.items) {
-    sanitized.items = sanitized.items.map((item) => {
+    sanitized.items = sanitized.items.filter((item) => item.status !== 'CANCELLED').map((item) => {
       const categoryName = item.product?.category?.name || item.categoryName || null;
       const { unitCost, lineCost, product, ...rest } = item;
       if (canViewCost) {
@@ -170,6 +170,7 @@ export async function getAllOrders(req, res) {
         where,
         include: {
           items: {
+            where: { status: { not: 'CANCELLED' } },
             include: {
               station: true,
               product: {
@@ -403,6 +404,7 @@ export async function createOrder(req, res) {
             },
             include: {
               items: {
+            where: { status: { not: 'CANCELLED' } },
                 include: {
                   station: true,
                   product: {
@@ -732,6 +734,7 @@ export async function updateOrder(req, res) {
         },
         include: {
           items: {
+            where: { status: { not: 'CANCELLED' } },
             include: {
               station: true,
               product: {
@@ -957,6 +960,7 @@ export async function payOrder(req, res) {
         },
         include: {
           items: {
+            where: { status: { not: 'CANCELLED' } },
             include: {
               station: true,
               product: {
@@ -1166,6 +1170,7 @@ export async function voidOrder(req, res) {
         },
         include: {
           items: {
+            where: { status: { not: 'CANCELLED' } },
             include: {
               station: true,
               product: {

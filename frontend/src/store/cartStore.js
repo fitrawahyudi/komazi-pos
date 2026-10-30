@@ -374,8 +374,18 @@ export const useCartStore = create(
         const bill = state.openBills.find((b) => b.id === billId || b.billId === billId);
         if (!bill) return false;
 
+        const normalizedItems = (bill.items || []).map((i, idx) => {
+          const itemKey =
+            i.key ||
+            `${i.productId || i.id || 'item'}_${i.variant?.name || i.variantName || 'none'}_${i.note || ''}_${idx}`;
+          return {
+            ...i,
+            key: itemKey,
+          };
+        });
+
         set({
-          items: bill.items,
+          items: normalizedItems,
           orderType: bill.orderType,
           tableNo: bill.tableNo,
           customerName: bill.customerName,
@@ -583,15 +593,22 @@ export const useCartStore = create(
             backendOrderId: o.id,
             invoiceNo: o.invoiceNo,
             label: `Meja ${o.tableNo || 'Takeaway'} - ${o.customerName || 'Tamu'}`,
-            items: (o.items || []).map((i) => ({
-              productId: i.productId,
-              name: i.productName || i.name || 'Item',
-              variant: i.variantName ? { name: i.variantName } : null,
-              unitPrice: Number(i.unitPrice) || 0,
-              qty: Number(i.qty) || 1,
-              lineTotal: Number(i.lineTotal) || (Number(i.qty) * Number(i.unitPrice)),
-              note: i.note || '',
-            })),
+            items: (o.items || []).filter((i) => i.status !== 'CANCELLED').map((i, idx) => {
+              const modifierIds = (i.modifiers || []).map((m) => m.id || m.name || m).sort().join('-');
+              const itemKey =
+                i.key ||
+                `${i.productId || i.id || 'item'}_${i.variantName || 'none'}_${modifierIds}_${i.note || ''}_${i.id || idx}`;
+              return {
+                key: itemKey,
+                productId: i.productId || i.id,
+                name: i.productName || i.name || 'Item',
+                variant: i.variantName ? { name: i.variantName } : null,
+                unitPrice: Number(i.unitPrice) || 0,
+                qty: Number(i.qty) || 1,
+                lineTotal: Number(i.lineTotal) || (Number(i.qty) * Number(i.unitPrice)),
+                note: i.note || '',
+              };
+            }),
             orderType: o.type || 'DINE_IN',
             tableNo: o.tableNo || '',
             customerName: o.customerName || '',
@@ -617,7 +634,7 @@ export const useCartStore = create(
               old.customerName !== mappedBill.customerName ||
               old.invoiceNo !== mappedBill.invoiceNo
             ) {
-              currentOpenBills[existingIdx] = { ...old, ...mappedBill };
+              currentOpenBills[existingIdx] = { ...old, ...mappedBill, label: old.label || mappedBill.label };
               hasChanges = true;
             }
           }

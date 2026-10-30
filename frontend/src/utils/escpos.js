@@ -367,7 +367,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
   encoder.divider(paperWidth);
 
   // Line items
-  (order.items || []).forEach((item) => {
+  (order.items || []).filter((item) => item.status !== 'CANCELLED').forEach((item) => {
     const itemTotal = (item.qty || 1) * Number(item.price || item.unitPrice || 0);
     const unitPrice = Number(item.price || item.unitPrice || 0);
     const itemName = item.name || item.productName || 'Item';
@@ -520,7 +520,7 @@ export function buildKitchenTicketEscPos(order, options = {}) {
   // Filter items specifically for the target station so barista items never print on kitchen tickets
   const itemsToPrint =
     options.items ||
-    (order.items || []).filter((item) => {
+    (order.items || []).filter((item) => item.status !== 'CANCELLED').filter((item) => {
       if (isBar) {
         return isBaristaItem(item, options);
       }

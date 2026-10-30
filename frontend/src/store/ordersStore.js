@@ -387,10 +387,15 @@ export const useOrdersStore = create(
         const holdId = `hold_${billId}`;
 
         // Cari order hold yang sudah ada (via holdId, billId, atau backendOrderId)
-        const existingHold = state.orders.find(
-          (o) => o.id === holdId || o.billId === billId || (billPayload.backendOrderId && o.id === billPayload.backendOrderId) || o.backendOrderId === billPayload.backendOrderId
-        );
-        const existingBackendId = billPayload.backendOrderId || existingHold?.backendOrderId || (typeof existingHold?.id === 'number' && existingHold.id < 1000000000000 ? existingHold.id : null);
+        const targetBackendId = billPayload.backendOrderId ? Number(billPayload.backendOrderId) : null;
+        const existingHold = (targetBackendId || billPayload.billId)
+          ? state.orders.find(
+              (o) =>
+                (targetBackendId && (Number(o.id) === targetBackendId || Number(o.backendOrderId) === targetBackendId)) ||
+                (billPayload.billId && (o.id === holdId || o.billId === billId))
+            )
+          : null;
+        const existingBackendId = targetBackendId || (existingHold ? (existingHold.backendOrderId || (typeof existingHold.id === 'number' && existingHold.id < 1000000000000 ? existingHold.id : null)) : null);
 
         const oldItems = existingHold?.items || [];
         const newItems = billPayload.items || [];
@@ -521,9 +526,11 @@ export const useOrdersStore = create(
         const state = get();
         const holdId = `hold_${billId}`;
         const holdOrder = state.orders.find(
-          (o) => o.billId === billId || o.id === holdId || (knownBackendId && o.id === knownBackendId) || o.backendOrderId === knownBackendId
+          (o) =>
+            (billId && (o.billId === billId || o.id === holdId)) ||
+            (knownBackendId && (Number(o.id) === Number(knownBackendId) || Number(o.backendOrderId) === Number(knownBackendId)))
         );
-        const actualBackendId = knownBackendId || holdOrder?.backendOrderId || (typeof holdOrder?.id === 'number' && holdOrder.id < 1000000000000 ? holdOrder.id : null);
+        const actualBackendId = (knownBackendId ? Number(knownBackendId) : null) || holdOrder?.backendOrderId || (typeof holdOrder?.id === 'number' && holdOrder.id < 1000000000000 ? holdOrder.id : null);
 
         if (actualBackendId) {
           try {
@@ -580,9 +587,11 @@ export const useOrdersStore = create(
         const state = get();
         const holdId = `hold_${billId}`;
         const oldHold = state.orders.find(
-          (o) => o.billId === billId || o.id === holdId || (knownBackendId && o.id === knownBackendId) || o.backendOrderId === billId
+          (o) =>
+            (billId && (o.billId === billId || o.id === holdId)) ||
+            (knownBackendId && (Number(o.id) === Number(knownBackendId) || Number(o.backendOrderId) === Number(knownBackendId)))
         );
-        const actualBackendId = knownBackendId || oldHold?.backendOrderId || (typeof oldHold?.id === 'number' && oldHold.id < 1000000000000 ? oldHold.id : null);
+        const actualBackendId = (knownBackendId ? Number(knownBackendId) : null) || oldHold?.backendOrderId || (typeof oldHold?.id === 'number' && oldHold.id < 1000000000000 ? oldHold.id : null);
 
         const oldItems = oldHold?.items || [];
         const newItems = paidOrderPayload.items || [];
@@ -696,7 +705,9 @@ export const useOrdersStore = create(
           status: 'PAID',
           kitchenStatus: resolvedKitchenStatus,
           barStatus: resolvedBarStatus,
-          items: (paidOrderBackend?.items || payloadItems).map((i, idx) => ({
+          items: (paidOrderBackend?.items || payloadItems)
+            .filter((i) => i.status !== 'CANCELLED')
+            .map((i, idx) => ({
             ...i,
             categoryName: i.categoryName || i.product?.category?.name || payloadItems[idx]?.categoryName || '',
             qty: Number(i.qty) || 1,
