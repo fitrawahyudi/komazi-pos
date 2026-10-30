@@ -596,8 +596,20 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <span className="text-xs font-semibold text-komazi-muted">Aktifkan di Kasir:</span>
+                  {formState.qrisEnabled !== false ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Aktif di Kasir
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-komazi-surface-2 text-komazi-muted border border-komazi-border">
+                      <span className="w-1.5 h-1.5 rounded-full bg-komazi-muted"></span>
+                      Nonaktif
+                    </span>
+                  )}
+
+                  <label className="flex items-center gap-2 cursor-pointer" title="Aktifkan atau nonaktifkan pembayaran QRIS pada kasir POS">
+                    <span className="text-xs font-semibold text-komazi-muted hidden sm:inline">Status Kasir:</span>
                     <div className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -626,106 +638,150 @@ export default function SettingsPage() {
                 </p>
                 <QrisUploader
                   currentImageUrl={formState.qrisImageUrl}
+                  merchantName={formState.qrisMerchantName}
+                  nmid={formState.qrisNmid}
+                  city={formState.qrisMerchantCity}
+                  postalCode={formState.qrisPostalCode}
                   onExtracted={handleQrisExtracted}
+                  onClear={() => {
+                    setFormState((prev) => ({
+                      ...prev,
+                      qrisImageUrl: '',
+                      qrisStaticString: '',
+                    }));
+                  }}
                 />
               </div>
 
               {/* Informasi Merchant QRIS */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between border-b border-komazi-border/50 pb-2">
-                  <span className="text-xs font-bold text-komazi-text">Informasi Merchant QRIS</span>
-                  <span className="text-[10px] text-komazi-muted">Terisi otomatis dari hasil upload foto</span>
+              {/* <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between border-b border-komazi-border/50 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-komazi-text">Informasi Merchant QRIS</span>
+                    <span className="text-[10px] font-semibold text-emerald-400/90 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/25">
+                      Standar EMVCo BI
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-komazi-muted hidden sm:inline">
+                    Terisi otomatis dari hasil pembacaan QRIS resmi
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      NMID:
+                    <label className="flex items-center gap-1 text-xs font-semibold text-komazi-muted mb-1">
+                      <span>NMID</span>
+                      <Lock className="w-3 h-3 text-komazi-muted/60" />
                     </label>
-                    <input
-                      type="text"
-                      value={formState.qrisNmid || ''}
-                      onChange={(e) => handleChange('qrisNmid', e.target.value)}
-                      placeholder=""
-                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formState.qrisNmid || ''}
+                        onChange={(e) => handleChange('qrisNmid', e.target.value)}
+                        placeholder="Contoh: ID102661awd0590857"
+                        className="w-full p-2.5 pr-14 rounded-xl bg-komazi-surface-2/40 border border-komazi-border text-xs text-neutral-200 focus:border-komazi-coral focus:outline-none font-mono"
+                      />
+                      <span className="absolute right-2.5 top-2.5 text-[9px] font-bold uppercase tracking-wider text-komazi-muted/70 bg-komazi-surface px-1.5 py-0.5 rounded border border-komazi-border/60">
+                        NMID
+                      </span>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Nama Merchant:
+                    <label className="flex items-center gap-1 text-xs font-semibold text-komazi-muted mb-1">
+                      <span>Nama Merchant</span>
+                      <Lock className="w-3 h-3 text-komazi-muted/60" />
                     </label>
-                    <input
-                      type="text"
-                      value={formState.qrisMerchantName || ''}
-                      onChange={(e) => handleChange('qrisMerchantName', e.target.value)}
-                      placeholder=""
-                      readOnly
-                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formState.qrisMerchantName || ''}
+                        onChange={(e) => handleChange('qrisMerchantName', e.target.value)}
+                        placeholder="Nama Toko"
+                        readOnly
+                        className="w-full p-2.5 pr-16 rounded-xl bg-komazi-surface-2/40 border border-komazi-border text-xs text-neutral-200 font-semibold cursor-default focus:outline-none"
+                      />
+                      <span className="absolute right-2.5 top-2.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        Otomatis
+                      </span>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Kota Merchant:
+                    <label className="flex items-center gap-1 text-xs font-semibold text-komazi-muted mb-1">
+                      <span>Kota Merchant</span>
+                      <Lock className="w-3 h-3 text-komazi-muted/60" />
                     </label>
-                    <input
-                      type="text"
-                      value={formState.qrisMerchantCity || ''}
-                      onChange={(e) => handleChange('qrisMerchantCity', e.target.value)}
-                      placeholder="MEDAN"
-                      readOnly
-                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none uppercase"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formState.qrisMerchantCity || ''}
+                        onChange={(e) => handleChange('qrisMerchantCity', e.target.value)}
+                        placeholder="MEDAN"
+                        readOnly
+                        className="w-full p-2.5 pr-16 rounded-xl bg-komazi-surface-2/40 border border-komazi-border text-xs text-neutral-200 font-medium cursor-default focus:outline-none uppercase"
+                      />
+                      <span className="absolute right-2.5 top-2.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        Otomatis
+                      </span>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-komazi-muted mb-1">
-                      Kode Pos:
+                    <label className="flex items-center gap-1 text-xs font-semibold text-komazi-muted mb-1">
+                      <span>Kode Pos</span>
+                      <Lock className="w-3 h-3 text-komazi-muted/60" />
                     </label>
-                    <input
-                      type="text"
-                      value={formState.qrisPostalCode || ''}
-                      onChange={(e) => handleChange('qrisPostalCode', e.target.value)}
-                      placeholder="20112"
-                      readOnly
-                      className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formState.qrisPostalCode || ''}
+                        onChange={(e) => handleChange('qrisPostalCode', e.target.value)}
+                        placeholder="20112"
+                        readOnly
+                        className="w-full p-2.5 pr-16 rounded-xl bg-komazi-surface-2/40 border border-komazi-border text-xs text-neutral-200 font-mono cursor-default focus:outline-none"
+                      />
+                      <span className="absolute right-2.5 top-2.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        Otomatis
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
 
               {/* Uji Coba Scan QRIS Dinamis */}
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border">
+              <div className="pt-2 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 p-4 rounded-xl bg-komazi-surface-2 border border-komazi-border">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-komazi-coral/15 flex items-center justify-center text-komazi-coral shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral shrink-0 border border-komazi-coral/30">
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-komazi-text block">Uji Coba Scan QRIS Dinamis</span>
-                    <span className="text-[11px] text-komazi-muted">
-                      Masukkan nominal untuk mencoba generate QRIS dan scan langsung dengan aplikasi bank atau e-wallet Anda
-                    </span>
+                    <p className="text-[11px] text-komazi-muted mt-0.5">
+                      Pilih atau ketik nominal pesanan untuk generate QRIS dan scan langsung dengan m-Banking / e-Wallet Anda
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+
                   <div className="relative w-32">
-                    <span className="absolute left-2.5 top-1.5 text-[11px] font-bold text-komazi-muted font-mono">Rp</span>
+                    <span className="absolute left-2.5 top-2 text-[11px] font-bold text-komazi-muted font-mono">Rp</span>
                     <input
                       type="number"
                       min="1000"
                       step="1000"
                       value={testAmount}
-                      onChange={(e) => setTestAmount(Number(e.target.value))}
-                      className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-xs font-bold font-mono text-komazi-text focus:border-komazi-coral outline-none"
+                      onChange={(e) => setTestAmount(Math.max(0, Number(e.target.value)))}
+                      className="w-full pl-8 pr-2 py-1.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-bold font-mono text-komazi-text focus:border-komazi-coral outline-none"
                     />
                   </div>
+
                   <button
                     type="button"
                     onClick={handleOpenTestQr}
                     disabled={isGeneratingTestQr}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
                   >
                     <Eye className="w-3.5 h-3.5" />
                     <span>{isGeneratingTestQr ? 'Memuat...' : 'Uji Scan'}</span>
@@ -1365,16 +1421,6 @@ export default function SettingsPage() {
                   ✓ Siap di-scan dengan ShopeePay, BCA, GoPay, DANA, dan semua m-Banking
                 </p>
               </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setShowQrPreviewModal(false)}
-                className="w-full py-2.5 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-xs shadow-md transition-all active:scale-95"
-              >
-                Tutup Simulasi
-              </button>
             </div>
           </div>
         </div>
