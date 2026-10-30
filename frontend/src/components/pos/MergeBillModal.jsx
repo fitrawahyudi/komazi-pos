@@ -316,7 +316,7 @@ export default function MergeBillModal({ onClose }) {
                 <span>
                   {isSubmitting
                     ? 'Menggabungkan...'
-                    : `Gabungkan ke Pesanan Aktif (${selectedIds.length})`}
+                    : `Gabungkan (${selectedIds.length})`}
                 </span>
               </button>
             </div>

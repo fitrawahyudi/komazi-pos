@@ -248,14 +248,6 @@ export default function SplitBillModal({ onClose, onProceedPayment }) {
               <Split className="w-5 h-5 text-komazi-coral" />
               <h3 className="font-bold text-base text-komazi-text">Pisah Tagihan (Split Bill)</h3>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="p-1.5 text-komazi-muted hover:text-white rounded-lg hover:bg-komazi-surface-2 transition-colors disabled:opacity-50"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
 
           {/* Mode Selector */}
@@ -284,7 +276,7 @@ export default function SplitBillModal({ onClose, onProceedPayment }) {
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>Bagi Rata (Equal Split)</span>
+              <span>Bagi Rata</span>
             </button>
           </div>
 
