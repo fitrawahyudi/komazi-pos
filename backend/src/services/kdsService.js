@@ -73,11 +73,12 @@ export function isItemForStation(item, stationType) {
   if (!stationType || stationType === 'ALL') return true;
   const stationTypeVal = item.station?.type || item.product?.station?.type;
   const stationCodeVal = item.station?.code || item.product?.station?.code;
+  const stationNameVal = (item.station?.name || item.product?.station?.name || '').toLowerCase();
 
   let isBar = false;
-  if (stationTypeVal === 'BAR' || stationCodeVal === 'BAR_MAIN') {
+  if (stationTypeVal === 'BAR' || stationCodeVal === 'BAR_MAIN' || stationNameVal.includes('bar')) {
     isBar = true;
-  } else if (stationTypeVal === 'KITCHEN' || stationCodeVal === 'KITCHEN_MAIN') {
+  } else if (stationTypeVal === 'KITCHEN' || stationCodeVal === 'KITCHEN_MAIN' || stationNameVal.includes('kitchen') || stationNameVal.includes('dapur')) {
     isBar = false;
   } else {
     isBar = isDrinkItemHelper(item);
@@ -434,6 +435,7 @@ export async function getStationOrders({ stationType, status = 'ACTIVE' }) {
               name: true,
               categoryId: true,
               stationId: true,
+              station: true,
               category: { select: { id: true, name: true } },
             },
           },

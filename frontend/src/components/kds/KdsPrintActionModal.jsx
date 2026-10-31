@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { toast } from '../../store/toastStore';
-import { formatOrderType, isDrinkItem } from '../../utils/format';
+import { formatOrderType, isDrinkItem, isBaristaItem, isKitchenItem } from '../../utils/format';
 
 /**
  * Modal Pilihan Aksi Cetak KDS/BDS
@@ -41,9 +41,8 @@ export default function KdsPrintActionModal({
   const items = order.items || [];
   // Filter item yang relevan dengan station
   const stationItems = items.filter((i) => {
-    const isDrink = i.station?.type === 'BAR' || isDrinkItem(i);
-    if (station === 'BAR') return isDrink;
-    if (station === 'KITCHEN') return !isDrink;
+    if (station === 'BAR') return isBaristaItem(i);
+    if (station === 'KITCHEN') return isKitchenItem(i);
     return true;
   });
 

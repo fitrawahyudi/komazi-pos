@@ -18,7 +18,7 @@ import {
   Filter,
   Printer,
 } from 'lucide-react';
-import { formatDateTime, formatTime, formatOrderType, isDrinkItem, isToday } from '../../utils/format';
+import { formatDateTime, formatTime, formatOrderType, isDrinkItem, isToday, isBaristaItem, isKitchenItem } from '../../utils/format';
 import Pagination from '../ui/Pagination';
 import KdsOrderDetailModal from './KdsOrderDetailModal';
 
@@ -51,8 +51,8 @@ export default function KdsHistoryTable({
       if (status === 'VOIDED' || status === 'REFUNDED') return false;
 
       const items = o.items || [];
-      const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-      const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+      const hasDrinks = items.some((i) => isBaristaItem(i));
+      const hasFood = items.some((i) => isKitchenItem(i));
 
       const barServed = (o.barStatus || 'PENDING') === 'SERVED';
       const kitchenServed = (o.kitchenStatus || 'PENDING') === 'SERVED';
@@ -261,9 +261,8 @@ export default function KdsHistoryTable({
 
                   const items = order.items || [];
                   const stationItems = items.filter((i) => {
-                    const isDrink = i.station?.type === 'BAR' || isDrinkItem(i);
-                    if (station === 'BAR') return isDrink;
-                    if (station === 'KITCHEN') return !isDrink;
+                    if (station === 'BAR') return isBaristaItem(i);
+                    if (station === 'KITCHEN') return isKitchenItem(i);
                     return true;
                   });
                   const displayItems = stationItems.length > 0 ? stationItems : items;

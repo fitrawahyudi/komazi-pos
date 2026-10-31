@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { toast } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
-import { formatOrderType, isDrinkItem } from '../utils/format';
+import { formatOrderType, isDrinkItem, isBaristaItem, isKitchenItem } from '../utils/format';
 import OrderTicket from '../components/kds/OrderTicket';
 import KdsHistoryTable from '../components/kds/KdsHistoryTable';
 import KdsPrinterModal from '../components/kds/KdsPrinterModal';
@@ -124,8 +124,8 @@ export default function KdsStandaloneScreen() {
     onOrderNew: (newOrder) => {
       // Periksa apakah pesanan relevan untuk stasiun aktif
       const items = newOrder.items || [];
-      const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-      const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+      const hasDrinks = items.some((i) => isBaristaItem(i));
+      const hasFood = items.some((i) => isKitchenItem(i));
 
       let isRelevant = true;
       if (isBarista || effectiveStation === 'BAR') {
@@ -161,9 +161,9 @@ export default function KdsStandaloneScreen() {
 
             let relevantItems = items;
             if (isBarista || effectiveStation === 'BAR') {
-              relevantItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+              relevantItems = items.filter((i) => isBaristaItem(i));
             } else if (isKitchen || effectiveStation === 'KITCHEN') {
-              relevantItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+              relevantItems = items.filter((i) => isKitchenItem(i));
             }
 
             try {
@@ -228,8 +228,8 @@ export default function KdsStandaloneScreen() {
     if (status === 'VOIDED' || status === 'REFUNDED' || status === 'SERVED') return false;
 
     const items = o.items || [];
-    const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-    const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+    const hasDrinks = items.some((i) => isBaristaItem(i));
+    const hasFood = items.some((i) => isKitchenItem(i));
 
     const barStatus = o.barStatus || 'PENDING';
     const kitchenStatus = o.kitchenStatus || 'PENDING';

@@ -128,16 +128,20 @@ export default function CartSidebar({
   const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
   const [isManualInputVisible, setIsManualInputVisible] = useState(false);
 
-  // Fetch presets on component mount
+  // Fetch presets on component mount or when discount panel is opened
   useEffect(() => {
     let isMounted = true;
     api.get('/promos/presets').then((res) => {
       if (isMounted && res?.success && Array.isArray(res.data)) {
         setPromoPresets(res.data);
+        // Jika promo preset yang sedang aktif di keranjang sudah dihapus oleh admin, bersihkan dari keranjang
+        if (appliedPromo?.isPreset && !res.data.some((p) => p.id === appliedPromo.id || p.name === appliedPromo.name)) {
+          removePromo();
+        }
       }
     }).catch(() => {});
     return () => { isMounted = false; };
-  }, []);
+  }, [isDiscountOpen]);
 
   // Fetch customers if not loaded
   useEffect(() => {
@@ -680,44 +684,38 @@ export default function CartSidebar({
             )}
 
             {/* 2. Preset Diskon Cepat (1-Klik) */}
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-komazi-muted uppercase tracking-wider mb-2">
-                <span className="flex items-center gap-1 text-amber-300">
-                  <Zap className="w-3 h-3 text-amber-400 fill-amber-400" /> Diskon
-                </span>
-                <span className="text-[10px] text-komazi-muted/70 font-normal">1-Klik Kasir</span>
+            {promoPresets && promoPresets.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between text-[11px] font-bold text-komazi-muted uppercase tracking-wider mb-2">
+                  <span className="flex items-center gap-1 text-amber-300">
+                    <Zap className="w-3 h-3 text-amber-400 fill-amber-400" /> Diskon
+                  </span>
+                  <span className="text-[10px] text-komazi-muted/70 font-normal">1-Klik Kasir</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {promoPresets.map((preset) => {
+                    const isSelected = appliedPromo?.id === preset.id || (appliedPromo?.isPreset && appliedPromo?.name === preset.name);
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(preset)}
+                        className={`p-2 rounded-xl text-left border transition-all text-xs flex flex-col justify-between cursor-pointer active:scale-98 ${
+                          isSelected
+                            ? 'bg-komazi-coral/20 border-komazi-coral text-komazi-coral-light font-bold ring-1 ring-komazi-coral/50'
+                            : 'bg-komazi-surface hover:bg-komazi-surface-3 border-komazi-border text-komazi-text'
+                        }`}
+                      >
+                        <span className="text-[11px] font-bold truncate block">{preset.shortLabel || preset.name}</span>
+                        <span className="text-[10px] text-komazi-muted mt-0.5 font-mono">
+                          {preset.type === 'PERCENT' ? `${preset.value}%` : formatRupiah(preset.value)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(promoPresets.length > 0
-                  ? promoPresets
-                  : [
-                      { id: 'p1', name: 'Diskon Karyawan 20%', shortLabel: 'Karyawan 20%', type: 'PERCENT', value: 20 },
-                      { id: 'p2', name: 'Mitra Komunitas 10%', shortLabel: 'Mitra 10%', type: 'PERCENT', value: 10 },
-                      { id: 'p3', name: 'Komplimen Minuman', shortLabel: 'Komplimen Rp25rb', type: 'NOMINAL', value: 25000 },
-                      { id: 'p4', name: 'Promo Opening', shortLabel: 'Hemat Rp10rb', type: 'NOMINAL', value: 10000 },
-                    ]
-                ).map((preset) => {
-                  const isSelected = appliedPromo?.id === preset.id || (appliedPromo?.isPreset && appliedPromo?.name === preset.name);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => handleSelectPreset(preset)}
-                      className={`p-2 rounded-xl text-left border transition-all text-xs flex flex-col justify-between cursor-pointer active:scale-98 ${
-                        isSelected
-                          ? 'bg-komazi-coral/20 border-komazi-coral text-komazi-coral-light font-bold ring-1 ring-komazi-coral/50'
-                          : 'bg-komazi-surface hover:bg-komazi-surface-3 border-komazi-border text-komazi-text'
-                      }`}
-                    >
-                      <span className="text-[11px] font-bold truncate block">{preset.shortLabel || preset.name}</span>
-                      <span className="text-[10px] text-komazi-muted mt-0.5 font-mono">
-                        {preset.type === 'PERCENT' ? `${preset.value}%` : formatRupiah(preset.value)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            )}
 
             {/* 3. Input Voucher Promo */}
             <div>
@@ -730,7 +728,7 @@ export default function CartSidebar({
                   value={voucherInput}
                   onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
                   onFocus={scrollInputIntoViewOnFocus}
-                  placeholder="KODE VOUCHER (MISAL: KOMAZI10)"
+                  placeholder="KODE VOUCHER"
                   className="flex-1 rounded-xl bg-komazi-surface border border-komazi-border px-3 py-1.5 text-xs text-komazi-text font-mono uppercase tracking-wider focus:border-komazi-coral outline-none"
                 />
                 <button

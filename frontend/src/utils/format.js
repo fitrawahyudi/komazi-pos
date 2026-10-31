@@ -164,8 +164,8 @@ export function isDrinkItem(item) {
  * Prioritizes:
  * 1. Direct station object/type on item (item.station?.type || item.stationType)
  * 2. Direct stationId matching known stations
- * 3. Product catalog lookup via productId (posStore or custom products list)
- * 4. Comprehensive category and keyword detection
+ * 3. Product catalog lookup via productId or product name (posStore or custom products list)
+ * 4. Default keyword detection as fallback only if no station is configured
  */
 export function resolveItemStation(item, options = {}) {
   if (!item) return 'KITCHEN';
@@ -178,8 +178,16 @@ export function resolveItemStation(item, options = {}) {
   if (directCode === 'BAR_MAIN') return 'BAR';
   if (directCode === 'KITCHEN_MAIN') return 'KITCHEN';
 
-  const stations = options.stations || [];
-  const products = options.products || [];
+  const stationName = (item.station?.name || item.stationName || item.product?.station?.name || '').toLowerCase();
+  if (stationName.includes('bar') || stationName.includes('barista')) return 'BAR';
+  if (stationName.includes('kitchen') || stationName.includes('dapur')) return 'KITCHEN';
+
+  const stations = (options.stations && options.stations.length > 0)
+    ? options.stations
+    : (typeof globalThis !== 'undefined' ? (globalThis.__KOMAZI_STATIONS__ || []) : []);
+  const products = (options.products && options.products.length > 0)
+    ? options.products
+    : (typeof globalThis !== 'undefined' ? (globalThis.__KOMAZI_PRODUCTS__ || []) : []);
 
   // 2. Station by stationId on item
   const directStationId = item.stationId || item.product?.stationId;
@@ -188,21 +196,30 @@ export function resolveItemStation(item, options = {}) {
     if (matched?.type) return matched.type;
   }
 
-  // 3. Product catalog lookup if productId exists
+  // 3. Product catalog lookup via productId or product name
   const prodId = item.productId || item.product?.id || item.id;
-  if (prodId && products.length > 0) {
-    const prod = products.find((p) => Number(p.id) === Number(prodId));
+  const itemName = (item.productName || item.name || '').trim().toLowerCase();
+  if (products.length > 0) {
+    const prod = products.find((p) =>
+      (prodId && Number(p.id) === Number(prodId)) ||
+      (itemName && p.name && p.name.trim().toLowerCase() === itemName)
+    );
     if (prod) {
       if (prod.station?.type) return prod.station.type;
       if (prod.stationId && stations.length > 0) {
         const matched = stations.find((s) => Number(s.id) === Number(prod.stationId));
         if (matched?.type) return matched.type;
       }
+      // If product has explicit station property object or name
+      const pStationName = (prod.station?.name || '').toLowerCase();
+      if (pStationName.includes('bar') || pStationName.includes('barista')) return 'BAR';
+      if (pStationName.includes('kitchen') || pStationName.includes('dapur')) return 'KITCHEN';
+
       if (isDrinkItem(prod)) return 'BAR';
     }
   }
 
-  // 4. Default heuristic check
+  // 4. Default heuristic check (hanya jika produk sama sekali belum memiliki stasiun)
   return isDrinkItem(item) ? 'BAR' : 'KITCHEN';
 }
 

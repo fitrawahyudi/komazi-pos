@@ -136,7 +136,7 @@ export const useCartStore = create(
             imageUrl: product.imageUrl,
             categoryName: product.categoryName,
             stationId: product.stationId || product.station?.id || null,
-            station: product.station || null,
+            station: product.station || (product.stationId && usePosStore.getState().stations?.find((s) => Number(s.id) === Number(product.stationId))) || null,
             variant: selectedVariant,
             modifiers: selectedModifiers,
             unitPrice,
@@ -317,11 +317,15 @@ export const useCartStore = create(
           return acc;
         }, {});
 
-        // Pastikan nama produk & kategori terisi lengkap untuk stasiun KDS & Bar
+        // Pastikan nama produk, kategori & stasiun KDS terisi lengkap
         const mappedItems = openBill.items.map((i) => {
           const prod = productsMap[i.productId];
+          const resolvedStationId = i.stationId || prod?.stationId || prod?.station?.id || null;
+          const resolvedStation = i.station || prod?.station || (resolvedStationId && usePosStore.getState().stations?.find((s) => Number(s.id) === Number(resolvedStationId))) || null;
           return {
             productId: i.productId,
+            stationId: resolvedStationId,
+            station: resolvedStation,
             productName: i.name || prod?.name || 'Item',
             name: i.name || prod?.name || 'Item',
             categoryName: i.categoryName || prod?.categoryName || prod?.category?.name || null,

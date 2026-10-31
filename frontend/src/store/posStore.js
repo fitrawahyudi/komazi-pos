@@ -20,6 +20,7 @@ export const usePosStore = create(
           const res = await api.stations.getAll();
           if (res && res.success && Array.isArray(res.data)) {
             set({ stations: res.data });
+            if (typeof globalThis !== 'undefined') globalThis.__KOMAZI_STATIONS__ = res.data;
             return res.data;
           }
         } catch (err) {
@@ -72,6 +73,7 @@ export const usePosStore = create(
               })),
             }));
             set({ products: formatted, isLoading: false });
+            if (typeof globalThis !== 'undefined') globalThis.__KOMAZI_PRODUCTS__ = formatted;
             return formatted;
           }
         } catch (err) {
@@ -116,9 +118,11 @@ export const usePosStore = create(
                 extraPrice: Number(v.extraPrice) || 0,
               })),
             };
-            set((state) => ({
-              products: [formatted, ...state.products],
-            }));
+            set((state) => {
+              const updated = [formatted, ...state.products];
+              if (typeof globalThis !== 'undefined') globalThis.__KOMAZI_PRODUCTS__ = updated;
+              return { products: updated };
+            });
             return formatted;
           }
           return res || { success: false, message: 'Gagal membuat produk' };
@@ -143,9 +147,11 @@ export const usePosStore = create(
                 extraPrice: Number(v.extraPrice) || 0,
               })),
             };
-            set((state) => ({
-              products: state.products.map((p) => (p.id === id ? formatted : p)),
-            }));
+            set((state) => {
+              const updated = state.products.map((p) => (p.id === id ? formatted : p));
+              if (typeof globalThis !== 'undefined') globalThis.__KOMAZI_PRODUCTS__ = updated;
+              return { products: updated };
+            });
             return formatted;
           }
           return res || { success: false, message: 'Gagal memperbarui produk' };

@@ -740,52 +740,62 @@ export default function PromosPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {presets.map((preset) => (
-              <div
-                key={preset.id}
-                className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border/80 space-y-3 flex flex-col justify-between"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-bold text-sm text-komazi-text">{preset.name}</h3>
-                    <span className="inline-block px-2 py-0.5 rounded-md bg-komazi-teal/15 text-komazi-teal-light text-[10px] font-bold font-mono mt-1">
-                      Label Kasir: "{preset.shortLabel || preset.name}"
+          {presets.length === 0 ? (
+            <div className="p-12 rounded-2xl bg-komazi-surface border border-komazi-border text-center space-y-3">
+              <Zap className="w-10 h-10 text-komazi-muted mx-auto stroke-1" />
+              <p className="text-sm font-bold text-komazi-text">Belum ada preset diskon kasir</p>
+              <p className="text-xs text-komazi-muted">
+                Semua preset telah dihapus. Klik tombol "+ Tambah Preset Baru" di atas untuk membuat preset diskon cepat kasir.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {presets.map((preset) => (
+                <div
+                  key={preset.id}
+                  className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border/80 space-y-3 flex flex-col justify-between"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-sm text-komazi-text">{preset.name}</h3>
+                      <span className="inline-block px-2 py-0.5 rounded-md bg-komazi-teal/15 text-komazi-teal-light text-[10px] font-bold font-mono mt-1">
+                        Label Kasir: "{preset.shortLabel || preset.name}"
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-xl bg-komazi-coral/15 text-komazi-coral font-bold font-mono text-xs">
+                      {preset.type === 'PERCENT' ? `${preset.value}%` : formatRupiah(preset.value)}
                     </span>
                   </div>
-                  <span className="px-2.5 py-1 rounded-xl bg-komazi-coral/15 text-komazi-coral font-bold font-mono text-xs">
-                    {preset.type === 'PERCENT' ? `${preset.value}%` : formatRupiah(preset.value)}
-                  </span>
-                </div>
 
-                <p className="text-xs text-komazi-muted">
-                  {preset.description || 'Tidak ada catatan deskripsi.'}
-                </p>
+                  <p className="text-xs text-komazi-muted">
+                    {preset.description || 'Tidak ada catatan deskripsi.'}
+                  </p>
 
-                <div className="flex items-center justify-between pt-2 border-t border-komazi-border/60 text-xs">
-                  <span className="text-[11px] text-komazi-muted">Tipe: {preset.type === 'PERCENT' ? 'Persentase' : 'Nominal Tetap'}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenPresetModal(preset)}
-                      className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors cursor-pointer"
-                      title="Edit Preset"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setItemToDelete({ type: 'preset', data: preset })}
-                      className="p-1.5 rounded-lg text-komazi-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title="Hapus Preset"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="flex items-center justify-between pt-2 border-t border-komazi-border/60 text-xs">
+                    <span className="text-[11px] text-komazi-muted">Tipe: {preset.type === 'PERCENT' ? 'Persentase' : 'Nominal Tetap'}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPresetModal(preset)}
+                        className="p-1.5 rounded-lg text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors cursor-pointer"
+                        title="Edit Preset"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setItemToDelete({ type: 'preset', data: preset })}
+                        className="p-1.5 rounded-lg text-komazi-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        title="Hapus Preset"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

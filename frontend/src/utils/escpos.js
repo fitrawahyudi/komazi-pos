@@ -325,9 +325,10 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
   }
 
   const isMerchantCopy = Boolean(options.isMerchantCopy || order.isMerchantCopy);
+  const isBillCheck = Boolean(options.isBillCheck || order.isBillCheck);
 
-  if (order.isBillCheck) {
-    encoder.bold(true).line('*** TAGIHAN SEMENTARA (BILL) ***').bold(false);
+  if (isBillCheck) {
+    encoder.bold(true).line('*** TAGIHAN SEMENTARA ***').bold(false);
   } else if (isMerchantCopy) {
     encoder
       .align('center')
@@ -340,7 +341,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     .divider(paperWidth)
     .align('left');
 
-  if (order.isBillCheck) {
+  if (isBillCheck) {
     encoder.twoColumns('Status:', 'BELUM LUNAS', paperWidth);
   }
 
@@ -412,7 +413,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     .divider(paperWidth)
     .twoColumns('Metode Pembayaran:', displayPaymentMethod, paperWidth);
 
-  if (cashReceived) {
+  if (!isBillCheck && cashReceived) {
     encoder.twoColumns('Bayar Tunai:', formatRupiah(cashReceived), paperWidth);
     encoder.bold(true);
     encoder.twoColumns('Kembalian:', formatRupiah(cashChange || 0), paperWidth);

@@ -154,12 +154,16 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
         invoiceNo: sessionInvoiceNo,
         createdAt: new Date().toISOString(),
         status: 'OPEN',
+        isBillCheck: true,
         cashierName: typeof user?.name === 'string' ? user.name : 'Kasir',
         type: orderType || 'DINE_IN',
         orderType: orderType || 'DINE_IN',
         tableNo: orderType === 'DINE_IN' ? tableNo : null,
         customerName: customerName || null,
         items: items.map((i) => ({
+          productId: i.productId || i.id,
+          stationId: i.stationId || i.station?.id || null,
+          station: i.station || null,
           name: i.name || i.productName || 'Item',
           productName: i.name || i.productName || 'Item',
           variantName: i.variant?.name || i.variantName || null,
@@ -201,14 +205,15 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
 
       const printerState = usePrinterStore.getState();
       if (printerState.isConnected) {
-        toast.info('Mencetak struk ke printer...');
+        toast.info('Mencetak struk tagihan ke printer...');
         const res = await printerState.printReceiptForOrder(billOrder, {
           requestedBy: typeof user?.name === 'string' ? user.name : 'Kasir',
           showQris: method === 'QRIS',
           storeSettings: settings,
+          isBillCheck: true,
         });
         if (res.success) {
-          toast.success('Struk berhasil dicetak!');
+          toast.success('Struk tagihan berhasil dicetak!');
         } else {
           toast.warning('Printer offline, membuka pratinjau struk...');
           setBillReceiptToPreview(billOrder);
@@ -849,7 +854,7 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
             title="Cetak struk tagihan (Bill) dahulu sebelum konfirmasi pembayaran"
           >
             <Printer className="w-4 h-4 text-komazi-coral" />
-            {/* <span>{isPrintingBill ? 'Mencetak...' : 'Cetak Struk'}</span> */}
+            <span className="hidden sm:inline">{isPrintingBill ? 'Mencetak...' : 'Cetak Bill'}</span>
           </button>
 
           <LoadingButton

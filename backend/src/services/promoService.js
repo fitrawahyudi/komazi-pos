@@ -103,26 +103,30 @@ function formatRp(num) {
  * Mengambil daftar preset diskon kasir
  */
 export async function getPromoPresets() {
-  if (memoryPresets) return memoryPresets;
+  if (memoryPresets !== null && memoryPresets !== undefined) return memoryPresets;
 
   try {
     const record = await prisma.setting.findUnique({
       where: { key: SETTING_PRESETS_KEY },
     });
 
-    if (record && record.value) {
-      try {
-        const parsed = JSON.parse(record.value);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          memoryPresets = parsed;
-          return memoryPresets;
+    if (record) {
+      if (record.value !== null && record.value !== undefined) {
+        try {
+          const parsed = JSON.parse(record.value);
+          if (Array.isArray(parsed)) {
+            memoryPresets = parsed;
+            return memoryPresets;
+          }
+        } catch (e) {
+          console.warn('[PromoService] Gagal parse JSON presets dari DB:', e.message);
         }
-      } catch (e) {
-        console.warn('[PromoService] Gagal parse JSON presets dari DB, gunakan default:', e.message);
       }
+      memoryPresets = [];
+      return memoryPresets;
     }
 
-    // Seed default presets jika belum ada
+    // Seed default presets HANYA jika setting record belum pernah ada sama sekali di database
     memoryPresets = [...DEFAULT_PROMO_PRESETS];
     await prisma.setting.upsert({
       where: { key: SETTING_PRESETS_KEY },
@@ -133,7 +137,7 @@ export async function getPromoPresets() {
     return memoryPresets;
   } catch (err) {
     console.warn('[PromoService] Database unreachable, fallback to memory presets:', err.message);
-    return memoryPresets || DEFAULT_PROMO_PRESETS;
+    return memoryPresets !== null && memoryPresets !== undefined ? memoryPresets : DEFAULT_PROMO_PRESETS;
   }
 }
 
@@ -162,26 +166,30 @@ export async function savePromoPresets(presets) {
  * Mengambil seluruh daftar voucher promo
  */
 export async function getPromoVouchers() {
-  if (memoryVouchers) return memoryVouchers;
+  if (memoryVouchers !== null && memoryVouchers !== undefined) return memoryVouchers;
 
   try {
     const record = await prisma.setting.findUnique({
       where: { key: SETTING_VOUCHERS_KEY },
     });
 
-    if (record && record.value) {
-      try {
-        const parsed = JSON.parse(record.value);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          memoryVouchers = parsed;
-          return memoryVouchers;
+    if (record) {
+      if (record.value !== null && record.value !== undefined) {
+        try {
+          const parsed = JSON.parse(record.value);
+          if (Array.isArray(parsed)) {
+            memoryVouchers = parsed;
+            return memoryVouchers;
+          }
+        } catch (e) {
+          console.warn('[PromoService] Gagal parse JSON vouchers dari DB:', e.message);
         }
-      } catch (e) {
-        console.warn('[PromoService] Gagal parse JSON vouchers dari DB, gunakan default:', e.message);
       }
+      memoryVouchers = [];
+      return memoryVouchers;
     }
 
-    // Seed default vouchers jika belum ada
+    // Seed default vouchers HANYA jika setting record belum pernah ada sama sekali di database
     memoryVouchers = [...DEFAULT_VOUCHERS];
     await prisma.setting.upsert({
       where: { key: SETTING_VOUCHERS_KEY },
@@ -192,7 +200,7 @@ export async function getPromoVouchers() {
     return memoryVouchers;
   } catch (err) {
     console.warn('[PromoService] Database unreachable, fallback to memory vouchers:', err.message);
-    return memoryVouchers || DEFAULT_VOUCHERS;
+    return memoryVouchers !== null && memoryVouchers !== undefined ? memoryVouchers : DEFAULT_VOUCHERS;
   }
 }
 

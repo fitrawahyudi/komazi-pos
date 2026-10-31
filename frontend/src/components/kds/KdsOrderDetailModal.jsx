@@ -13,7 +13,7 @@ import {
   Receipt,
   Printer,
 } from 'lucide-react';
-import { formatDateTime, formatTime, formatOrderType, isDrinkItem } from '../../utils/format';
+import { formatDateTime, formatTime, formatOrderType, isDrinkItem, isBaristaItem, isKitchenItem } from '../../utils/format';
 
 /**
  * Modal detail pesanan riwayat KDS/BDS
@@ -35,8 +35,8 @@ export default function KdsOrderDetailModal({
   const tableOrCust = order.tableNo || order.tableNumber ? `Meja ${order.tableNo || order.tableNumber}` : order.customerName || 'Pelanggan';
 
   // Pisahkan item berdasarkan stasiun jika relevan
-  const drinkItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-  const foodItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+  const drinkItems = items.filter((i) => isBaristaItem(i));
+  const foodItems = items.filter((i) => isKitchenItem(i));
 
   return (
     <div
@@ -131,7 +131,7 @@ export default function KdsOrderDetailModal({
 
           <div className="space-y-2">
             {items.map((item, idx) => {
-              const isDrink = item.station?.type === 'BAR' || isDrinkItem(item);
+              const isDrink = isBaristaItem(item);
               const qty = Number(item.qty || item.quantity) || 1;
               const name = item.productName || item.name || item.product?.name || 'Item';
 

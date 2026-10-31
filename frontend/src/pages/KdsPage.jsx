@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { useKdsSocket } from '../hooks/useKdsSocket';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { playKitchenChime } from '../utils/audio';
-import { formatDateTime, formatOrderType, isDrinkItem } from '../utils/format';
+import { formatDateTime, formatOrderType, isDrinkItem, isBaristaItem, isKitchenItem } from '../utils/format';
 import {
   ChefHat,
   Coffee,
@@ -70,10 +70,10 @@ function StationPanel({
   const stationOrders = orders.filter((order) => {
     const items = order.items || [];
     if (station === 'BAR') {
-      return items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+      return items.some((i) => isBaristaItem(i));
     }
     if (station === 'KITCHEN') {
-      return items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+      return items.some((i) => isKitchenItem(i));
     }
     return true;
   });
@@ -230,8 +230,8 @@ export default function KdsPage() {
     onOrderNew: (newOrder) => {
       // Periksa relevansi pesanan dengan station KDS aktif
       const items = newOrder.items || [];
-      const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-      const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+      const hasDrinks = items.some((i) => isBaristaItem(i));
+      const hasFood = items.some((i) => isKitchenItem(i));
 
       let isRelevant = true;
       if (isBarista || effectiveViewMode === 'BAR') {
@@ -267,9 +267,9 @@ export default function KdsPage() {
 
             let relevantItems = items;
             if (isBarista || effectiveViewMode === 'BAR') {
-              relevantItems = items.filter((i) => i.station?.type === 'BAR' || isDrinkItem(i));
+              relevantItems = items.filter((i) => isBaristaItem(i));
             } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
-              relevantItems = items.filter((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+              relevantItems = items.filter((i) => isKitchenItem(i));
             }
 
             try {
@@ -426,10 +426,10 @@ export default function KdsPage() {
       if (s === 'VOIDED' || s === 'REFUNDED') return false;
       const items = o.items || [];
       const barActive =
-        items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i)) &&
+        items.some((i) => isBaristaItem(i)) &&
         (o.barStatus || 'PENDING') !== 'SERVED';
       const kitchenActive =
-        items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i))) &&
+        items.some((i) => isKitchenItem(i)) &&
         (o.kitchenStatus || 'PENDING') !== 'SERVED';
 
       if (isBarista || effectiveViewMode === 'BAR') return barActive;
@@ -475,7 +475,7 @@ export default function KdsPage() {
     activeOrdersAll.forEach((order) => {
       const items = order.items || [];
       items.forEach((item) => {
-        const isDrink = item.station?.type === 'BAR' || isDrinkItem(item);
+        const isDrink = isBaristaItem(item);
         if (isBarista || effectiveViewMode === 'BAR') {
           if (!isDrink) return;
         } else if (isKitchen || effectiveViewMode === 'KITCHEN') {
@@ -526,8 +526,8 @@ export default function KdsPage() {
         if (status === 'VOIDED' || status === 'REFUNDED') return false;
 
         const items = o.items || [];
-        const hasDrinks = items.some((i) => i.station?.type === 'BAR' || isDrinkItem(i));
-        const hasFood = items.some((i) => !(i.station?.type === 'BAR' || isDrinkItem(i)));
+        const hasDrinks = items.some((i) => isBaristaItem(i));
+        const hasFood = items.some((i) => isKitchenItem(i));
 
         const barStatus = o.barStatus || 'PENDING';
         const kitchenStatus = o.kitchenStatus || 'PENDING';
@@ -1303,9 +1303,8 @@ export default function KdsPage() {
                   const stationFilterMode = isBarista ? 'BAR' : isKitchen ? 'KITCHEN' : effectiveViewMode;
                   const hasItems = (order.items || []).some((item) => {
                     if (stationFilterMode === 'ALL') return true;
-                    const isBar = item.station?.type === 'BAR' || isDrinkItem(item);
-                    if (stationFilterMode === 'BAR') return isBar;
-                    if (stationFilterMode === 'KITCHEN') return !isBar;
+                    if (stationFilterMode === 'BAR') return isBaristaItem(item);
+                    if (stationFilterMode === 'KITCHEN') return isKitchenItem(item);
                     return true;
                   });
                   if (!hasItems) return null;

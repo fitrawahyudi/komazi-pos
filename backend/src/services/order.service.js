@@ -91,7 +91,7 @@ export const orderService = {
         where: { id: item.productId },
         include: { category: true, station: true },
       });
-      const stationId = await resolveStationId(product);
+      const stationId = item.stationId ? parseInt(item.stationId) : await resolveStationId(product);
 
       let unitCost = 0;
       try {
@@ -154,7 +154,7 @@ export const orderService = {
             include: {
               station: true,
               product: {
-                select: { id: true, name: true, categoryId: true, stationId: true },
+                select: { id: true, name: true, categoryId: true, stationId: true, station: true },
               },
             },
           },

@@ -11,7 +11,7 @@ import {
   Eye,
   Printer,
 } from 'lucide-react';
-import { formatOrderType, isDrinkItem, formatTime } from '../../utils/format';
+import { formatOrderType, isDrinkItem, formatTime, isBaristaItem, isKitchenItem } from '../../utils/format';
 
 /**
  * Reusable KDS / BDS Order Ticket Component
@@ -49,9 +49,8 @@ export default function OrderTicket({
   // Filter items sesuai station
   const displayedItems = (order.items || []).filter((item) => {
     if (station === 'ALL') return true;
-    const isDrink = item.station?.type === 'BAR' || isDrinkItem(item);
-    if (station === 'BAR') return isDrink;
-    if (station === 'KITCHEN') return !isDrink;
+    if (station === 'BAR') return isBaristaItem(item);
+    if (station === 'KITCHEN') return isKitchenItem(item);
     return true;
   });
 

@@ -550,7 +550,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
 
                   {order.isBillCheck && !isKitchenStationTicket ? (
                     <div className="font-bold text-[10px] text-neutral-950 tracking-wider uppercase my-1">
-                      *** TAGIHAN SEMENTARA (BILL) ***
+                      *** TAGIHAN SEMENTARA ***
                     </div>
                   ) : receiptType === 'merchant' ? (
                     <div className="font-bold text-[10px] text-neutral-950 tracking-wider uppercase my-1 bg-neutral-100 py-1 border-y border-dashed border-neutral-400">
@@ -758,7 +758,7 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                         <span className="font-bold text-neutral-950">{displayPaymentMethod}</span>
                       </div>
 
-                      {cashReceived ? (
+                      {!order?.isBillCheck && cashReceived ? (
                         <>
                           <div className="flex justify-between text-neutral-800">
                             <span>Bayar Tunai:</span>

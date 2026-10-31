@@ -62,7 +62,7 @@ async function prepareOrderItems(items = [], orderId = null) {
     itemsSubtotal += lineTotal;
 
     const product = productMap.get(item.productId);
-    const stationId = await resolveStationId(product);
+    const stationId = item.stationId ? parseInt(item.stationId) : await resolveStationId(product);
 
     const cogsKey = `${item.productId}_${item.variantName || ''}`;
     let unitCost = 0;
@@ -113,10 +113,12 @@ function formatOrderForResponse(order, canViewCost) {
     sanitized.items = sanitized.items.filter((item) => item.status !== 'CANCELLED').map((item) => {
       const categoryName = item.product?.category?.name || item.categoryName || null;
       const { unitCost, lineCost, product, ...rest } = item;
+      const resolvedStation = item.station || product?.station || null;
+      const resolvedStationId = item.stationId || product?.stationId || resolvedStation?.id || null;
       if (canViewCost) {
-        return { ...rest, unitCost, lineCost, categoryName };
+        return { ...rest, unitCost, lineCost, categoryName, station: resolvedStation, stationId: resolvedStationId };
       }
-      return { ...rest, categoryName };
+      return { ...rest, categoryName, station: resolvedStation, stationId: resolvedStationId };
     });
   }
   return sanitized;
