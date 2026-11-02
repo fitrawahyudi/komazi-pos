@@ -138,9 +138,20 @@ export default function ReceiptPreviewCard() {
           >
             {/* Store Header */}
             <div className="text-center space-y-1 mb-3">
-              <h3 className="text-base font-black tracking-wider uppercase font-sans">
-                {storeName}
-              </h3>
+              {settings?.receiptShowLogo !== false && (
+                <div className="flex justify-center mb-1.5">
+                  <img
+                    src={settings?.receiptLogoUrl || '/komazi-logo-transparent.png'}
+                    alt="Logo Komazi"
+                    className="h-10 sm:h-11 w-auto object-contain max-w-[170px] grayscale contrast-125"
+                  />
+                </div>
+              )}
+              {settings?.receiptShowStoreName !== false && (
+                <h3 className="text-base font-black tracking-wider uppercase font-sans">
+                  {storeName}
+                </h3>
+              )}
               {tagline && tagline.trim() ? <p className="text-[10px] text-neutral-600">{tagline.trim()}</p> : null}
               {address && address.trim() ? <p className="text-[10px] text-neutral-600">{address.trim()}</p> : null}
               {phone && phone.trim() ? <p className="text-[10px] text-neutral-600">Telp: {phone.trim()}</p> : null}

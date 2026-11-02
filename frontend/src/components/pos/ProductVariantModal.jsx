@@ -3,14 +3,31 @@ import { formatRupiah, getProductInitials, getProductColor } from '../../utils/f
 import { X, Check, Plus, MessageSquare } from 'lucide-react';
 import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 
-export default function ProductVariantModal({ product, onClose, onAddToCart }) {
+export default function ProductVariantModal({
+  product,
+  onClose,
+  onAddToCart,
+  initialVariant = null,
+  initialModifiers = [],
+  initialNote = '',
+  isEditMode = false,
+  onSave = null,
+}) {
   const [imageError, setImageError] = useState(false);
   const hasVariants = product.variants && product.variants.length > 0;
-  const [selectedVariant, setSelectedVariant] = useState(
-    hasVariants ? product.variants[0] : null
-  );
-  const [selectedModifiers, setSelectedModifiers] = useState([]);
-  const [note, setNote] = useState('');
+  const [selectedVariant, setSelectedVariant] = useState(() => {
+    if (initialVariant) {
+      return product.variants?.find((v) => v.id === initialVariant.id) || initialVariant;
+    }
+    return hasVariants ? product.variants[0] : null;
+  });
+  const [selectedModifiers, setSelectedModifiers] = useState(() => {
+    if (Array.isArray(initialModifiers) && initialModifiers.length > 0) {
+      return initialModifiers;
+    }
+    return [];
+  });
+  const [note, setNote] = useState(initialNote || '');
 
   const initials = useMemo(() => getProductInitials(product.name), [product.name]);
   const colorScheme = useMemo(() => getProductColor(product.name), [product.name]);
@@ -24,13 +41,20 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
     }
   };
 
+  const basePrice = product.baseCustomPrice !== null && product.baseCustomPrice !== undefined
+    ? Number(product.baseCustomPrice)
+    : Number(product.price);
   const variantExtra = selectedVariant ? Number(selectedVariant.extraPrice || 0) : 0;
   const modifiersTotal = selectedModifiers.reduce((sum, m) => sum + Number(m.price || 0), 0);
-  const calculatedUnitPrice = Number(product.price) + variantExtra + modifiersTotal;
+  const calculatedUnitPrice = basePrice + variantExtra + modifiersTotal;
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    onAddToCart(product, selectedVariant, selectedModifiers, note);
+    if (e && e.preventDefault) e.preventDefault();
+    if (isEditMode && onSave) {
+      onSave(selectedVariant, selectedModifiers, note);
+    } else if (onAddToCart) {
+      onAddToCart(product, selectedVariant, selectedModifiers, note);
+    }
     onClose();
   };
 
@@ -60,9 +84,11 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
               </div>
             )}
             <div>
-              <h2 className="font-bold text-base text-komazi-text">{product.name}</h2>
+              <h2 className="font-bold text-base text-komazi-text">
+                {isEditMode ? `Ubah Opsi: ${product.name}` : product.name}
+              </h2>
               <span className="text-xs font-semibold text-komazi-coral">
-                {product.categoryName} • Base: {formatRupiah(product.price)}
+                {product.categoryName ? `${product.categoryName} • ` : ''}Base: {formatRupiah(basePrice)}
               </span>
             </div>
           </div>
@@ -190,10 +216,19 @@ export default function ProductVariantModal({ product, onClose, onAddToCart }) {
           <button
             type="button"
             onClick={handleSubmit}
-            className="flex items-center gap-2 px-6 py-2.5 min-h-[44px] rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-sm shadow-md transition-all active:scale-95"
+            className="flex items-center gap-2 px-6 py-2.5 min-h-[44px] rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Tambah ke Pesanan</span>
+            {isEditMode ? (
+              <>
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Simpan Perubahan</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Tambah ke Pesanan</span>
+              </>
+            )}
           </button>
         </div>
       </div>

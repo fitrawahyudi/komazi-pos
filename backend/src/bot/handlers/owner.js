@@ -125,6 +125,7 @@ export function registerOwner(bot) {
       .text('7 Hari Terakhir', 'rep_per:7d')
       .text('Bulan Ini', 'rep_per:month')
       .row()
+      .text('Bulan Lalu', 'rep_per:last_month')
       .text('📅 Tanggal Kustom', 'rep_action:custom_prompt');
 
     return ctx.reply(
@@ -140,7 +141,7 @@ export function registerOwner(bot) {
     );
   });
 
-  bot.callbackQuery(/^rep_per:(today|yesterday|7d|month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
+  bot.callbackQuery(/^rep_per:(today|yesterday|7d|month|last_month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const period = ctx.match[1];
     await ctx.answerCallbackQuery();
 
@@ -154,6 +155,7 @@ export function registerOwner(bot) {
           yesterday: 'Kemarin',
           '7d': '7 Hari Terakhir',
           month: 'Bulan Ini',
+          last_month: 'Bulan Lalu',
         };
 
         return sendSalesReportResponse(ctx, summary, periodLabels[period] || period);
@@ -173,6 +175,7 @@ export function registerOwner(bot) {
       yesterday: 'Kemarin',
       '7d': '7 Hari Terakhir',
       month: 'Bulan Ini',
+      last_month: 'Bulan Lalu',
     };
     const label = periodLabels[period] || period;
     const s = report.summary;
@@ -207,7 +210,9 @@ Status Keuangan: ${statusIcon}
       .text(period === 'yesterday' ? '• Kemarin •' : 'Kemarin', 'profit_per:yesterday')
       .row()
       .text(period === '7d' ? '• 7 Hari •' : '7 Hari', 'profit_per:7d')
-      .text(period === 'month' ? '• Bulan Ini •' : 'Bulan Ini', 'profit_per:month');
+      .text(period === 'month' ? '• Bulan Ini •' : 'Bulan Ini', 'profit_per:month')
+      .row()
+      .text(period === 'last_month' ? '• Bulan Lalu •' : 'Bulan Lalu', 'profit_per:last_month');
 
     return { caption, kb };
   }
@@ -229,7 +234,7 @@ Status Keuangan: ${statusIcon}
     );
   });
 
-  bot.callbackQuery(/^profit_per:(today|yesterday|7d|month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
+  bot.callbackQuery(/^profit_per:(today|yesterday|7d|month|last_month)$/, requireRole('OWNER', 'MANAGER'), async (ctx) => {
     const period = ctx.match[1];
     await ctx.answerCallbackQuery().catch(() => { });
 

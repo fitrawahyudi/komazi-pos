@@ -33,9 +33,9 @@ export function calculateCrc16(str = '') {
  */
 export function parseQrisTlv(payload = '') {
   let str = String(payload || '').trim();
-  // Strip trailing CRC (Tag 63) if present
-  const crcIndex = str.indexOf('6304');
-  if (crcIndex !== -1) {
+  // Strip trailing CRC (Tag 63) if present at end of string
+  const crcIndex = str.lastIndexOf('6304');
+  if (crcIndex !== -1 && crcIndex >= str.length - 10) {
     str = str.substring(0, crcIndex);
   }
 
@@ -176,50 +176,75 @@ export function convertStaticToDynamicQris(staticStr, amount, invoiceOrOptions =
     return baseStr;
   }
 
-  // 1. Strip trailing CRC16 tag (6304 + 4 hex chars at end of string)
-  let cleanPayload = baseStr;
-  const crcIdx = cleanPayload.lastIndexOf('6304');
-  if (crcIdx !== -1 && crcIdx >= cleanPayload.length - 8) {
-    cleanPayload = cleanPayload.substring(0, crcIdx);
-  } else if (cleanPayload.length > 4) {
-    cleanPayload = cleanPayload.slice(0, -4);
+  // Parse payload into structured EMVCo TLV tags
+  let tags = parseQrisTlv(baseStr);
+  if (!tags || tags.length === 0) {
+    return baseStr;
   }
+
+  // 1. Remove existing Tag 54 (Amount) and Tag 63 (CRC) to ensure idempotency
+  tags = tags.filter((t) => t.tag !== '54' && t.tag !== '63');
 
   // 2. Adjust Point of Initiation Method (Tag 01)
-  if (mode === 'dynamic') {
-    cleanPayload = cleanPayload.replace('010211', '010212');
+  // '11' = Static (recommended for UMKM compatibility across BCA, ShopeePay, GoPay, DANA)
+  // '12' = Dynamic (only for enterprise Payment Gateway)
+  const tag01 = tags.find((t) => t.tag === '01');
+  if (tag01) {
+    tag01.val = mode === 'dynamic' ? '12' : '11';
   } else {
-    // Mode 'compatible': preserve 010211 (Static mode with Tag 54 amount injection)
-    cleanPayload = cleanPayload.replace('010212', '010211');
+    tags.unshift({ tag: '01', val: mode === 'dynamic' ? '12' : '11' });
   }
 
-  // 3. Remove existing Tag 54 (Amount) if present to prevent duplication
-  cleanPayload = cleanPayload.replace(/54\d{2}\d+/, '');
+  // Ensure Tag 00 (Format Indicator) is always first
+  const tag00Idx = tags.findIndex((t) => t.tag === '00');
+  if (tag00Idx > 0) {
+    const [tag00] = tags.splice(tag00Idx, 1);
+    tags.unshift(tag00);
+  } else if (tag00Idx === -1) {
+    tags.unshift({ tag: '00', val: '01' });
+  }
 
-  // 4. Inject Tag 54 (Amount) right before marker 5802ID (Country Code ID)
+  // 3. Inject Tag 54 (Transaction Amount) if amount > 0
   const numericAmount = Math.max(0, Math.round(Number(amount) || 0));
   if (numericAmount > 0) {
-    const amtStr = numericAmount.toString();
-    const tag54 = `54${amtStr.length.toString().padStart(2, '0')}${amtStr}`;
-    const idx58 = cleanPayload.indexOf('5802ID');
+    const amtTag = { tag: '54', val: numericAmount.toString() };
+    // EMVCo standard: Tag 54 sits between Tag 53 (Currency) and Tag 58 (Country Code)
+    const idx58 = tags.findIndex((t) => t.tag === '58');
     if (idx58 !== -1) {
-      cleanPayload = cleanPayload.substring(0, idx58) + tag54 + cleanPayload.substring(idx58);
+      tags.splice(idx58, 0, amtTag);
     } else {
-      cleanPayload += tag54;
+      const idx53 = tags.findIndex((t) => t.tag === '53');
+      if (idx53 !== -1) {
+        tags.splice(idx53 + 1, 0, amtTag);
+      } else {
+        tags.push(amtTag);
+      }
     }
   }
 
-  // 5. Optionally inject Tag 62 (Additional Data / Invoice) - ONLY if explicitly enabled
-  // Warning: injecting Tag 62 on standard UMKM/static QRIS causes ShopeePay & DANA to throw system error!
+  // 4. Optionally inject Tag 62 (Additional Data / Invoice)
+  // Warning: injecting Tag 62 on standard UMKM/static QRIS causes ShopeePay & DANA to throw switch error!
   if (includeInvoice && invoiceNo) {
     const cleanInvoice = String(invoiceNo).trim().slice(0, 25);
     const sub01 = `01${cleanInvoice.length.toString().padStart(2, '0')}${cleanInvoice}`;
-    const tag62 = `62${sub01.length.toString().padStart(2, '0')}${sub01}`;
-    cleanPayload += tag62;
+    const existing62 = tags.find((t) => t.tag === '62');
+    if (existing62) {
+      existing62.val = sub01;
+    } else {
+      tags.push({ tag: '62', val: sub01 });
+    }
+  } else if (!includeInvoice) {
+    // Remove Tag 62 in compatible mode so Indonesian payment switches won't reject
+    tags = tags.filter((t) => t.tag !== '62');
   }
 
+  // 5. Reconstruct valid TLV string
+  const payload = tags
+    .map((t) => `${t.tag}${t.val.length.toString().padStart(2, '0')}${t.val}`)
+    .join('');
+
   // 6. Append Tag 63 prefix and calculate standard CRC16-CCITT
-  const payloadWith63 = `${cleanPayload}6304`;
+  const payloadWith63 = `${payload}6304`;
   const crc = calculateCrc16(payloadWith63);
   return `${payloadWith63}${crc}`;
 }

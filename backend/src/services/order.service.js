@@ -331,6 +331,10 @@ export const orderService = {
     } else if (period === 'month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
       periodLabel = 'Bulan Ini';
+    } else if (period === 'last_month') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      periodLabel = 'Bulan Lalu';
     } else if (period === 'custom' && customRange) {
       if (customRange.startDate) {
         startDate = customRange.startDate instanceof Date ? customRange.startDate : new Date(customRange.startDate);
@@ -341,24 +345,38 @@ export const orderService = {
       periodLabel = customRange.label || customRange.periodLabel || 'Kustom';
     }
 
-    const paidOrders = await prisma.order.findMany({
-      where: {
-        status: { in: ['PAID', 'SERVED', 'COMPLETED'] },
-        OR: [
-          { paidAt: { gte: startDate, lte: endDate } },
-          { createdAt: { gte: startDate, lte: endDate } },
-          { payments: { some: { createdAt: { gte: startDate, lte: endDate } } } },
-        ],
-      },
-      include: {
-        payments: true,
-        items: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [paidOrders, openOrders] = await Promise.all([
+      prisma.order.findMany({
+        where: {
+          status: { in: ['PAID', 'SERVED', 'COMPLETED'] },
+          OR: [
+            { paidAt: { gte: startDate, lte: endDate } },
+            { createdAt: { gte: startDate, lte: endDate } },
+            { payments: { some: { createdAt: { gte: startDate, lte: endDate } } } },
+          ],
+        },
+        include: {
+          payments: true,
+          items: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.order.findMany({
+        where: {
+          status: { in: ['OPEN', 'PENDING_PAYMENT'] },
+          createdAt: { gte: startDate, lte: endDate },
+        },
+        select: {
+          id: true,
+          total: true,
+        },
+      }),
+    ]);
 
     const totalRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
     const totalTransactions = paidOrders.length;
+    const unpaidRevenue = openOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const unpaidTransactions = openOrders.length;
 
     // Hitung per metode bayar dengan normalisasi cerdas (QRIS Dinamis, Transfer, Tunai)
     const byMethod = { CASH: 0, QRIS: 0, TRANSFER: 0 };
@@ -407,6 +425,8 @@ export const orderService = {
       endDate,
       totalRevenue,
       totalTransactions,
+      unpaidRevenue,
+      unpaidTransactions,
       byMethod: {
         ...byMethod,
         QRIS_DYNAMIC: byMethod.QRIS, // Alias untuk kemudahan akses QRIS dinamis

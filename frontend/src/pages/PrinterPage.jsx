@@ -89,6 +89,8 @@ export default function PrinterPage({ isEmbedded = false }) {
     wifiName: settings?.wifiName || '',
     wifiPass: settings?.wifiPass || '',
     // Element Visibility Checkboxes
+    receiptShowLogo: settings?.receiptShowLogo !== false,
+    receiptLogoUrl: settings?.receiptLogoUrl || '/komazi-logo-transparent.png',
     receiptShowStoreName: settings?.receiptShowStoreName !== false,
     receiptShowTagline: settings?.receiptShowTagline !== false,
     receiptShowAddress: settings?.receiptShowAddress !== false,
@@ -119,6 +121,8 @@ export default function PrinterPage({ isEmbedded = false }) {
         receiptFooter: settings?.receiptFooter || settings?.footerText || prev.receiptFooter,
         wifiName: settings?.wifiName !== undefined ? settings.wifiName : prev.wifiName,
         wifiPass: settings?.wifiPass !== undefined ? settings.wifiPass : prev.wifiPass,
+        receiptShowLogo: settings?.receiptShowLogo !== false,
+        receiptLogoUrl: settings?.receiptLogoUrl || prev.receiptLogoUrl,
         receiptShowStoreName: settings?.receiptShowStoreName !== false,
         receiptShowTagline: settings?.receiptShowTagline !== false,
         receiptShowAddress: settings?.receiptShowAddress !== false,
@@ -779,6 +783,38 @@ export default function PrinterPage({ isEmbedded = false }) {
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Logo Brand Toggle */}
+                <div className="sm:col-span-2 p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-700 flex items-center justify-center p-1 shrink-0 overflow-hidden">
+                      <img
+                        src={receiptForm.receiptLogoUrl || '/komazi-logo-transparent.png'}
+                        alt="Logo Preview"
+                        className="w-full h-full object-contain grayscale"
+                      />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-komazi-text select-none">
+                        <input
+                          type="checkbox"
+                          checked={receiptForm.receiptShowLogo}
+                          onChange={() => toggleField('receiptShowLogo')}
+                          className="w-4 h-4 rounded text-komazi-coral focus:ring-komazi-coral"
+                        />
+                        <span>Tampilkan Logo Brand</span>
+                      </label>
+                      <p className="text-[11px] text-komazi-muted mt-0.5">
+                        Mencetak logo visual di bagian atas nota.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 pl-6 sm:pl-0">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${receiptForm.receiptShowLogo ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-neutral-800 text-neutral-400 border border-neutral-700'}`}>
+                      {receiptForm.receiptShowLogo ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Store Name Toggle & Input */}
                 <div className="p-3 rounded-xl bg-komazi-surface-2 border border-komazi-border space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-komazi-text select-none">
@@ -1072,6 +1108,15 @@ export default function PrinterPage({ isEmbedded = false }) {
               >
                 {/* Store Header */}
                 <div className="text-center space-y-0.5 mb-2">
+                  {receiptForm.receiptShowLogo && (
+                    <div className="flex justify-center mb-1.5">
+                      <img
+                        src={receiptForm.receiptLogoUrl || '/komazi-logo-transparent.png'}
+                        alt="Logo Komazi"
+                        className="h-10 sm:h-12 w-auto object-contain max-w-[180px] grayscale contrast-125"
+                      />
+                    </div>
+                  )}
                   {receiptForm.receiptShowStoreName && (
                     <div className="text-sm font-bold tracking-wider uppercase text-neutral-950 font-mono">
                       {receiptForm.storeName || 'KOMAZI COFFEE'}
@@ -1233,7 +1278,6 @@ export default function PrinterPage({ isEmbedded = false }) {
                           </div>
                         )}
                       </div>
-                      <div className="text-[8px] text-neutral-400 italic">(Nominal otomatis terisi)</div>
                     </div>
                   </>
                 )}

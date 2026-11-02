@@ -42,6 +42,9 @@ function resolveDateRange(period = 'today', customStart = null, customEnd = null
   } else if (period === 'month') {
     start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
+  } else if (period === 'last_month') {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
   } else {
     // Default 'today'
     start.setHours(0, 0, 0, 0);

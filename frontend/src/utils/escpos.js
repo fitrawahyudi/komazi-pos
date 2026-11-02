@@ -12,6 +12,7 @@ import {
   convertStaticToDynamicQris,
   DEFAULT_STATIC_QRIS,
 } from './qris.js';
+import { getCachedReceiptLogoRasterBytes } from './logoRaster.js';
 
 /**
  * Receipt Encoder Wrapper integrating the official `esc-pos-encoder` NPM package
@@ -131,8 +132,10 @@ export class KomaziReceiptEncoder {
   }
 
   // Partial cut paper with line feeds
-  cut() {
-    this.encoder.newline(3);
+  cut(lines = 2) {
+    if (lines > 0) {
+      this.encoder.newline(lines);
+    }
     this.encoder.cut('partial');
     return this;
   }
@@ -166,12 +169,24 @@ export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) 
 
   encoder
     .init()
-    .align('center')
-    .doubleSize(true)
-    .bold(true)
-    .line(storeName)
-    .doubleSize(false)
-    .bold(false);
+    .align('center');
+
+  if (storeSettings.receiptShowLogo !== false) {
+    const logoBytes = getCachedReceiptLogoRasterBytes(storeSettings.receiptLogoUrl || '/komazi-logo-transparent.png', paperWidth);
+    if (logoBytes && logoBytes.length > 0) {
+      encoder.raw(logoBytes);
+      encoder.feed(1);
+    }
+  }
+
+  if (storeSettings.receiptShowStoreName !== false) {
+    encoder
+      .doubleSize(true)
+      .bold(true)
+      .line(storeName)
+      .doubleSize(false)
+      .bold(false);
+  }
 
   if (tagline && tagline.trim()) encoder.line(tagline.trim());
   if (address && address.trim()) encoder.line(address.trim());
@@ -239,9 +254,7 @@ export function buildTestReceiptEscPos(paperWidth = '58mm', storeSettings = {}) 
   encoder.line('||||| | |||| ||| ||||| |||| || |');
   encoder.line('KMZ-TEST-PRINTER');
 
-  encoder
-    .feed(3)
-    .cut();
+  encoder.cut(2);
 
   return encoder.encode();
 }
@@ -307,9 +320,18 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     encoder.kickDrawer();
   }
 
+  encoder.align('center');
+
+  if (storeSettings.receiptShowLogo !== false) {
+    const logoBytes = getCachedReceiptLogoRasterBytes(storeSettings.receiptLogoUrl || '/komazi-logo-transparent.png', paperWidth);
+    if (logoBytes && logoBytes.length > 0) {
+      encoder.raw(logoBytes);
+      encoder.feed(1);
+    }
+  }
+
   if (storeSettings.receiptShowStoreName !== false) {
     encoder
-      .align('center')
       .doubleSize(true)
       .bold(true)
       .line(storeName)
@@ -383,9 +405,19 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     const variantStr = item.variantName ? ` • ${item.variantName}` : '';
     encoder.line(`  ${item.qty} x ${formatRupiah(unitPrice)}${variantStr}`);
 
+    // Modifiers / Add-on if present
+    const modifiersStr = typeof item.modifiers === 'string'
+      ? item.modifiers
+      : Array.isArray(item.modifiers)
+        ? item.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+        : null;
+    if (modifiersStr) {
+      encoder.line(`    + Add-on: ${modifiersStr}`);
+    }
+
     // Line 3: Note if present & enabled
     if (storeSettings.receiptShowNotes !== false && item.note) {
-      encoder.line(`  * ${item.note}`);
+      encoder.line(`    * Catatan: ${item.note}`);
     }
   });
 
@@ -422,9 +454,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
 
   // Jika struk pertinggal, selesai sampai metode pembayaran / tunai & kembalian
   if (isMerchantCopy) {
-    encoder
-      .feed(3)
-      .cut();
+    encoder.cut(2);
     return encoder.encode();
   }
 
@@ -449,7 +479,6 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
       .bold(false)
       .line(`Total Tagihan: ${formatRupiah(order.total || order.grandTotal || 0)}`)
       .qrCode(qrisDynamic, paperWidth)
-      .line('(Nominal otomatis terisi & terkunci)')
       .align('left');
   }
 
@@ -472,9 +501,7 @@ export function buildOrderReceiptEscPos(order, storeSettingsOrOptions = {}, pape
     encoder.line(String(order.invoiceNo || `KMZ-${order.id}`));
   }
 
-  encoder
-    .feed(3)
-    .cut();
+  encoder.cut(2);
 
   return encoder.encode();
 }
@@ -534,8 +561,13 @@ export function buildKitchenTicketEscPos(order, options = {}) {
     if (item.variantName) {
       encoder.line(`    Varian: ${item.variantName}`);
     }
-    if (item.modifiers) {
-      encoder.line(`    Topping/Mod: ${item.modifiers}`);
+    const modStr = typeof item.modifiers === 'string'
+      ? item.modifiers
+      : Array.isArray(item.modifiers)
+        ? item.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+        : null;
+    if (modStr) {
+      encoder.line(`    Topping/Mod: ${modStr}`);
     }
     if (item.note) {
       encoder.bold(true);
@@ -562,8 +594,7 @@ export function buildKitchenTicketEscPos(order, options = {}) {
 
   encoder
     .divider(paperWidth)
-    .feed(3)
-    .cut();
+    .cut(2);
 
   return encoder.encode();
 }

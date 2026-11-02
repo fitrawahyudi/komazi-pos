@@ -528,6 +528,15 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
               >
                 {/* Store Header */}
                 <div className="text-center space-y-0.5 mb-2">
+                  {!isKitchenStationTicket && settings?.receiptShowLogo !== false && (
+                    <div className="flex justify-center mb-1.5">
+                      <img
+                        src={settings?.receiptLogoUrl || '/komazi-logo-transparent.png'}
+                        alt="Logo Komazi"
+                        className="h-10 sm:h-12 w-auto object-contain max-w-[180px] grayscale contrast-125 print:max-h-12"
+                      />
+                    </div>
+                  )}
                   {settings?.receiptShowStoreName !== false && (
                     <div className="text-sm font-bold tracking-wider uppercase text-neutral-950 font-mono">
                       {settings?.storeName || 'KOMAZI COFFEE'}
@@ -638,9 +647,16 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                                   Varian: {item.variantName}
                                 </div>
                               )}
-                              {item.modifiers && (
+                              {Boolean(
+                                typeof item.modifiers === 'string'
+                                  ? item.modifiers.trim()
+                                  : Array.isArray(item.modifiers) && item.modifiers.length > 0
+                              ) && (
                                 <div className="text-neutral-700 pl-7 text-[10px]">
-                                  Mod: {item.modifiers}
+                                  Topping/Mod:{' '}
+                                  {typeof item.modifiers === 'string'
+                                    ? item.modifiers
+                                    : item.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')}
                                 </div>
                               )}
                               {item.note && (
@@ -686,6 +702,11 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                         const unitPrice = Number(item.price || item.unitPrice || 0);
                         const itemName = item.name || item.productName || 'Item';
                         const variantStr = item.variantName ? ` • ${item.variantName}` : '';
+                        const modifiersStr = typeof item.modifiers === 'string'
+                          ? item.modifiers
+                          : Array.isArray(item.modifiers)
+                            ? item.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+                            : null;
                         return (
                           <div key={idx} className="space-y-0.5 text-[10px]">
                             <div className="flex justify-between items-baseline font-bold text-neutral-950">
@@ -695,9 +716,14 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                             <div className="text-neutral-600 pl-2">
                               {item.qty} x {formatRupiah(unitPrice)}{variantStr}
                             </div>
+                            {modifiersStr && (
+                              <div className="text-neutral-700 pl-2 text-[9px] font-medium">
+                                + Add-on: {modifiersStr}
+                              </div>
+                            )}
                             {settings?.receiptShowNotes !== false && item.note && (
                               <div className="text-neutral-500 italic pl-2 text-[9px]">
-                                * {item.note}
+                                * Catatan: {item.note}
                               </div>
                             )}
                           </div>
@@ -803,7 +829,6 @@ export default function ThermalReceiptModal({ order, onClose, initialType = 'cus
                                 </div>
                               )}
                             </div>
-                            <div className="text-[9px] text-neutral-600">(Nominal otomatis terisi & terkunci)</div>
                           </div>
                         </>
                       )}

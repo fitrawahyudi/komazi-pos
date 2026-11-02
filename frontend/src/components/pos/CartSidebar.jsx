@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useCartStore } from '../../store/cartStore';
+import { usePosStore } from '../../store/posStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useCustomerStore } from '../../store/customerStore';
 import { useShiftStore } from '../../store/shiftStore';
@@ -38,6 +39,7 @@ import PromptModal from '../ui/PromptModal';
 import AlertModal from '../ui/AlertModal';
 import AttendanceVerificationModal from '../hris/AttendanceVerificationModal';
 import DynamicPriceModal from './DynamicPriceModal';
+import ProductVariantModal from './ProductVariantModal';
 import { toast } from '../../store/toastStore';
 import { api } from '../../services/api';
 import { useHasPhysicalKeyboard } from '../../hooks/useHasPhysicalKeyboard';
@@ -74,6 +76,7 @@ export default function CartSidebar({
     updateItemQty,
     updateItemPrice,
     updateItemNote,
+    updateItemModifiers,
     removeItem,
     clearCart,
     clearWorkspaceSession,
@@ -84,7 +87,11 @@ export default function CartSidebar({
     currentBackendOrderId,
   } = useCartStore();
 
+  const products = usePosStore((state) => state.products);
   const [editingDynamicItem, setEditingDynamicItem] = useState(null);
+  const [editingNoteItem, setEditingNoteItem] = useState(null);
+  const [editingModifiersItem, setEditingModifiersItem] = useState(null);
+  const [tempNoteText, setTempNoteText] = useState('');
 
   const { activeShift } = useShiftStore();
   const hasActiveShift = Boolean(activeShift && !activeShift.isClosed);
@@ -126,6 +133,40 @@ export default function CartSidebar({
   const [promoPresets, setPromoPresets] = useState([]);
   const [voucherInput, setVoucherInput] = useState('');
   const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
+
+  // Helper: Retrieve master product definition for editing variants & modifiers
+  const getProductForCartItem = (cartItem) => {
+    if (!cartItem) return null;
+    const found = (products || []).find((p) => Number(p.id) === Number(cartItem.productId));
+    if (found) {
+      return {
+        ...found,
+        baseCustomPrice: cartItem.baseCustomPrice,
+        isDynamicPrice: cartItem.isDynamicPrice,
+      };
+    }
+    return {
+      id: cartItem.productId,
+      name: cartItem.name,
+      price: cartItem.baseCustomPrice || cartItem.unitPrice,
+      categoryName: cartItem.categoryName,
+      imageUrl: cartItem.imageUrl,
+      variants: cartItem.variant ? [cartItem.variant] : [],
+      modifiers: cartItem.modifiers || [],
+      baseCustomPrice: cartItem.baseCustomPrice,
+      isDynamicPrice: cartItem.isDynamicPrice,
+    };
+  };
+
+  // Helper: Check if an item has variants or modifiers available to customize
+  const hasCustomizableOptions = (cartItem) => {
+    if (cartItem.modifiers?.length > 0 || cartItem.variant) return true;
+    const prod = (products || []).find((p) => Number(p.id) === Number(cartItem.productId));
+    return Boolean(
+      (prod?.modifiers && prod.modifiers.length > 0) ||
+      (prod?.variants && prod.variants.length > 0)
+    );
+  };
   const [isManualInputVisible, setIsManualInputVisible] = useState(false);
 
   // Fetch presets on component mount or when discount panel is opened
@@ -544,20 +585,66 @@ export default function CartSidebar({
                       {item.name}
                     </h4>
                   </div>
-                  {item.variant && (
-                    <span className="inline-block mt-0.5 text-[10px] font-semibold text-komazi-coral bg-komazi-coral-soft px-1.5 py-0.2 rounded">
-                      {item.variant.name}
-                    </span>
-                  )}
-                  {item.modifiers && item.modifiers.length > 0 && (
-                    <p className="text-[10px] text-komazi-teal-light mt-0.5">
-                      +{item.modifiers.map((m) => m.name).join(', ')}
-                    </p>
-                  )}
-                  {item.note && (
-                    <p className="text-[10px] text-komazi-muted italic mt-0.5">
-                      "{item.note}"
-                    </p>
+                  {/* Variant & Modifier Badges with in-cart edit triggers */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    {item.variant && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingModifiersItem(item)}
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-komazi-coral bg-komazi-coral-soft hover:bg-komazi-coral/20 px-1.5 py-0.5 rounded cursor-pointer transition-colors group/var"
+                        title="Klik untuk ubah varian / ukuran"
+                      >
+                        <span>{item.variant.name}</span>
+                        <Pencil className="w-2 h-2 opacity-50 group-hover/var:opacity-100" />
+                      </button>
+                    )}
+
+                    {item.modifiers && item.modifiers.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingModifiersItem(item)}
+                        className="inline-flex items-center gap-1 text-[10px] text-komazi-teal-light bg-komazi-teal/10 hover:bg-komazi-teal/20 px-1.5 py-0.5 rounded border border-komazi-teal/25 cursor-pointer transition-colors group/mod max-w-full"
+                        title="Klik untuk ubah add-on / topping"
+                      >
+                        <span className="truncate">+{item.modifiers.map((m) => m.name).join(', ')}</span>
+                        <Pencil className="w-2 h-2 shrink-0 opacity-50 group-hover/mod:opacity-100" />
+                      </button>
+                    ) : hasCustomizableOptions(item) ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingModifiersItem(item)}
+                        className="inline-flex items-center gap-1 text-[10px] text-komazi-muted/70 hover:text-komazi-teal-light transition-colors cursor-pointer hover:underline"
+                        title="Tambah add-on / topping"
+                      >
+                        <Plus className="w-2.5 h-2.5" /> Add-on
+                      </button>
+                    ) : null}
+                  </div>
+                  {item.note ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingNoteItem(item);
+                        setTempNoteText(item.note || '');
+                      }}
+                      className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30 text-left transition-colors cursor-pointer group/note max-w-full"
+                      title="Klik untuk ubah catatan"
+                    >
+                      <FileText className="w-3 h-3 shrink-0 text-amber-400" />
+                      <span className="truncate italic">"{item.note}"</span>
+                      <Pencil className="w-2.5 h-2.5 shrink-0 opacity-60 group-hover/note:opacity-100" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingNoteItem(item);
+                        setTempNoteText('');
+                      }}
+                      className="mt-1 inline-flex items-center gap-1 text-[10px] text-komazi-muted/70 hover:text-komazi-coral transition-colors cursor-pointer hover:underline"
+                    >
+                      <Plus className="w-2.5 h-2.5" /> Catatan
+                    </button>
                   )}
                 </div>
 
@@ -1072,6 +1159,162 @@ export default function CartSidebar({
             }
             toast.success(`Harga ${editingDynamicItem.name} diperbarui ke ${formatRupiah(customPrice)}!`);
             setEditingDynamicItem(null);
+          }}
+        />
+      )}
+
+      {/* Item Special Note Modal */}
+      {editingNoteItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-komazi-surface border border-komazi-border shadow-2xl p-5 space-y-4 animate-in zoom-in-95">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-komazi-border pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-komazi-text">Catatan Pesanan</h3>
+                  <p className="text-[11px] text-komazi-muted truncate max-w-[240px]">
+                    {editingNoteItem.name} {editingNoteItem.variant?.name ? `(${editingNoteItem.variant.name})` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Preset Pills */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
+                Pilihan Cepat
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Less Sugar',
+                  'No Sugar',
+                  'Less Ice',
+                  'No Ice',
+                  'Es Pisah',
+                  'Extra Panas',
+                  'Pedas Sedang',
+                  'Extra Pedas',
+                  'Tidak Pedas',
+                  'Tanpa Bawang',
+                  'Bumbu Pisah',
+                  'Bungkus',
+                ].map((preset) => {
+                  const isIncluded = tempNoteText
+                    .split(',')
+                    .map((s) => s.trim().toLowerCase())
+                    .includes(preset.toLowerCase());
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        if (isIncluded) {
+                          const parts = tempNoteText
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter((s) => s.toLowerCase() !== preset.toLowerCase());
+                          setTempNoteText(parts.join(', '));
+                        } else {
+                          setTempNoteText((prev) =>
+                            prev.trim() ? `${prev.trim()}, ${preset}` : preset
+                          );
+                        }
+                      }}
+                      className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all cursor-pointer active:scale-95 ${
+                        isIncluded
+                          ? 'bg-komazi-coral text-white border-komazi-coral shadow-sm font-bold'
+                          : 'bg-komazi-surface-2 hover:bg-komazi-surface-3 border-komazi-border text-komazi-muted hover:text-komazi-text'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Free-text input */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-komazi-muted uppercase tracking-wider block">
+                Catatan Khusus Barista / Dapur:
+              </label>
+              <textarea
+                rows={3}
+                value={tempNoteText}
+                onChange={(e) => setTempNoteText(e.target.value)}
+                placeholder="Ketik catatan tambahan (misal: gula sedikit, susu oat, dll)..."
+                className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs text-komazi-text placeholder-komazi-muted focus:border-komazi-coral focus:outline-none resize-none shadow-inner"
+                autoFocus
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-komazi-border">
+              {editingNoteItem.note ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateItemNote(editingNoteItem.key, '');
+                    toast.info('Catatan telah dihapus');
+                    setEditingNoteItem(null);
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
+                >
+                  Hapus Catatan
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingNoteItem(null)}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-komazi-muted hover:text-white hover:bg-komazi-surface-2 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateItemNote(editingNoteItem.key, tempNoteText);
+                    toast.success(
+                      tempNoteText.trim()
+                        ? `Catatan "${tempNoteText.trim()}" berhasil disimpan!`
+                        : 'Catatan dikosongkan'
+                    );
+                    setEditingNoteItem(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-komazi-coral hover:bg-komazi-coral-dark text-white shadow-md active:scale-95 transition-all cursor-pointer"
+                >
+                  Simpan Catatan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Variant & Modifiers In-Cart Editor Modal */}
+      {editingModifiersItem && (
+        <ProductVariantModal
+          product={getProductForCartItem(editingModifiersItem)}
+          initialVariant={editingModifiersItem.variant}
+          initialModifiers={editingModifiersItem.modifiers || []}
+          initialNote={editingModifiersItem.note || ''}
+          isEditMode={true}
+          onClose={() => setEditingModifiersItem(null)}
+          onSave={(selectedVariant, selectedModifiers, note) => {
+            updateItemModifiers(editingModifiersItem.key, {
+              selectedVariant,
+              selectedModifiers,
+              note,
+            });
+            toast.success(`Pilihan untuk ${editingModifiersItem.name} berhasil diperbarui!`);
+            setEditingModifiersItem(null);
           }}
         />
       )}

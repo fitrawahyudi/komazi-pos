@@ -182,11 +182,76 @@ export const useCartStore = create(
       },
 
       updateItemNote: (key, note) => {
+        const cleanNote = (note || '').trim();
         set((state) => ({
-          items: state.items.map((item) =>
-            item.key === key ? { ...item, note } : item
-          ),
+          items: state.items.map((item) => {
+            if (item.key === key) {
+              const modifierIds = (item.modifiers || []).map((m) => m.id).sort().join('-');
+              const priceSuffix = item.isDynamicPrice ? `dyn_${item.baseCustomPrice || item.unitPrice}` : 'std';
+              const newKey = `${item.productId}_${item.variant?.id || 'none'}_${modifierIds}_${priceSuffix}_${cleanNote}`;
+              return { ...item, key: newKey, note: cleanNote };
+            }
+            return item;
+          }),
         }));
+      },
+
+      /**
+       * Update item variants & modifiers directly from in-cart editor
+       */
+      updateItemModifiers: (oldKey, { selectedVariant = null, selectedModifiers = [], note = undefined }) => {
+        set((state) => {
+          const oldIndex = state.items.findIndex((i) => i.key === oldKey);
+          if (oldIndex === -1) return state;
+
+          const oldItem = state.items[oldIndex];
+          const allProducts = usePosStore.getState().products || [];
+          const matchedProduct = allProducts.find((p) => p.id === oldItem.productId);
+
+          // Calculate base product price (excluding prior variant extra & modifiers)
+          let basePrice;
+          if (oldItem.baseCustomPrice !== null && oldItem.baseCustomPrice !== undefined) {
+            basePrice = Number(oldItem.baseCustomPrice);
+          } else if (matchedProduct && matchedProduct.price !== undefined) {
+            basePrice = Number(matchedProduct.price);
+          } else {
+            const priorVariantExtra = oldItem.variant ? Number(oldItem.variant.extraPrice || 0) : 0;
+            const priorModifiersTotal = (oldItem.modifiers || []).reduce((sum, m) => sum + Number(m.price || 0), 0);
+            basePrice = Math.max(0, Number(oldItem.unitPrice || 0) - priorVariantExtra - priorModifiersTotal);
+          }
+
+          const variantPrice = selectedVariant ? Number(selectedVariant.extraPrice || 0) : 0;
+          const modifiersPrice = (selectedModifiers || []).reduce((sum, m) => sum + Number(m.price || 0), 0);
+          const newUnitPrice = Math.max(0, basePrice + variantPrice + modifiersPrice);
+
+          const finalNote = note !== undefined ? (note || '').trim() : (oldItem.note || '').trim();
+          const modifierIds = (selectedModifiers || []).map((m) => m.id).sort().join('-');
+          const priceSuffix = oldItem.isDynamicPrice ? `dyn_${basePrice}` : 'std';
+          const newKey = `${oldItem.productId}_${selectedVariant?.id || 'none'}_${modifierIds}_${priceSuffix}_${finalNote}`;
+
+          // If another item in cart already has this exact new key, merge quantities
+          const existingSameIndex = state.items.findIndex((i) => i.key === newKey && i.key !== oldKey);
+
+          if (existingSameIndex > -1) {
+            const newItems = [...state.items];
+            newItems[existingSameIndex].qty += oldItem.qty;
+            newItems[existingSameIndex].lineTotal = newItems[existingSameIndex].qty * newItems[existingSameIndex].unitPrice;
+            newItems.splice(oldIndex, 1);
+            return { items: newItems };
+          } else {
+            const newItems = [...state.items];
+            newItems[oldIndex] = {
+              ...oldItem,
+              key: newKey,
+              variant: selectedVariant,
+              modifiers: selectedModifiers,
+              unitPrice: newUnitPrice,
+              lineTotal: oldItem.qty * newUnitPrice,
+              note: finalNote,
+            };
+            return { items: newItems };
+          }
+        });
       },
 
       removeItem: (key) => {
@@ -330,7 +395,9 @@ export const useCartStore = create(
             name: i.name || prod?.name || 'Item',
             categoryName: i.categoryName || prod?.categoryName || prod?.category?.name || null,
             variantName: i.variant?.name || i.variantName || null,
-            modifiers: i.modifiers?.map((m) => m.name).join(', ') || null,
+            modifiers: Array.isArray(i.modifiers)
+              ? i.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+              : (typeof i.modifiers === 'string' ? i.modifiers : null),
             qty: i.qty,
             unitPrice: i.unitPrice,
             lineTotal: i.lineTotal,

@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { decodeQrFromImageFile } from '../../utils/qrDecoder';
-import { extractQrisMetadata } from '../../utils/qris';
+import { extractQrisMetadata, generateQrDataUrl } from '../../utils/qris';
 import { api } from '../../services/api';
 import { toast } from '../../store/toastStore';
 
@@ -95,12 +95,27 @@ export default function QrisUploader({
         // Jangan blokir ekstraksi data jika upload gagal
       }
 
+      // 3b. Pastikan imageUrl tidak menggunakan blob temporary jika Cloudinary tidak aktif/gagal
+      // Generate clean standalone DataURL dari payload QR agar tidak rusak/hilang saat refresh
+      let permanentImageUrl = uploadedUrl;
+      if (!permanentImageUrl && rawPayload) {
+        try {
+          permanentImageUrl = await generateQrDataUrl(rawPayload, { width: 300 });
+          if (permanentImageUrl) {
+            setPreviewUrl(permanentImageUrl);
+          }
+        } catch (qrErr) {
+          console.warn('[QRIS Uploader] Fallback QR generation failed:', qrErr);
+          permanentImageUrl = localPreview;
+        }
+      }
+
       // 4. Notify parent component with extracted payload & metadata
       if (onExtracted) {
         onExtracted({
           rawPayload,
           metadata: metadata || {},
-          imageUrl: uploadedUrl || localPreview,
+          imageUrl: permanentImageUrl || localPreview,
         });
       }
 

@@ -131,6 +131,8 @@ export function renderSalesReportCard(data = {}) {
   const totalRevenue = Number(data.totalRevenue || 0);
   const totalTransactions = Number(data.totalTransactions || 0);
   const avgTransaction = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+  const unpaidTransactions = Number(data.unpaidTransactions || 0);
+  const unpaidRevenue = Number(data.unpaidRevenue || 0);
 
   const byMethod = data.byMethod || { CASH: 0, QRIS: 0, TRANSFER: 0 };
   const topProducts = Array.isArray(data.topProducts) ? data.topProducts : [];
@@ -146,6 +148,15 @@ export function renderSalesReportCard(data = {}) {
   `).join('');
 
   const bodyContent = `
+    ${unpaidTransactions > 0 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:12px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:15px;">⏳</span>
+          <span style="font-weight:700;font-size:12px;color:#FCD34D;">Tagihan Tertahan / Belum Lunas (Open Bill):</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:#FCD34D;font-size:12px;">${unpaidTransactions} Pesanan (${formatRupiah(unpaidRevenue)})</span>
+      </div>
+    ` : ''}
     <div class="grid-3" style="margin-bottom:20px;">
       <div class="metric-card highlight">
         <div class="metric-label">

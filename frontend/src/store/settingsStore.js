@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../services/api.js';
+import { preloadReceiptLogoRaster } from '../utils/logoRaster.js';
 
 export const DEFAULT_SETTINGS = {
   storeName: 'Komazi Coffee',
@@ -31,6 +32,8 @@ export const DEFAULT_SETTINGS = {
   receiptFooter: 'Terima kasih atas kunjungan Anda!',
   footerText: 'Terima kasih atas kunjungan Anda!',
   // Receipt Element Visibility Flags
+  receiptShowLogo: true,
+  receiptLogoUrl: '/komazi-logo-transparent.png',
   receiptShowStoreName: true,
   receiptShowTagline: true,
   receiptShowAddress: true,
@@ -181,6 +184,11 @@ export const useSettingsStore = create(
               bankAccountNumber: serverData.bankAccountNumber !== undefined ? serverData.bankAccountNumber : (activeDefaultBank?.accountNumber || DEFAULT_SETTINGS.bankAccountNumber),
               bankAccountName: serverData.bankAccountName !== undefined ? serverData.bankAccountName : (activeDefaultBank?.accountName || DEFAULT_SETTINGS.bankAccountName),
               bankAccounts: parsedBankAccounts,
+              receiptShowLogo:
+                serverData.receiptShowLogo !== undefined
+                  ? serverData.receiptShowLogo === 'true' || serverData.receiptShowLogo === true
+                  : true,
+              receiptLogoUrl: serverData.receiptLogoUrl || '/komazi-logo-transparent.png',
               receiptShowWifi:
                 serverData.receiptShowWifi !== undefined
                   ? serverData.receiptShowWifi === 'true' || serverData.receiptShowWifi === true
@@ -306,6 +314,13 @@ export const useSettingsStore = create(
               settings: { ...state.settings, ...parsed },
               isLoading: false,
             }));
+
+            // Preload thermal receipt logo in background for instantaneous thermal printing
+            if (parsed.receiptShowLogo !== false) {
+              preloadReceiptLogoRaster(parsed.receiptLogoUrl || '/komazi-logo-transparent.png', '58mm');
+              preloadReceiptLogoRaster(parsed.receiptLogoUrl || '/komazi-logo-transparent.png', '80mm');
+            }
+
             return { success: true, data: parsed };
           }
         } catch (err) {

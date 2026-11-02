@@ -167,6 +167,9 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
           name: i.name || i.productName || 'Item',
           productName: i.name || i.productName || 'Item',
           variantName: i.variant?.name || i.variantName || null,
+          modifiers: Array.isArray(i.modifiers)
+            ? i.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+            : (typeof i.modifiers === 'string' ? i.modifiers : null),
           qty: Number(i.qty) || 1,
           unitPrice: Number(i.unitPrice) || 0,
           price: Number(i.unitPrice) || 0,
@@ -280,7 +283,9 @@ export default function PaymentModal({ onClose, onSuccessOrder }) {
           name: String(i.name || ''),
           categoryName: i.categoryName ? String(i.categoryName) : null,
           variantName: i.variant?.name ? String(i.variant.name) : null,
-          modifiers: i.modifiers?.map((m) => m.name).join(', ') || null,
+          modifiers: Array.isArray(i.modifiers)
+            ? i.modifiers.map((m) => (typeof m === 'string' ? m : m.name || m)).filter(Boolean).join(', ')
+            : (typeof i.modifiers === 'string' ? i.modifiers : null),
           qty: Number(i.qty) || 1,
           unitPrice: Number(i.unitPrice) || 0,
           lineTotal: Number(i.lineTotal) || 0,

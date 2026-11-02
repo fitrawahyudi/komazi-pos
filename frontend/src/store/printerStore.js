@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { toast } from './toastStore.js';
 import { buildTestReceiptEscPos, buildOrderReceiptEscPos, buildKitchenTicketEscPos } from '../utils/escpos.js';
+import { preloadReceiptLogoRaster } from '../utils/logoRaster.js';
 import { isKitchenItem, isBaristaItem } from '../utils/format.js';
 import { AndroidPrinter } from '../adapters/printer/printer.android.js';
 import { isAndroid, isNative } from '../services/platform.js';
@@ -634,6 +635,10 @@ export const usePrinterStore = create(
               ...(receiptSettings || {}),
               ...(options.storeSettings || {}),
             };
+
+            if (mergedStoreSettings.receiptShowLogo !== false) {
+              await preloadReceiptLogoRaster(mergedStoreSettings.receiptLogoUrl || '/komazi-logo-transparent.png', effectivePaperWidth);
+            }
 
             const rawBytes = buildOrderReceiptEscPos(order, {
               paperWidth: effectivePaperWidth,
@@ -1462,6 +1467,9 @@ export const usePrinterStore = create(
             toast.info('Mengirim data uji coba ke printer...');
             const currentSettings = useSettingsStore.getState().settings || {};
             const mergedSettings = { ...currentSettings, ...storeSettings };
+            if (mergedSettings.receiptShowLogo !== false) {
+              await preloadReceiptLogoRaster(mergedSettings.receiptLogoUrl || '/komazi-logo-transparent.png', paperWidth);
+            }
             const bytes = buildTestReceiptEscPos(paperWidth, mergedSettings);
             const ok = await sendRawData(bytes);
             if (ok) {

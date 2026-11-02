@@ -81,7 +81,7 @@ export default function SettingsPage() {
   const activeTab = TABS.some((t) => t.id === resolvedTab) ? resolvedTab : 'outlet';
   const setActiveTab = (tab) => setSearchParams({ tab });
 
-  const { settings, updateSettings, resetToDefault } = useSettingsStore();
+  const { settings, updateSettings, resetToDefault, fetchSettings } = useSettingsStore();
   const {
     user: currentUser,
     users,
@@ -232,21 +232,59 @@ export default function SettingsPage() {
     }
   };
 
-  const handleQrisExtracted = ({ rawPayload, metadata, imageUrl }) => {
+  const handleQrisExtracted = async ({ rawPayload, metadata, imageUrl }) => {
+    const qrisUpdates = {
+      qrisStaticString: rawPayload || formState.qrisStaticString,
+      qrisNmid: metadata?.nmid || formState.qrisNmid,
+      qrisMerchantName: metadata?.merchantName || formState.qrisMerchantName,
+      qrisMerchantCity: metadata?.merchantCity || formState.qrisMerchantCity,
+      qrisPostalCode: metadata?.postalCode || formState.qrisPostalCode,
+      qrisImageUrl: imageUrl || formState.qrisImageUrl,
+    };
+
     setFormState((prev) => ({
       ...prev,
-      qrisStaticString: rawPayload || prev.qrisStaticString,
-      qrisNmid: metadata?.nmid || prev.qrisNmid,
-      qrisMerchantName: metadata?.merchantName || prev.qrisMerchantName,
-      qrisMerchantCity: metadata?.merchantCity || prev.qrisMerchantCity,
-      qrisPostalCode: metadata?.postalCode || prev.qrisPostalCode,
-      qrisImageUrl: imageUrl || prev.qrisImageUrl,
+      ...qrisUpdates,
     }));
+
+    // Auto-save langsung ke database & persistent store agar tidak hilang saat refresh
+    try {
+      await updateSettings(qrisUpdates);
+      toast.success(
+        metadata?.merchantName
+          ? `QRIS "${metadata.merchantName}" berhasil diekstrak dan disimpan permanen!`
+          : 'Data QRIS berhasil disimpan permanen ke database!'
+      );
+    } catch (err) {
+      console.warn('[SettingsPage] Auto-save QRIS ke backend gagal:', err);
+    }
+  };
+
+  const handleClearQris = async () => {
+    const clearUpdates = {
+      qrisImageUrl: '',
+      qrisStaticString: '',
+      qrisNmid: '',
+      qrisMerchantName: '',
+      qrisMerchantCity: '',
+      qrisPostalCode: '',
+    };
+    setFormState((prev) => ({
+      ...prev,
+      ...clearUpdates,
+    }));
+    try {
+      await updateSettings(clearUpdates);
+      toast.info('QRIS merchant telah dihapus dari pengaturan.');
+    } catch (err) {
+      console.warn('[SettingsPage] Clear QRIS gagal:', err);
+    }
   };
 
   useEffect(() => {
+    fetchSettings().catch(() => {});
     fetchUsers();
-  }, [fetchUsers]);
+  }, [fetchSettings, fetchUsers]);
 
   useEffect(() => {
     setFormState({ ...settings });
@@ -643,13 +681,7 @@ export default function SettingsPage() {
                   city={formState.qrisMerchantCity}
                   postalCode={formState.qrisPostalCode}
                   onExtracted={handleQrisExtracted}
-                  onClear={() => {
-                    setFormState((prev) => ({
-                      ...prev,
-                      qrisImageUrl: '',
-                      qrisStaticString: '',
-                    }));
-                  }}
+                  onClear={handleClearQris}
                 />
               </div>
 
