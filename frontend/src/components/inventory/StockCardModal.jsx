@@ -142,7 +142,7 @@ export default function StockCardModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Kartu Stok: ${ing?.name || 'Bahan Baku'}`}
+      title={`${ing?.name || 'Bahan Baku'}`}
       subtitle={`${ing?.unit ? `Satuan: ${ing.unit}` : ''} • Stok Fisik Saat Ini: ${ing?.stock ?? ing?.currentStock ?? 0} ${ing?.unit || ''}`}
       icon={BookOpen}
       maxWidth="3xl"

@@ -46,6 +46,8 @@ export const useRecipeStore = create(
             ingredientName: ing?.name || 'Bahan',
             ingredientUnit: ing?.unit || 'unit',
             costPerUnit: cost,
+            stock: Number(ing?.stock) || 0,
+            minStock: Number(ing?.minStock) || 0,
             quantity: qty,
             lineCost: Math.round(qty * cost * 100) / 100,
           };

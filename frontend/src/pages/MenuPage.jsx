@@ -32,11 +32,13 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
+  Boxes,
 } from 'lucide-react';
 import ImageUpload from '../components/ui/ImageUpload';
 import AlertModal from '../components/ui/AlertModal';
 import PromptModal from '../components/ui/PromptModal';
 import RecipeModal from '../components/menu/RecipeModal';
+import ProductStockRecipeModal from '../components/menu/ProductStockRecipeModal';
 import CategoryManagementModal from '../components/menu/CategoryManagementModal';
 import Pagination from '../components/ui/Pagination';
 import ExcelImportModal from '../components/common/ExcelImportModal';
@@ -64,6 +66,8 @@ export default function MenuPage() {
   const { calculateProductHpp, recipes } = useRecipeStore();
   const [selectedProductForRecipe, setSelectedProductForRecipe] = useState(null);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
+  const [selectedProductForStockRecipe, setSelectedProductForStockRecipe] = useState(null);
+  const [isStockRecipeModalOpen, setIsStockRecipeModalOpen] = useState(false);
 
   // Load fresh catalog, recipes, stations and ingredients when mounting
   useEffect(() => {
@@ -1033,15 +1037,6 @@ export default function MenuPage() {
                                   <span className="font-mono font-bold text-komazi-text text-xs">
                                   {formatRupiah(hpp)}
                                 </span>
-                                {hasRecipe ? (
-                                  <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" title="Dihitung dari resep bahan baku">
-                                    Resep
-                                  </span>
-                                ) : (
-                                  <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="Harga modal manual (tanpa resep)">
-                                    Manual
-                                  </span>
-                                )}
                               </div>
                               <span className="hidden">
                                 </span>
@@ -1107,6 +1102,19 @@ export default function MenuPage() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {prod.isActive !== false && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProductForStockRecipe(prod);
+                                setIsStockRecipeModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg text-cyan-400 hover:text-white hover:bg-cyan-500/20 border border-transparent hover:border-cyan-500/40 transition-colors"
+                              title="Lacak Sumber Persediaan & Stok Bahan"
+                            >
+                              <Boxes className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canManageRecipe && prod.isActive !== false && (
                             <button
                               type="button"
@@ -2246,6 +2254,20 @@ export default function MenuPage() {
           product={selectedProductForRecipe}
         />
       )}
+
+      {/* Product Stock Recipe Modal (Lacak Sumber Persediaan) */}
+      <ProductStockRecipeModal
+        isOpen={isStockRecipeModalOpen}
+        onClose={() => {
+          setIsStockRecipeModalOpen(false);
+          setSelectedProductForStockRecipe(null);
+        }}
+        product={selectedProductForStockRecipe}
+        onOpenEditRecipe={(prod) => {
+          setSelectedProductForRecipe(prod);
+          setIsRecipeModalOpen(true);
+        }}
+      />
 
       {/* Excel Import Modal for Menu */}
       <ExcelImportModal

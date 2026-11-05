@@ -17,7 +17,7 @@ export async function getProductRecipe(req, res) {
         recipeItems: {
           include: {
             ingredient: {
-              select: { id: true, name: true, unit: true, costPerUnit: true },
+              select: { id: true, name: true, unit: true, costPerUnit: true, stock: true, minStock: true },
             },
             variant: {
               select: { id: true, name: true },
@@ -56,6 +56,8 @@ export async function getProductRecipe(req, res) {
         ingredientName: ri.ingredient.name,
         ingredientUnit: ri.ingredient.unit,
         costPerUnit: parseFloat(ri.ingredient.costPerUnit),
+        stock: parseFloat(ri.ingredient.stock || 0),
+        minStock: parseFloat(ri.ingredient.minStock || 0),
         quantity: parseFloat(ri.quantity),
         lineCost: Math.round(parseFloat(ri.quantity) * parseFloat(ri.ingredient.costPerUnit) * 100) / 100,
         variantId: ri.variantId,
@@ -148,6 +150,8 @@ export async function saveProductRecipe(req, res) {
         ingredientName: ri.ingredient.name,
         ingredientUnit: ri.ingredient.unit,
         costPerUnit: parseFloat(ri.ingredient.costPerUnit),
+        stock: parseFloat(ri.ingredient.stock || 0),
+        minStock: parseFloat(ri.ingredient.minStock || 0),
         quantity: parseFloat(ri.quantity),
         lineCost: Math.round(parseFloat(ri.quantity) * parseFloat(ri.ingredient.costPerUnit) * 100) / 100,
         variantId: ri.variantId,
@@ -175,7 +179,7 @@ export async function getCogsOverview(req, res) {
         variants: true,
         recipeItems: {
           include: {
-            ingredient: { select: { id: true, name: true, unit: true, costPerUnit: true } },
+            ingredient: { select: { id: true, name: true, unit: true, costPerUnit: true, stock: true, minStock: true } },
             variant: { select: { id: true, name: true } },
           },
         },

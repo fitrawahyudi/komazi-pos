@@ -474,11 +474,12 @@ export async function getWhatsAppRestockUrl(req, res) {
 
 export async function getStockMovements(req, res) {
   try {
-    const { ingredientId, type, search, startDate, endDate, page, limit, sortBy, sortOrder } = req.query;
+    const { ingredientId, ingredientIds, type, search, startDate, endDate, page, limit, sortBy, sortOrder } = req.query;
     const canCost = canViewCost(req.user?.role);
 
     const result = await stockService.getMovements({
       ingredientId: ingredientId || req.params?.id,
+      ingredientIds,
       type,
       search,
       startDate,

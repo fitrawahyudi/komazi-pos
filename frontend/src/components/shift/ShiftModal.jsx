@@ -475,7 +475,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
               <form onSubmit={handleCloseShift} className="space-y-4 pt-2 border-t border-komazi-border">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-komazi-text text-xs uppercase tracking-wider">
-                    Uang Fisik Hasil Hitung (Counted Cash):
+                    Uang Fisik Hasil Hitung
                   </label>
                   <button
                     type="button"
@@ -547,7 +547,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
                 {/* Closing Notes */}
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold text-komazi-muted">
-                    Catatan Penutupan / Alasan Selisih (Opsional):
+                    Catatan Penutupan / Alasan Selisih (Opsional)
                   </label>
                   <input
                     type="text"
@@ -738,7 +738,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
             /* ================= CASHIERS TAB ================= */
             <div className="space-y-4">
               <p className="text-komazi-muted">
-                Daftar kasir yang bertransaksi menggunakan sesi laci kas ini:
+                Daftar kasir yang bertransaksi menggunakan sesi laci kas ini
               </p>
               {activeShift.cashiers && activeShift.cashiers.length > 0 ? (
                 <div className="space-y-2">

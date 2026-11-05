@@ -185,6 +185,7 @@ export const stockService = {
 
   async getMovements({
     ingredientId,
+    ingredientIds,
     type,
     search,
     startDate,
@@ -196,7 +197,14 @@ export const stockService = {
   } = {}) {
     const where = {};
 
-    if (ingredientId) {
+    if (ingredientIds) {
+      const ids = (Array.isArray(ingredientIds) ? ingredientIds : String(ingredientIds).split(','))
+        .map((id) => parseInt(id, 10))
+        .filter((id) => !isNaN(id) && id > 0);
+      if (ids.length > 0) {
+        where.ingredientId = { in: ids };
+      }
+    } else if (ingredientId) {
       const parsedId = parseInt(ingredientId, 10);
       if (!isNaN(parsedId)) {
         where.ingredientId = parsedId;
