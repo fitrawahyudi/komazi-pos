@@ -4,7 +4,7 @@ import LoadingButton from '../ui/loading/LoadingButton';
 import { useShiftStore } from '../../store/shiftStore';
 import { useAuthStore } from '../../store/authStore';
 import { useHrisStore } from '../../store/hrisStore';
-import { formatRupiah, formatDateTime } from '../../utils/format';
+import { formatRupiah, formatDateTime, formatDuration } from '../../utils/format';
 import { scrollInputIntoViewOnFocus } from '../../utils/keyboard';
 import DenominationCounter from './DenominationCounter';
 import CloseSessionReportModal from './CloseSessionReportModal';
@@ -116,9 +116,7 @@ export default function ShiftModal({ onClose, onProceedToClockOut }) {
     const start = new Date(activeShift.openedAt).getTime();
     const now = Date.now();
     const diffMin = Math.max(0, Math.floor((now - start) / 60000));
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    return `${h} jam ${m} menit`;
+    return formatDuration(diffMin);
   }, [activeShift]);
 
   const expectedCash = activeShift

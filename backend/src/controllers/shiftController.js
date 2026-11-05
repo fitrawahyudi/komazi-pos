@@ -5,6 +5,20 @@ import { shiftService } from '../services/shift.service.js';
 import { checkStaffShiftEligibility } from '../services/scheduleGuard.service.js';
 import { events } from '../bot/events.js';
 
+export function formatShiftDuration(totalMinutes) {
+  const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
+  if (mins === 0) return '0m';
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const remainingMins = mins % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}h`);
+  if (hours > 0) parts.push(`${hours}j`);
+  if (remainingMins > 0 || parts.length === 0) parts.push(`${remainingMins}m`);
+  return parts.join(' ');
+}
+
 /**
  * 1. Ambil daftar register/terminal yang aktif beserta status sesi aktifnya
  */
@@ -370,9 +384,7 @@ export async function getShiftHistory(req, res) {
 
       const durationMs = s.closedAt ? Math.max(0, new Date(s.closedAt).getTime() - new Date(s.openedAt).getTime()) : 0;
       const durationMinutes = Math.floor(durationMs / 60000);
-      const hours = Math.floor(durationMinutes / 60);
-      const mins = durationMinutes % 60;
-      const workDurationFormatted = `${hours}j ${mins}m`;
+      const workDurationFormatted = formatShiftDuration(durationMinutes);
 
       return {
         id: s.id,
@@ -465,9 +477,7 @@ export async function getShiftDetail(req, res) {
 
     const durationMs = shift.closedAt ? Math.max(0, new Date(shift.closedAt).getTime() - new Date(shift.openedAt).getTime()) : 0;
     const durationMinutes = Math.floor(durationMs / 60000);
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
-    const workDurationFormatted = `${hours}j ${mins}m`;
+    const workDurationFormatted = formatShiftDuration(durationMinutes);
 
     const formatted = {
       id: shift.id,

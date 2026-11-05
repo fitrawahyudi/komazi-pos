@@ -1,5 +1,6 @@
 import XLSX from 'xlsx-js-style';
 import { saveWorkbook, saveBlobFile } from './fileSaver.js';
+import { formatDuration } from './format.js';
 
 export { saveWorkbook, saveBlobFile };
 
@@ -1894,9 +1895,7 @@ export function exportZReportToExcel({
     const end = session.closedAt ? new Date(session.closedAt).getTime() : Date.now();
     const start = new Date(session.openedAt).getTime();
     const diffMin = Math.max(0, Math.floor((end - start) / 60000));
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    durationFormatted = `${h} jam ${m} menit`;
+    durationFormatted = formatDuration(diffMin);
   }
 
   let auditStatusText = 'SEIMBANG (Rp 0)';

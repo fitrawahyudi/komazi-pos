@@ -18,7 +18,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { formatRupiah, formatDateTime } from '../../utils/format';
+import { formatRupiah, formatDateTime, formatDuration } from '../../utils/format';
 import { usePrinterStore } from '../../store/printerStore';
 import { useShiftStore } from '../../store/shiftStore';
 import { useHrisStore } from '../../store/hrisStore';
@@ -70,9 +70,7 @@ export default function CloseSessionReportModal({ session, onClose, onProceedToC
     ? Math.max(0, new Date(session.closedAt).getTime() - new Date(session.openedAt).getTime())
     : 0;
   const durationMin = Math.floor(durationMs / 60000);
-  const hours = Math.floor(durationMin / 60);
-  const mins = durationMin % 60;
-  const durationFormatted = `${hours} jam ${mins} menit`;
+  const durationFormatted = formatDuration(durationMin);
 
   const handleBrowserPrint = () => {
     window.print();

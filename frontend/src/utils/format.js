@@ -46,16 +46,41 @@ export function formatTime(dateInput) {
 }
 
 /**
- * Format minutes or milliseconds into human readable: 2j 15m
+ * Format minutes into compact human readable format:
+ * - < 60m: 45m
+ * - < 24h: 2j 15m or 2j
+ * - >= 24h: 2h 3j 15m or 2h 3j
  */
 export function formatDuration(totalMinutes) {
   const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
   if (mins === 0) return '0m';
-  const hours = Math.floor(mins / 60);
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
   const minutes = mins % 60;
-  if (hours === 0) return `${minutes}m`;
-  if (minutes === 0) return `${hours}j`;
-  return `${hours}j ${minutes}m`;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}h`);
+  if (hours > 0) parts.push(`${hours}j`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
+/**
+ * Format minutes into full Indonesian words:
+ * e.g., 2 hari 3 jam 15 menit
+ */
+export function formatDurationHuman(totalMinutes) {
+  const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
+  if (mins === 0) return '0 menit';
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const minutes = mins % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} hari`);
+  if (hours > 0) parts.push(`${hours} jam`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} menit`);
+  return parts.join(' ');
 }
 
 /**

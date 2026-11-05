@@ -26,7 +26,7 @@ import { useShiftStore } from '../store/shiftStore';
 import { useAuthStore } from '../store/authStore';
 import { useHrisStore } from '../store/hrisStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { formatRupiah, formatDateTime } from '../utils/format';
+import { formatRupiah, formatDateTime, formatDuration } from '../utils/format';
 import { toast } from '../store/toastStore';
 import Pagination from '../components/ui/Pagination';
 import ShiftModal from '../components/shift/ShiftModal';
@@ -132,9 +132,7 @@ export default function CashSessionPage() {
     const start = new Date(activeShift.openedAt).getTime();
     const now = Date.now();
     const diffMin = Math.max(0, Math.floor((now - start) / 60000));
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    return `${h} jam ${m} menit`;
+    return formatDuration(diffMin);
   }, [activeShift]);
 
   // Paginated History
@@ -436,6 +434,11 @@ export default function CashSessionPage() {
                           <div className="text-[10px] opacity-75">
                             s/d {shift.closedAt ? formatDateTime(shift.closedAt) : 'Selesai'}
                           </div>
+                          {(shift.workDurationMinutes !== undefined || shift.workDurationFormatted) && (
+                            <div className="text-[10px] text-cyan-400 font-semibold mt-0.5">
+                              ⏱ {shift.workDurationMinutes !== undefined ? formatDuration(shift.workDurationMinutes) : shift.workDurationFormatted}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-komazi-muted whitespace-nowrap">
                           {formatRupiah(shift.openingCash)}

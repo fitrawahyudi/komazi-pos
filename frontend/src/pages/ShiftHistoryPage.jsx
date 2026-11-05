@@ -32,7 +32,7 @@ import XLSX from 'xlsx-js-style';
 import { exportToExcel, saveWorkbook } from '../utils/excel';
 import { useShiftStore } from '../store/shiftStore';
 import { useAuthStore } from '../store/authStore';
-import { formatRupiah, formatDateTime } from '../utils/format';
+import { formatRupiah, formatDateTime, formatDuration } from '../utils/format';
 import { toast } from '../store/toastStore';
 import { Navigate } from 'react-router-dom';
 import Pagination from '../components/ui/Pagination';
@@ -197,7 +197,7 @@ export default function ShiftHistoryPage() {
         'Nama Kasir': s.cashierName || s.cashier?.name || 'Kasir',
         'Waktu Buka': s.openedAt ? formatDateTime(s.openedAt) : '-',
         'Waktu Tutup': s.closedAt ? formatDateTime(s.closedAt) : '-',
-        'Durasi': s.workDurationFormatted || '-',
+        'Durasi': s.workDurationMinutes !== undefined ? formatDuration(s.workDurationMinutes) : (s.workDurationFormatted || '-'),
         'Modal Awal (Rp)': Number(s.openingCash || 0),
         'Penjualan Tunai (Rp)': Number(s.totalCashSales || s.cashSales || 0),
         'Penjualan Non-Tunai (Rp)': Number(s.totalNonCashSales || s.nonCashSales || 0),
@@ -510,7 +510,7 @@ export default function ShiftHistoryPage() {
                       </td>
 
                       <td className="py-3 px-4 font-mono text-komazi-text font-bold whitespace-nowrap">
-                        {shift.workDurationFormatted || '-'}
+                        {shift.workDurationMinutes !== undefined ? formatDuration(shift.workDurationMinutes) : (shift.workDurationFormatted || '-')}
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono text-komazi-muted whitespace-nowrap">
