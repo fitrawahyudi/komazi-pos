@@ -137,12 +137,17 @@ export const inventoryService = {
           },
         });
 
+        const newStock = parseFloat(updatedIngredient.stock);
+        const stockBefore = newStock + parseFloat(deductionQty);
+
         // Catat pergerakan stok
         const movement = await client.stockMovement.create({
           data: {
             ingredientId: ing.id,
             type: 'SALE',
             qty: deductionQty,
+            stockBefore,
+            stockAfter: newStock,
             unitCost,
             totalCost,
             note: `Sale: Order #${order.id} (${order.invoiceNo}) - ${item.productName} x${itemQty}`,
@@ -222,7 +227,7 @@ export const inventoryService = {
     for (const mov of saleMovements) {
       const restoreQty = parseFloat(mov.qty);
 
-      await client.ingredient.update({
+      const updatedIngredient = await client.ingredient.update({
         where: { id: mov.ingredientId },
         data: {
           stock: {
@@ -231,11 +236,16 @@ export const inventoryService = {
         },
       });
 
+      const newStock = parseFloat(updatedIngredient.stock);
+      const stockBefore = newStock - parseFloat(restoreQty);
+
       await client.stockMovement.create({
         data: {
           ingredientId: mov.ingredientId,
           type: 'ADJUSTMENT',
           qty: restoreQty,
+          stockBefore,
+          stockAfter: newStock,
           unitCost: mov.unitCost,
           totalCost: mov.totalCost,
           note: `Restock Order #${order.id} (${order.invoiceNo}) - Alasan: ${reason}`,

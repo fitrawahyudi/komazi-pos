@@ -11,6 +11,8 @@ import {
   bulkDeleteIngredients,
   bulkCreateIngredients,
   getStockMovements,
+  getStockCard,
+  recordInbound,
 } from '../controllers/stockController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { requireRole } from '../middlewares/role.js';
@@ -32,9 +34,11 @@ router.get('/movements', getStockMovements);
 router.get('/waste-analytics', requireRole(['MANAGER', 'OWNER']), getWasteAnalytics);
 
 // Manajemen master bahan baku & pencatatan mutasi dibatasi untuk MANAGER & OWNER
+router.post('/inbound', requireRole(['MANAGER', 'OWNER']), recordInbound);
 router.post('/bulk', requireRole(['MANAGER', 'OWNER']), bulkCreateIngredients);
 router.post('/', requireRole(['MANAGER', 'OWNER']), createIngredient);
 router.get('/:id/movements', getStockMovements);
+router.get('/:id/stock-card', getStockCard);
 router.get('/:id/whatsapp-url', requireRole(['MANAGER', 'OWNER', 'BARISTA', 'KITCHEN']), getWhatsAppRestockUrl);
 router.put('/:id', requireRole(['MANAGER', 'OWNER']), updateIngredient);
 router.post('/bulk-delete', requireRole(['MANAGER', 'OWNER']), bulkDeleteIngredients);

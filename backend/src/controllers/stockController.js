@@ -209,6 +209,8 @@ export async function recordMovement(req, res) {
           ingredientId,
           type,
           qty: delta,
+          stockBefore: currentStock,
+          stockAfter: newStock,
           unitCost: parsedUnitCost,
           totalCost,
           note: note || null,
@@ -494,6 +496,8 @@ export async function getStockMovements(req, res) {
       unit: m.ingredient?.unit || '',
       type: m.type,
       qty: parseFloat(m.qty),
+      stockBefore: m.stockBefore !== null && m.stockBefore !== undefined ? parseFloat(m.stockBefore) : null,
+      stockAfter: m.stockAfter !== null && m.stockAfter !== undefined ? parseFloat(m.stockAfter) : null,
       unitCost: canCost && m.unitCost !== null && m.unitCost !== undefined ? parseFloat(m.unitCost) : null,
       totalCost: canCost && m.totalCost !== null && m.totalCost !== undefined ? parseFloat(m.totalCost) : null,
       note: m.note || null,
@@ -507,6 +511,70 @@ export async function getStockMovements(req, res) {
       'Riwayat pergerakan stok berhasil diambil',
       200,
       result.meta
+    );
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function getStockCard(req, res) {
+  try {
+    const ingredientId = parseInt(req.params.id, 10);
+    const { startDate, endDate, limit } = req.query;
+    const canCost = canViewCost(req.user?.role);
+
+    const result = await stockService.getStockCard({
+      ingredientId,
+      startDate,
+      endDate,
+      limit: limit ? parseInt(limit, 10) : 100,
+      canCost,
+    });
+
+    return successResponse(res, result, 'Kartu stok bahan berhasil diambil');
+  } catch (err) {
+    return errorResponse(res, err.message, 500);
+  }
+}
+
+export async function recordInbound(req, res) {
+  try {
+    const {
+      inboundNumber,
+      supplierName,
+      date,
+      receivedBy,
+      notes,
+      items,
+      createExpense,
+      paymentMethod,
+    } = req.body;
+    const canCost = canViewCost(req.user?.role);
+    const recordedByName = receivedBy || req.user?.name || (req.user?.role ? `${req.user.role}` : 'Staff');
+    const userId = req.user?.id || null;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return errorResponse(res, 'Daftar item stok masuk tidak boleh kosong', 400);
+    }
+
+    const result = await stockService.recordInboundBatch({
+      inboundNumber,
+      supplierName,
+      date,
+      receivedBy: recordedByName,
+      notes,
+      items,
+      canCost,
+      createExpense: createExpense !== false,
+      paymentMethod: paymentMethod || 'CASH',
+      userId,
+    });
+
+    return successResponse(
+      res,
+      result,
+      `Berhasil menerima ${result.processedCount} item stok masuk & memperbarui bahan baku`,
+      201
     );
   } catch (err) {
     return errorResponse(res, err.message, 500);

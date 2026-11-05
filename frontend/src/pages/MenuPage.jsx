@@ -138,6 +138,7 @@ export default function MenuPage() {
         'Nama Produk': p.name,
         'Kategori': categories.find((c) => c.id === p.categoryId)?.name || '-',
         'Stasiun': sType === 'BAR' ? 'Barista' : 'Dapur',
+        'Harga Modal': p.costPrice ? Number(p.costPrice) : 0,
         'Harga Jual': p.price,
         'Harga Dinamis?': p.isDynamicPrice ? 'ya' : 'tidak',
         'Batas Harga Minimum': p.minPrice ? Number(p.minPrice) : 0,
@@ -157,6 +158,7 @@ export default function MenuPage() {
     categoryId: '',
     stationId: '',
     price: 25000,
+    costPrice: '',
     isDynamicPrice: false,
     minPrice: 0,
     sku: '',
@@ -198,6 +200,7 @@ export default function MenuPage() {
       categoryId: defaultCatId,
       stationId: defaultStationId,
       price: 25000,
+    costPrice: '',
       isDynamicPrice: false,
       minPrice: 0,
       sku: `KMZ-PRD-${Math.floor(100 + Math.random() * 900)}`,
@@ -223,6 +226,7 @@ export default function MenuPage() {
       categoryId: prod.categoryId,
       stationId: prod.stationId || matchingStation?.id || '',
       price: prod.price,
+      costPrice: prod.costPrice !== undefined && prod.costPrice !== null ? prod.costPrice : '',
       isDynamicPrice: Boolean(prod.isDynamicPrice),
       minPrice: Number(prod.minPrice) || 0,
       sku: prod.sku || '',
@@ -397,6 +401,7 @@ export default function MenuPage() {
       categoryId: catIdNum,
       stationId: finalStationId,
       price: Number(formData.price) || 0,
+      costPrice: formData.costPrice !== '' && formData.costPrice !== null && !isNaN(Number(formData.costPrice)) ? Math.max(0, Number(formData.costPrice)) : 0,
       isDynamicPrice: Boolean(formData.isDynamicPrice),
       minPrice: Number(formData.minPrice) || 0,
       categoryName: cat?.name || 'Kopi',
@@ -459,13 +464,15 @@ export default function MenuPage() {
         if (p.isActive === false) return false;
       }
 
-      // 4. Status Resep HPP (BOM)
+      // 4. Status Resep HPP (BOM) & Modal
+      const hasRecipe = Boolean(recipes[p.id] && recipes[p.id].length > 0);
+      const hasManualCost = Number(p.costPrice) > 0;
       if (recipeFilter === 'WITH_RECIPE') {
-        const hasRecipe = Boolean(recipes[p.id] && recipes[p.id].length > 0);
         if (!hasRecipe) return false;
+      } else if (recipeFilter === 'MANUAL_COST') {
+        if (!hasManualCost || hasRecipe) return false;
       } else if (recipeFilter === 'NO_RECIPE') {
-        const hasRecipe = Boolean(recipes[p.id] && recipes[p.id].length > 0);
-        if (hasRecipe) return false;
+        if (hasRecipe || hasManualCost) return false;
       }
 
       // 5. Rentang Harga
@@ -764,9 +771,10 @@ export default function MenuPage() {
                   }`}
                   title="Filter berdasarkan status konfigurasi resep BOM"
                 >
-                  <option value="ALL">Semua Resep</option>
+                  <option value="ALL">Semua Resep & Modal</option>
                   <option value="WITH_RECIPE">Ada Resep HPP</option>
-                  <option value="NO_RECIPE">Belum Ada Resep</option>
+                  <option value="MANUAL_COST">Harga Modal Manual</option>
+                  <option value="NO_RECIPE">Belum Ada HPP/Resep</option>
                 </select>
               </div>
             )}
@@ -1011,16 +1019,31 @@ export default function MenuPage() {
                         const hpp = calculateProductHpp(prod.id);
                         const prodRecipes = recipes[prod.id] || [];
                         const hasRecipe = prodRecipes.length > 0;
-                        const margin = prod.price > 0 && hasRecipe
+                        const manualCost = Number(prod.costPrice) || 0;
+                        const hasCost = hasRecipe || manualCost > 0;
+                        const margin = prod.price > 0 && hasCost
                           ? Math.round(((prod.price - hpp) / prod.price) * 100)
                           : 0;
 
                         return (
                           <td className="py-3 px-4">
-                            {hasRecipe ? (
+                            {hasCost ? (
                               <div className="flex flex-col gap-0.5">
-                                <span className="font-mono font-bold text-komazi-text text-xs">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-komazi-text text-xs">
                                   {formatRupiah(hpp)}
+                                </span>
+                                {hasRecipe ? (
+                                  <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" title="Dihitung dari resep bahan baku">
+                                    Resep
+                                  </span>
+                                ) : (
+                                  <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="Harga modal manual (tanpa resep)">
+                                    Manual
+                                  </span>
+                                )}
+                              </div>
+                              <span className="hidden">
                                 </span>
                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold w-fit ${
                                   margin >= 60 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
@@ -1372,18 +1395,75 @@ export default function MenuPage() {
 
                       <div>
                         <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                          {formData.isDynamicPrice ? 'Harga Saran / Acuan' : 'Harga Dasar'}
+                          SKU Code
                         </label>
                         <input
-                          type="number"
-                          // step="1000"
-                          min=""
-                          required={!formData.isDynamicPrice}
-                          value={formData.price}
-                          onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                          placeholder={formData.isDynamicPrice ? '0 (Opsional)' : '25000'}
-                          className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono font-bold text-komazi-text focus:border-komazi-coral focus:outline-none"
+                          type="text"
+                          placeholder="KMZ-XXX-001"
+                          value={formData.sku}
+                          onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
                         />
+                      </div>
+                    </div>
+
+                    {/* Harga Modal (HPP Manual) & Harga Jual side-by-side */}
+                    <div className="p-3.5 rounded-2xl bg-komazi-surface-2/80 border border-komazi-border space-y-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-bold uppercase text-komazi-muted">
+                              Harga Modal (HPP)
+                            </label>
+                            <span className="text-[10px] text-cyan-400 font-medium">Manual/Retail</span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-komazi-muted">Rp</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.costPrice ?? ''}
+                              onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
+                              placeholder="0 (Opsional)"
+                              className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono font-bold text-cyan-400 focus:border-cyan-400 focus:outline-none"
+                            />
+                          </div>
+                          <span className="text-[10px] text-komazi-muted mt-1 block leading-tight">
+                            Untuk item tanpa resep (snack/retail/titipan). Bila resep ada, HPP resep diutamakan.
+                          </span>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-bold uppercase text-komazi-muted">
+                              {formData.isDynamicPrice ? 'Harga Saran / Acuan' : 'Harga Jual'}
+                            </label>
+                            <span className="text-[10px] text-emerald-400 font-medium">
+                              {formData.isDynamicPrice ? 'Dinamis' : 'Wajib'}
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-komazi-muted">Rp</span>
+                            <input
+                              type="number"
+                              min="0"
+                              required={!formData.isDynamicPrice}
+                              value={formData.price}
+                              onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                              placeholder={formData.isDynamicPrice ? '0 (Opsional)' : '25000'}
+                              className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-komazi-surface border border-komazi-border text-xs font-mono font-bold text-komazi-coral focus:border-komazi-coral focus:outline-none"
+                            />
+                          </div>
+                          <span className="text-[10px] text-komazi-muted mt-1 block leading-tight">
+                            {Number(formData.price || 0) > Number(formData.costPrice || 0) && Number(formData.costPrice || 0) > 0 ? (
+                              <span className="text-emerald-400 font-semibold">
+                                Estimasi Laba: {formatRupiah(Number(formData.price) - Number(formData.costPrice))} ({Math.round(((Number(formData.price) - Number(formData.costPrice)) / Number(formData.price)) * 100)}%)
+                              </span>
+                            ) : (
+                              'Harga jual transaksi ke pelanggan'
+                            )}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -1549,18 +1629,7 @@ export default function MenuPage() {
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-komazi-muted mb-1">
-                        SKU Code:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="KMZ-XXX-001"
-                        value={formData.sku}
-                        onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs font-mono text-komazi-text focus:border-komazi-coral focus:outline-none"
-                      />
-                    </div>
+                    
 
                     {/* Image Upload with Cloudinary & Live Preview */}
                     <ImageUpload

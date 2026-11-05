@@ -72,6 +72,8 @@ export const stockService = {
           ingredientId: Number(ingredientId),
           type: 'WASTE',
           qty: -numericQty,
+          stockBefore: currentStock,
+          stockAfter: newStock,
           unitCost: unitCost > 0 ? unitCost : null,
           totalCost: totalCost > 0 ? totalCost : null,
           note: reason,
@@ -237,7 +239,7 @@ export const stockService = {
     }
 
     const currentPage = Math.max(1, parseInt(page, 10) || 1);
-    const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const take = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (currentPage - 1) * take;
 
     const validSortFields = ['createdAt', 'qty', 'totalCost'];
@@ -277,6 +279,330 @@ export const stockService = {
         totalPages,
       },
     };
+  },
+
+  async getStockCard({ ingredientId, startDate, endDate, limit = 100, canCost = false } = {}) {
+    const id = Number(ingredientId);
+    if (!id || isNaN(id)) throw new Error('ID Bahan Baku tidak valid');
+
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        stock: true,
+        minStock: true,
+        costPerUnit: true,
+        supplierName: true,
+      },
+    });
+
+    if (!ingredient) throw new Error('Bahan baku tidak ditemukan');
+
+    const currentStock = parseFloat(ingredient.stock || 0);
+
+    const where = { ingredientId: id };
+    let start = null;
+    let end = null;
+
+    if (startDate) {
+      start = new Date(startDate);
+      if (!isNaN(start.getTime())) {
+        start.setHours(0, 0, 0, 0);
+      } else {
+        start = null;
+      }
+    }
+    if (endDate) {
+      end = new Date(endDate);
+      if (!isNaN(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
+      } else {
+        end = null;
+      }
+    }
+
+    if (start || end) {
+      where.createdAt = {};
+      if (start) where.createdAt.gte = start;
+      if (end) where.createdAt.lte = end;
+    }
+
+    const movements = await prisma.stockMovement.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      take: Math.min(500, Math.max(1, limit)),
+    });
+
+    let calculatedOpeningStock = currentStock;
+    if (start) {
+      const subsequentMovements = await prisma.stockMovement.findMany({
+        where: {
+          ingredientId: id,
+          createdAt: { gte: start },
+        },
+        select: { qty: true, type: true },
+      });
+
+      const netDeltaSinceStart = subsequentMovements.reduce((acc, m) => {
+        const q = parseFloat(m.qty || 0);
+        if (m.type === 'PURCHASE') return acc + Math.abs(q);
+        if (m.type === 'SALE' || m.type === 'WASTE') return acc - Math.abs(q);
+        return acc + q;
+      }, 0);
+      calculatedOpeningStock = Math.round((currentStock - netDeltaSinceStart) * 100) / 100;
+    } else if (movements.length > 0) {
+      const netDeltaInBatch = movements.reduce((acc, m) => {
+        const q = parseFloat(m.qty || 0);
+        if (m.type === 'PURCHASE') return acc + Math.abs(q);
+        if (m.type === 'SALE' || m.type === 'WASTE') return acc - Math.abs(q);
+        return acc + q;
+      }, 0);
+      calculatedOpeningStock = Math.round((currentStock - netDeltaInBatch) * 100) / 100;
+    }
+
+    let running = calculatedOpeningStock;
+    let totalIn = 0;
+    let totalOut = 0;
+    let totalCostIn = 0;
+    let totalCostOut = 0;
+
+    const formattedMovements = movements.map((m) => {
+      const rawQty = parseFloat(m.qty || 0);
+      let netDelta = 0;
+      let isIncrease = false;
+
+      if (m.type === 'PURCHASE') {
+        netDelta = Math.abs(rawQty);
+        isIncrease = true;
+      } else if (m.type === 'SALE' || m.type === 'WASTE') {
+        netDelta = -Math.abs(rawQty);
+        isIncrease = false;
+      } else {
+        netDelta = rawQty;
+        isIncrease = rawQty >= 0;
+      }
+
+      const absQty = Math.abs(netDelta);
+
+      const stockBefore = m.stockBefore !== null && m.stockBefore !== undefined
+        ? parseFloat(m.stockBefore)
+        : running;
+
+      const stockAfter = m.stockAfter !== null && m.stockAfter !== undefined
+        ? parseFloat(m.stockAfter)
+        : Math.round((running + netDelta) * 100) / 100;
+
+      running = stockAfter;
+
+      if (isIncrease) {
+        totalIn += absQty;
+        if (m.totalCost) totalCostIn += parseFloat(m.totalCost);
+      } else {
+        totalOut += absQty;
+        if (m.totalCost) totalCostOut += parseFloat(m.totalCost);
+      }
+
+      return {
+        id: m.id,
+        type: m.type,
+        qty: netDelta,
+        displayQty: `${isIncrease ? '+' : '-'}${absQty}`,
+        stockBefore,
+        stockAfter,
+        unitCost: canCost && m.unitCost !== null ? parseFloat(m.unitCost) : null,
+        totalCost: canCost && m.totalCost !== null ? parseFloat(m.totalCost) : null,
+        note: m.note || null,
+        recordedBy: m.recordedBy || 'Sistem',
+        createdAt: m.createdAt,
+      };
+    });
+
+    formattedMovements.reverse();
+
+    return {
+      ingredient: {
+        id: ingredient.id,
+        name: ingredient.name,
+        unit: ingredient.unit,
+        currentStock,
+        minStock: parseFloat(ingredient.minStock || 0),
+        costPerUnit: canCost ? parseFloat(ingredient.costPerUnit || 0) : null,
+        supplierName: ingredient.supplierName || null,
+      },
+      summary: {
+        openingStock: calculatedOpeningStock,
+        totalIn: Math.round(totalIn * 100) / 100,
+        totalOut: Math.round(totalOut * 100) / 100,
+        closingStock: running,
+        movementCount: formattedMovements.length,
+        totalCostIn: canCost ? Math.round(totalCostIn) : null,
+        totalCostOut: canCost ? Math.round(totalCostOut) : null,
+      },
+      movements: formattedMovements,
+    };
+  },
+
+  async recordInboundBatch({
+    inboundNumber,
+    supplierName,
+    date,
+    receivedBy,
+    notes,
+    items = [],
+    canCost = false,
+    createExpense = true,
+    paymentMethod = 'CASH',
+    userId = null,
+  }) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Daftar item stok masuk tidak boleh kosong');
+    }
+
+    const recordedDate = date ? new Date(date) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const processedMovements = [];
+      const updatedIngredients = [];
+      let totalInboundCost = 0;
+
+      for (const item of items) {
+        let ing = null;
+        if (item.ingredientId) {
+          ing = await tx.ingredient.findUnique({
+            where: { id: Number(item.ingredientId) },
+          });
+        }
+        if (!ing && item.name) {
+          ing = await tx.ingredient.findFirst({
+            where: { name: String(item.name).trim() },
+          });
+        }
+
+        if (!ing) {
+          throw new Error(`Bahan baku "${item.name || item.ingredientId}" tidak ditemukan di master persediaan`);
+        }
+
+        const currentStock = parseFloat(ing.stock || 0);
+        const addQty = parseFloat(item.convertedQty || item.qty || 0);
+        if (addQty <= 0) continue;
+
+        const newStock = Math.round((currentStock + addQty) * 100) / 100;
+
+        const effectiveCost = (item.effectiveUnitCost !== undefined && item.effectiveUnitCost !== null)
+          ? parseFloat(item.effectiveUnitCost)
+          : (item.unitCost ? parseFloat(item.unitCost) : null);
+
+        const totalCost = (item.totalCost !== undefined && item.totalCost !== null)
+          ? parseFloat(item.totalCost)
+          : (effectiveCost !== null ? Math.round(effectiveCost * addQty * 100) / 100 : null);
+
+        if (totalCost && totalCost > 0) {
+          totalInboundCost += totalCost;
+        }
+
+        const updateData = { stock: newStock };
+        if (effectiveCost !== null && effectiveCost > 0) {
+          updateData.costPerUnit = effectiveCost;
+        }
+        if (supplierName && String(supplierName).trim()) {
+          updateData.supplierName = String(supplierName).trim();
+        }
+
+        const updated = await tx.ingredient.update({
+          where: { id: ing.id },
+          data: updateData,
+        });
+
+        let note = `[${inboundNumber || 'INBOUND'}]`;
+        if (item.purchasedUnit && item.purchasedUnit !== ing.unit) {
+          note += ` Beli ${item.purchasedQty || item.qty} ${item.purchasedUnit} -> Masuk ${addQty} ${ing.unit}`;
+        } else {
+          note += ` Stok Masuk: +${addQty} ${ing.unit}`;
+        }
+        if (supplierName) note += ` • Pemasok: ${supplierName}`;
+        if (notes) note += ` (${notes})`;
+
+        const movement = await tx.stockMovement.create({
+          data: {
+            ingredientId: ing.id,
+            type: 'PURCHASE',
+            qty: addQty,
+            stockBefore: currentStock,
+            stockAfter: newStock,
+            unitCost: effectiveCost,
+            totalCost,
+            note,
+            recordedBy: receivedBy || 'Staff',
+            createdAt: recordedDate,
+          },
+        });
+
+        processedMovements.push(movement);
+        updatedIngredients.push(updated);
+      }
+
+      // 2. Otomatisasi sinkronisasi ke tabel Expense (Menu Biaya)
+      let createdExpense = null;
+      if (createExpense && totalInboundCost > 0) {
+        // Dapatkan atau buat Kategori Pengeluaran 'Pembelian Bahan Baku'
+        let category = await tx.expenseCategory.findFirst({
+          where: { name: 'Pembelian Bahan Baku' },
+        });
+        if (!category) {
+          category = await tx.expenseCategory.create({
+            data: {
+              name: 'Pembelian Bahan Baku',
+              description: 'Belanja persediaan bahan baku dan stok kedai',
+              isDefault: true,
+            },
+          });
+        }
+
+        // Tentukan user pembuat
+        let creatorId = userId;
+        if (!creatorId) {
+          const defaultUser = await tx.user.findFirst({
+            where: { role: { in: ['OWNER', 'MANAGER'] } },
+            select: { id: true },
+          });
+          creatorId = defaultUser ? defaultUser.id : 1;
+        }
+
+        // Generate nomor referensi pengeluaran
+        const dateKey = recordedDate.toISOString().slice(0, 10).replace(/-/g, '');
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const expRefNo = `EXP-${dateKey}-INB${randomSuffix}`;
+
+        createdExpense = await tx.expense.create({
+          data: {
+            referenceNo: expRefNo,
+            date: recordedDate,
+            categoryId: category.id,
+            description: `Belanja Stok Masuk ${inboundNumber || ''}${supplierName ? ` - ${supplierName}` : ''}`.trim(),
+            amount: Math.round(totalInboundCost * 100) / 100,
+            paymentMethod: paymentMethod || 'CASH',
+            paymentStatus: 'PAID',
+            recipientVendor: supplierName ? String(supplierName).trim() : null,
+            sourceType: 'INBOUND',
+            sourceRef: inboundNumber || expRefNo,
+            notes: notes || `Otomatis dari Penerimaan Stok Masuk (${processedMovements.length} item bahan baku)`,
+            createdById: creatorId,
+          },
+        });
+      }
+
+      return {
+        processedCount: processedMovements.length,
+        movements: processedMovements,
+        updatedIngredients,
+        totalInboundCost: Math.round(totalInboundCost * 100) / 100,
+        expense: createdExpense,
+      };
+    });
+
+    return result;
   },
 };
 

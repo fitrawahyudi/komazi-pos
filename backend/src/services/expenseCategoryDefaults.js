@@ -1,6 +1,7 @@
 import prisma from '../config/db.js';
 
 export const DEFAULT_EXPENSE_CATEGORIES = [
+  { name: 'Pembelian Bahan Baku', description: 'Belanja persediaan bahan baku dan stok kedai', isDefault: true },
   { name: 'Listrik', description: 'Tagihan listrik operasional kedai', isDefault: true },
   { name: 'Air', description: 'Tagihan air PDAM / sumur bor kedai', isDefault: true },
   { name: 'Internet & Telekomunikasi', description: 'Biaya langganan WiFi kedai & pulsa operasional', isDefault: true },

@@ -485,7 +485,14 @@ export default function ExpensesPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 max-w-xs truncate" title={exp.description}>
-                      <div className="font-semibold text-komazi-text truncate">{exp.description}</div>
+                      <div className="font-semibold text-komazi-text truncate flex items-center gap-1.5">
+                        <span className="truncate">{exp.description}</span>
+                        {exp.sourceType === 'INBOUND' && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-teal-500/15 text-teal-400 border border-teal-500/30 shrink-0">
+                            Stok Masuk
+                          </span>
+                        )}
+                      </div>
                       {exp.recipientVendor && (
                         <div className="text-[10px] text-komazi-muted truncate">
                           Vendor: {exp.recipientVendor}
@@ -1012,6 +1019,14 @@ export default function ExpensesPage() {
                   {detailExpense.paymentMethod} • {detailExpense.paymentStatus}
                 </span>
               </div>
+              {detailExpense.sourceType === 'INBOUND' && (
+                <div className="flex justify-between py-1 border-b border-komazi-border/40">
+                  <span className="text-komazi-muted">Sumber Entri:</span>
+                  <span className="font-bold text-teal-400">
+                    Penerimaan Stok Masuk ({detailExpense.sourceRef || '-'})
+                  </span>
+                </div>
+              )}
               {detailExpense.recipientVendor && (
                 <div className="flex justify-between py-1 border-b border-komazi-border/40">
                   <span className="text-komazi-muted">Penerima / Vendor:</span>

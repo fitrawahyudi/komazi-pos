@@ -75,7 +75,7 @@ export async function getProductById(req, res) {
 
 export async function createProduct(req, res) {
   try {
-    const { name, categoryId, price, sku, imageUrl, description, modifiers, isActive, isSoldOut, variants, stationId, isDynamicPrice, minPrice } = req.body;
+    const { name, categoryId, price, costPrice, sku, imageUrl, description, modifiers, isActive, isSoldOut, variants, stationId, isDynamicPrice, minPrice } = req.body;
 
     if (!name || !name.trim()) {
       return errorResponse(res, 'Nama produk wajib diisi', 400);
@@ -109,6 +109,7 @@ export async function createProduct(req, res) {
         categoryId: parsedCategoryId,
         stationId: resolvedStationId,
         price,
+        costPrice: costPrice !== undefined && costPrice !== null ? Math.max(0, parseFloat(costPrice) || 0) : 0,
         sku: autoSku,
         imageUrl: imageUrl || null,
         description: description || null,
@@ -143,7 +144,7 @@ export async function createProduct(req, res) {
 export async function updateProduct(req, res) {
   try {
     const id = parseInt(req.params.id);
-    const { name, categoryId, price, sku, imageUrl, description, modifiers, isActive, isSoldOut, variants, stationId, isDynamicPrice, minPrice } = req.body;
+    const { name, categoryId, price, costPrice, sku, imageUrl, description, modifiers, isActive, isSoldOut, variants, stationId, isDynamicPrice, minPrice } = req.body;
 
     const updated = await prisma.$transaction(async (tx) => {
       // If variants are supplied, replace them
@@ -181,6 +182,7 @@ export async function updateProduct(req, res) {
           ...(categoryId && { categoryId: parseInt(categoryId) }),
           ...(resolvedStationId !== undefined && { stationId: resolvedStationId }),
           ...(price !== undefined && { price }),
+          ...(costPrice !== undefined && { costPrice: costPrice !== null ? Math.max(0, parseFloat(costPrice) || 0) : 0 }),
           ...(sku && { sku }),
           ...(imageUrl !== undefined && { imageUrl }),
           ...(description !== undefined && { description }),
@@ -418,6 +420,10 @@ export async function bulkCreateProducts(req, res) {
           item.isDynamicPrice === 'ya'
         );
         const minPrice = item.minPrice !== undefined ? Math.max(0, parseFloat(item.minPrice) || 0) : 0;
+        const rawCostPrice = item.costPrice !== undefined ? item.costPrice : (item.directHpp !== undefined ? item.directHpp : undefined);
+        const parsedCostPrice = rawCostPrice !== undefined && rawCostPrice !== null && !isNaN(parseFloat(rawCostPrice))
+          ? Math.max(0, parseFloat(rawCostPrice))
+          : undefined;
 
         // Routing station (KDS vs BDS)
         let resolvedStationId = null;
@@ -449,6 +455,7 @@ export async function bulkCreateProducts(req, res) {
               name: item.name.trim(),
               categoryId,
               ...(resolvedStationId !== null && { stationId: resolvedStationId }),
+              ...(parsedCostPrice !== undefined && { costPrice: parsedCostPrice }),
               price,
               description: item.description?.trim() || existingProduct.description,
               imageUrl: item.imageUrl?.trim() || existingProduct.imageUrl,
@@ -470,6 +477,7 @@ export async function bulkCreateProducts(req, res) {
               name: item.name.trim(),
               categoryId,
               stationId: resolvedStationId,
+              costPrice: parsedCostPrice !== undefined ? parsedCostPrice : 0,
               price,
               sku,
               description: item.description?.trim() || null,

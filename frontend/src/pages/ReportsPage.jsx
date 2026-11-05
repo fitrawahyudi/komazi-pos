@@ -123,6 +123,15 @@ export default function ReportsPage({ tab: propTab }) {
       );
     }
 
+    if (range === 'YESTERDAY') {
+      const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      return (
+        orderDate.getFullYear() === yesterday.getFullYear() &&
+        orderDate.getMonth() === yesterday.getMonth() &&
+        orderDate.getDate() === yesterday.getDate()
+      );
+    }
+
     if (range === 'WEEK') {
       const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0).getTime();
       const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
@@ -137,15 +146,28 @@ export default function ReportsPage({ tab: propTab }) {
       return orderTime >= startOfMonth && orderTime <= endOfToday;
     }
 
+    if (range === 'LAST_MONTH') {
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0).getTime();
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
+      const orderTime = orderDate.getTime();
+      return orderTime >= startOfLastMonth && orderTime <= endOfLastMonth;
+    }
+
     return true;
   };
 
   const dateRangeLabel =
     dateRange === 'TODAY'
       ? 'Hari Ini'
+      : dateRange === 'YESTERDAY'
+      ? 'Kemarin'
       : dateRange === 'WEEK'
       ? '7 Hari Terakhir'
-      : 'Bulan Ini';
+      : dateRange === 'MONTH'
+      ? 'Bulan Ini'
+      : dateRange === 'LAST_MONTH'
+      ? 'Bulan Lalu'
+      : 'Rentang Tanggal';
 
   // 1. Filter transaksi lunas (PAID) secara riil sesuai rentang tanggal yang dipilih
   const filteredOrders = React.useMemo(() => {
@@ -408,6 +430,16 @@ export default function ReportsPage({ tab: propTab }) {
               Hari Ini
             </button>
             <button
+              onClick={() => setDateRange('YESTERDAY')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                dateRange === 'YESTERDAY'
+                  ? 'bg-komazi-coral text-white'
+                  : 'text-komazi-muted hover:text-white'
+              }`}
+            >
+              Kemarin
+            </button>
+            <button
               onClick={() => setDateRange('WEEK')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 dateRange === 'WEEK'
@@ -426,6 +458,16 @@ export default function ReportsPage({ tab: propTab }) {
               }`}
             >
               Bulan Ini
+            </button>
+            <button
+              onClick={() => setDateRange('LAST_MONTH')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                dateRange === 'LAST_MONTH'
+                  ? 'bg-komazi-coral text-white'
+                  : 'text-komazi-muted hover:text-white'
+              }`}
+            >
+              Bulan Lalu
             </button>
           </div>
 
@@ -605,7 +647,7 @@ export default function ReportsPage({ tab: propTab }) {
           onExportExcel={handleExportExcel}
         />
       ) : activeTab === 'PROFIT_LOSS' && canViewCogs ? (
-        <ProfitLossView dateRange={dateRange} />
+        <ProfitLossView dateRange={dateRange} storeName={settings?.storeName} />
       ) : isLoading && orders.length === 0 ? (
         <DashboardMetricsSkeleton />
       ) : (

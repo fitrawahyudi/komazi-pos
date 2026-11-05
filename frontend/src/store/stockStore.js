@@ -23,6 +23,8 @@ export const useStockStore = create(
               unit: m.unit || m.ingredient?.unit || '',
               type: m.type,
               qty: Number(m.qty) || 0,
+              stockBefore: m.stockBefore !== null && m.stockBefore !== undefined ? Number(m.stockBefore) : null,
+              stockAfter: m.stockAfter !== null && m.stockAfter !== undefined ? Number(m.stockAfter) : null,
               unitCost: m.unitCost !== null && m.unitCost !== undefined ? Number(m.unitCost) : null,
               totalCost: m.totalCost !== null && m.totalCost !== undefined ? Number(m.totalCost) : null,
               note: m.note || '',
@@ -47,6 +49,33 @@ export const useStockStore = create(
           set({ isMovementsLoading: false });
         }
         return { data: get().movements, meta: get().movementsMeta };
+      },
+
+      fetchStockCard: async (ingredientId, params = {}) => {
+        try {
+          const res = await api.stock.getStockCard(ingredientId, params);
+          if (res && res.success) {
+            return res.data;
+          }
+        } catch (err) {
+          console.error('[StockStore] Error fetching stock card:', err);
+        }
+        return null;
+      },
+
+      recordInbound: async (inboundData) => {
+        try {
+          const res = await api.stock.recordInbound(inboundData);
+          if (res && res.success) {
+            await get().fetchIngredients();
+            await get().fetchMovements();
+            return res;
+          }
+        } catch (err) {
+          console.error('[StockStore] Error recording inbound:', err);
+          throw err;
+        }
+        return null;
       },
 
       fetchIngredients: async () => {

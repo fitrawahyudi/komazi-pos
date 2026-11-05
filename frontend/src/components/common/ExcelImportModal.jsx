@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   X,
   Upload,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   RefreshCw,
   Trash2,
+  Plus,
 } from 'lucide-react';
 import {
   parseExcelFile,
@@ -150,12 +151,76 @@ export default function ExcelImportModal({
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
 
-  // Auto-fetch master ingredients when opening modal for Menu import
+  const existingProducts = usePosStore((state) => state.products) || [];
+  const existingIngredients = useStockStore((state) => state.ingredients) || [];
+  const existingCustomers = useCustomerStore((state) => state.customers) || [];
+  const existingStaff = useHrisStore((state) => state.staff || state.staffList) || [];
+
+  // Auto-fetch master data saat modal dibuka untuk deteksi akurat Upsert / Duplicate
   useEffect(() => {
-    if (isOpen && type === 'MENU') {
-      useStockStore.getState().fetchIngredients?.();
+    if (isOpen) {
+      if (type === 'MENU' || type === 'RECIPE') {
+        useStockStore.getState().fetchIngredients?.();
+        usePosStore.getState().fetchProducts?.();
+      } else if (type === 'INGREDIENT') {
+        useStockStore.getState().fetchIngredients?.();
+      } else if (type === 'STAFF') {
+        useHrisStore.getState().fetchStaff?.();
+      } else if (type === 'CUSTOMER') {
+        useCustomerStore.getState().fetchCustomers?.();
+      }
     }
   }, [isOpen, type]);
+
+  // Helper cerdas penentu apakah baris Excel sudah ada di database (Update) atau belum (Baru)
+  const isRowExisting = useCallback(
+    (row) => {
+      if (!row || !row.transformed) return false;
+      const t = row.transformed;
+
+      if (type === 'MENU') {
+        const sku = (t.sku || '').toString().trim().toLowerCase();
+        const name = (t.name || '').toString().trim().toLowerCase();
+        if (sku) {
+          return existingProducts.some((p) => (p.sku || '').toString().trim().toLowerCase() === sku);
+        }
+        return existingProducts.some((p) => (p.name || '').toString().trim().toLowerCase() === name);
+      }
+
+      if (type === 'INGREDIENT') {
+        const name = (t.name || '').toString().trim().toLowerCase();
+        return existingIngredients.some((i) => (i.name || '').toString().trim().toLowerCase() === name);
+      }
+
+      if (type === 'CUSTOMER') {
+        const phone = (t.phone || '').toString().trim();
+        const email = (t.email || '').toString().trim().toLowerCase();
+        return existingCustomers.some(
+          (c) =>
+            (phone && (c.phone || '').toString().trim() === phone) ||
+            (email && (c.email || '').toString().trim().toLowerCase() === email)
+        );
+      }
+
+      if (type === 'STAFF') {
+        const username = (t.username || '').toString().trim().toLowerCase();
+        const phone = (t.phone || '').toString().trim();
+        return existingStaff.some(
+          (s) =>
+            (username && (s.username || s.name || '').toString().trim().toLowerCase() === username) ||
+            (phone && (s.phone || '').toString().trim() === phone)
+        );
+      }
+
+      if (type === 'RECIPE') {
+        const sku = (t.sku || '').toString().trim().toLowerCase();
+        return existingProducts.some((p) => (p.sku || '').toString().trim().toLowerCase() === sku);
+      }
+
+      return false;
+    },
+    [type, existingProducts, existingIngredients, existingCustomers, existingStaff]
+  );
 
   if (!isOpen) return null;
 
@@ -300,6 +365,7 @@ export default function ExcelImportModal({
         variants,
         kitchenStation: String(row['Stasiun'] || row['Stasiun (KDS)'] || row['Stasiun Dapur'] || '').trim(),
         hpp: resolvedHpp,
+        costPrice: directHpp,
         directHpp,
         recipeCost,
         recipeItems,
@@ -798,6 +864,12 @@ export default function ExcelImportModal({
 
   const validCount = parsedRows.filter((r) => r.isValid).length;
   const errorCount = parsedRows.filter((r) => !r.isValid).length;
+  const updateCount = useMemo(() => {
+    return parsedRows.filter((r) => r.isValid && isRowExisting(r)).length;
+  }, [parsedRows, isRowExisting]);
+  const newCount = useMemo(() => {
+    return parsedRows.filter((r) => r.isValid && !isRowExisting(r)).length;
+  }, [parsedRows, isRowExisting]);
 
   // Ringkasan metrik HPP untuk menu
   const validMenuItems = type === 'MENU' ? parsedRows.filter((r) => r.isValid).map((r) => r.transformed) : [];
@@ -1044,15 +1116,27 @@ export default function ExcelImportModal({
               )}
 
               {/* Header pratinjau */}
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <h4 className="font-bold text-xs uppercase tracking-wider text-komazi-muted flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   <span>Pratinjau Data ({parsedRows.length} Baris Ditemukan)</span>
                 </h4>
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
                     ✓ {validCount} Valid
                   </span>
+                  {updateCount > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 font-bold flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{updateCount} Update Data Lama</span>
+                    </span>
+                  )}
+                  {newCount > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold flex items-center gap-1">
+                      <Plus className="w-3 h-3" />
+                      <span>{newCount} Data Baru</span>
+                    </span>
+                  )}
                   {errorCount > 0 && (
                     <span className="px-2.5 py-0.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 font-bold">
                       ⚠ {errorCount} Error
@@ -1067,6 +1151,7 @@ export default function ExcelImportModal({
                   <thead className="bg-komazi-surface-2 text-komazi-muted sticky top-0 border-b border-komazi-border font-bold text-[11px] z-10">
                     <tr>
                       <th className="p-2.5 pl-3">Status</th>
+                      <th className="p-2.5">Aksi</th>
                       {type === 'MENU' && (
                         <>
                           <th className="p-2.5">Nama Produk</th>
@@ -1133,6 +1218,27 @@ export default function ExcelImportModal({
                               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                             ) : (
                               <AlertCircle className="w-4 h-4 text-red-400" />
+                            )}
+                          </td>
+
+                          {/* Aksi: Update vs Baru */}
+                          <td className="p-2.5 whitespace-nowrap">
+                            {isRowExisting(row) ? (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+                                title="Data ini sudah terdaftar. Impor akan memperbarui (menimpa) data yang ada."
+                              >
+                                <RefreshCw className="w-2.5 h-2.5" />
+                                <span>Update</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                title="Data baru. Impor akan membuat baris baru."
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Baru</span>
+                              </span>
                             )}
                           </td>
 

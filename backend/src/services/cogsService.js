@@ -4,6 +4,7 @@ import prisma from '../config/db.js';
  * Calculate the COGS (Cost of Goods Sold / HPP) for a specific product + optional variant.
  * Sums up: recipe ingredient quantity * ingredient costPerUnit
  * If variant has specific recipe items, those are added on top of the base product recipe.
+ * Fallback to manual costPrice (Harga Modal) if no recipe is defined.
  *
  * @param {number} productId
  * @param {string|null} variantName - optional variant name to look up variant-specific recipe items
@@ -57,6 +58,17 @@ export async function calculateProductCogs(productId, variantName = null) {
     }
   }
 
+  // If no recipe is defined, fallback to product's manual costPrice (Harga Modal)
+  if (baseRecipeItems.length === 0 && totalCost === 0) {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { costPrice: true },
+    });
+    if (product && product.costPrice) {
+      totalCost = parseFloat(product.costPrice) || 0;
+    }
+  }
+
   return Math.round(totalCost * 100) / 100; // Round to 2 decimal places
 }
 
@@ -89,9 +101,11 @@ export async function getAllProductsCogsOverview() {
     }, 0);
 
     const price = parseFloat(product.price);
-    const hpp = Math.round(baseCost * 100) / 100;
-    const margin = price > 0 ? Math.round(((price - hpp) / price) * 10000) / 100 : 0;
     const hasRecipe = product.recipeItems.length > 0;
+    const manualCost = parseFloat(product.costPrice || 0);
+    const effectiveCost = (!hasRecipe && manualCost > 0) ? manualCost : baseCost;
+    const hpp = Math.round(effectiveCost * 100) / 100;
+    const margin = price > 0 ? Math.round(((price - hpp) / price) * 10000) / 100 : 0;
 
     return {
       id: product.id,
@@ -99,10 +113,12 @@ export async function getAllProductsCogsOverview() {
       sku: product.sku,
       categoryName: product.category?.name || '-',
       price,
+      costPrice: manualCost,
       hpp,
       grossProfit: Math.round((price - hpp) * 100) / 100,
       margin,
       hasRecipe,
+      isManualHpp: !hasRecipe && manualCost > 0,
       ingredientCount: baseItems.length,
     };
   });

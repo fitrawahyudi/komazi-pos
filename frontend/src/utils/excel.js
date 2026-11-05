@@ -2478,4 +2478,451 @@ export function exportZReportToExcel({
   return { success: true, fileName, session };
 }
 
+/**
+ * Ekspor Laporan Laba Rugi Eksekutif (Comprehensive Profit & Loss Statement)
+ * Menghasilkan file Excel multi-sheet:
+ * Sheet 1: Ringkasan Laba Rugi (P&L Statement)
+ * Sheet 2: Tren Finansial Harian (Daily Trends)
+ * Sheet 3: Rincian Beban Operasional (Expenses, Depreciation, Petty Cash, Waste)
+ */
+export function exportProfitLossToExcel({
+  data,
+  periodLabel = 'Periode Laporan',
+  storeName = 'Komazi Coffee & Workspace',
+}) {
+  if (!data || !data.summary) {
+    throw new Error('Data laporan laba rugi tidak valid untuk diekspor.');
+  }
+
+  const wb = XLSX.utils.book_new();
+  const summary = data.summary;
+  const grossRev = Number(summary.grossRevenue || 0);
+
+  const calcPct = (amt) => {
+    if (!grossRev || grossRev === 0) return '0.0%';
+    const pct = (Number(amt || 0) / grossRev) * 100;
+    return `${pct.toFixed(1)}%`;
+  };
+
+  const formatIDDate = (dateVal) => {
+    if (!dateVal) return '-';
+    try {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return String(dateVal);
+      return d.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return String(dateVal);
+    }
+  };
+
+  // ==========================================
+  // SHEET 1: RINGKASAN LABA RUGI (P&L STATEMENT)
+  // ==========================================
+  const netRevenue = grossRev - Number(summary.totalDiscount || 0) + Number(summary.workspaceRevenue || 0);
+  const totalOperatingExpenses = Number(summary.expenses?.totalOperatingExpenses || 0);
+
+  const pnlRows = [
+    // Header brand
+    [storeName.toUpperCase()],
+    ['LAPORAN LABA RUGI KOMPREHENSIF (PROFIT & LOSS STATEMENT)'],
+    [`Periode: ${periodLabel} | Waktu Ekspor: ${new Date().toLocaleString('id-ID')}`],
+    [],
+    // Table Header
+    ['KOMPONEN FINANSIAL', 'NOMINAL (RP)', 'KONTRIBUSI (%)', 'DESKRIPSI / KETERANGAN'],
+
+    // A. PENDAPATAN
+    ['A. PENDAPATAN OPERASIONAL (REVENUE)', '', '', ''],
+    ['1. Total Omzet Penjualan (Gross Sales)', grossRev, '100.0%', `Total penerimaan kasir (${summary.totalOrders || 0} order)`],
+    ['2. Diskon & Potongan Harga', -Number(summary.totalDiscount || 0), calcPct(summary.totalDiscount), 'Potongan harga transaksi'],
+    ['3. Pendapatan Workspace / Reservasi', Number(summary.workspaceRevenue || 0), calcPct(summary.workspaceRevenue), 'Penerimaan sewa ruangan/meja workspace'],
+    ['[SUBTOTAL] PENDAPATAN BERSIH', netRevenue, calcPct(netRevenue), 'Total Omzet dikurangi Diskon ditambah Workspace'],
+
+    // B. HARGA POKOK PENJUALAN
+    ['B. HARGA POKOK PENJUALAN (COGS)', '', '', ''],
+    ['1. Biaya Bahan Baku Terpakai (HPP Resep)', -Number(summary.cogs || 0), calcPct(summary.cogs), 'Harga pokok bahan baku resep & add-on terpakai'],
+    ['[SUBTOTAL] LABA KOTOR (GROSS PROFIT)', Number(summary.grossProfit || 0), `${summary.grossMarginPct || 0}%`, 'Pendapatan Bersih dikurangi Total HPP Resep'],
+
+    // C. BEBAN OPERASIONAL
+    ['C. BEBAN OPERASIONAL (OPERATING EXPENSES)', '', '', ''],
+    ['1. Beban Operasional Rutin (Listrik, Sewa, dll)', -Number(summary.expenses?.operationalExpenses || 0), calcPct(summary.expenses?.operationalExpenses), 'Beban operasional outlet tercatat'],
+    ['2. Pengeluaran Kas Kecil Kasir (Petty Cash)', -Number(summary.expenses?.pettyCashOut || 0), calcPct(summary.expenses?.pettyCashOut), 'Kas keluar laci kasir untuk operasional mendesak'],
+    ['3. Biaya Pemborosan & Rusak (Waste)', -Number(summary.expenses?.wasteCost || 0), calcPct(summary.expenses?.wasteCost), 'Kerugian bahan baku tumpah, kadaluarsa, atau rusak'],
+    ['4. Beban Tenaga Kerja (Labor & Insentif)', -Number(summary.expenses?.laborCost || 0), calcPct(summary.expenses?.laborCost), 'Uang saku harian kasir per shift kerja'],
+    ['5. Beban Penyusutan Aset Tetap (Depreciation)', -Number(summary.expenses?.depreciationCost || 0), calcPct(summary.expenses?.depreciationCost), 'Alokasi amortisasi/penyusutan aktiva tetap bulanan'],
+    ['[SUBTOTAL] TOTAL BEBAN OPERASIONAL', -totalOperatingExpenses, calcPct(totalOperatingExpenses), 'Total seluruh biaya operasional & penyusutan'],
+
+    // D. HASIL AKHIR
+    ['D. ESTIMASI LABA / RUGI BERSIH (NET PROFIT)', '', '', ''],
+    [
+      summary.isProfitable ? '[TOTAL] LABA BERSIH (NET PROFIT)' : '[TOTAL] DEFISIT BERSIH (NET LOSS)',
+      Number(summary.netProfit || 0),
+      `${summary.netMarginPct || 0}%`,
+      summary.isProfitable ? 'Surplus operasional positif' : 'Defisit operasional melebihi margin',
+    ],
+    ['STATUS KESEHATAN KEUANGAN', summary.isProfitable ? 'SEHAT (SURPLUS / PROFITABLE)' : 'PERHATIAN (DEFISIT / RUGI)', '', ''],
+  ];
+
+  const ws1 = XLSX.utils.aoa_to_sheet(pnlRows);
+
+  ws1['!cols'] = [
+    { wch: 46 }, // Komponen
+    { wch: 20 }, // Nominal
+    { wch: 18 }, // Kontribusi
+    { wch: 46 }, // Keterangan
+  ];
+
+  // Styling Title Sheet 1
+  if (ws1['A1']) ws1['A1'].s = EXCEL_STYLES.title;
+  if (ws1['A2']) {
+    ws1['A2'].s = {
+      font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: '111827' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+  if (ws1['A3']) {
+    ws1['A3'].s = {
+      font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '6B7280' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+
+  // Styling Table Header Sheet 1 (Row 5)
+  ['A5', 'B5', 'C5', 'D5'].forEach((ref) => {
+    if (ws1[ref]) ws1[ref].s = EXCEL_STYLES.header;
+  });
+
+  // Apply row styles to Sheet 1
+  pnlRows.forEach((row, idx) => {
+    const rowNum = idx + 1;
+    if (rowNum <= 5) return;
+
+    const firstCell = String(row[0] || '');
+    const isSectionHeader = /^[A-D]\./.test(firstCell);
+    const isSubtotal = firstCell.startsWith('[SUBTOTAL]');
+    const isTotal = firstCell.startsWith('[TOTAL]');
+    const isStatus = firstCell.startsWith('STATUS');
+
+    ['A', 'B', 'C', 'D'].forEach((col) => {
+      const cellRef = `${col}${rowNum}`;
+      if (!ws1[cellRef]) return;
+
+      if (isSectionHeader) {
+        ws1[cellRef].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: 'E2E8F0' } },
+          font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } },
+          alignment: { vertical: 'center', horizontal: 'left' },
+          border: {
+            top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+            bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+          },
+        };
+      } else if (isSubtotal) {
+        ws1[cellRef].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: 'F1F5F9' } },
+          font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } },
+          alignment: { vertical: 'center', horizontal: col === 'B' ? 'right' : col === 'C' ? 'center' : 'left' },
+          border: {
+            top: { style: 'thin', color: { rgb: '94A3B8' } },
+            bottom: { style: 'thin', color: { rgb: '94A3B8' } },
+          },
+        };
+        if (col === 'B') ws1[cellRef].z = '#,##0';
+      } else if (isTotal) {
+        ws1[cellRef].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: summary.isProfitable ? 'DCFCE7' : 'FEE2E2' } },
+          font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: summary.isProfitable ? '166534' : '991B1B' } },
+          alignment: { vertical: 'center', horizontal: col === 'B' ? 'right' : col === 'C' ? 'center' : 'left' },
+          border: {
+            top: { style: 'medium', color: { rgb: summary.isProfitable ? '166534' : '991B1B' } },
+            bottom: { style: 'double', color: { rgb: summary.isProfitable ? '166534' : '991B1B' } },
+          },
+        };
+        if (col === 'B') ws1[cellRef].z = '#,##0';
+      } else if (isStatus) {
+        ws1[cellRef].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: 'F8FAFC' } },
+          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '334155' } },
+          alignment: { vertical: 'center', horizontal: 'left' },
+        };
+      } else {
+        // Data row
+        ws1[cellRef].s = {
+          font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+          alignment: { vertical: 'center', horizontal: col === 'B' ? 'right' : col === 'C' ? 'center' : 'left' },
+          border: {
+            top: { style: 'thin', color: { rgb: 'F1F5F9' } },
+            bottom: { style: 'thin', color: { rgb: 'F1F5F9' } },
+          },
+        };
+        if (col === 'B') ws1[cellRef].z = '#,##0';
+      }
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan Laba Rugi');
+
+  // ==========================================
+  // SHEET 2: TREN FINANSIAL HARIAN (DAILY TRENDS)
+  // ==========================================
+  const dailyTrends = Array.isArray(data.dailyTrends) ? data.dailyTrends : [];
+  const trendHeaders = [
+    'Tanggal',
+    'Transaksi',
+    'Omzet (Rp)',
+    'HPP Resep (Rp)',
+    'Laba Kotor (Rp)',
+    'Kas Kecil (Rp)',
+    'Waste (Rp)',
+    'Tenaga Kerja (Rp)',
+    'Ops Rutin (Rp)',
+    'Depresiasi (Rp)',
+    'Total Beban (Rp)',
+    'Laba Bersih (Rp)',
+    'Margin (%)',
+  ];
+
+  const trendRows = [
+    ['TREN PERFORMA FINANSIAL HARIAN'],
+    [`Periode: ${periodLabel} | Total Data: ${dailyTrends.length} Hari`],
+    [],
+    trendHeaders,
+  ];
+
+  dailyTrends.forEach((d) => {
+    trendRows.push([
+      d.date || '-',
+      Number(d.ordersCount || 0),
+      Number(d.revenue || 0),
+      Number(d.cogs || 0),
+      Number(d.grossProfit || 0),
+      Number(d.cashOut || 0),
+      Number(d.waste || 0),
+      Number(d.labor || 0),
+      Number(d.operationalExpenses || 0),
+      Number(d.depreciation || 0),
+      Number(d.totalExpenses || 0),
+      Number(d.netProfit || 0),
+      `${d.marginPct || 0}%`,
+    ]);
+  });
+
+  // Baris Total Akumulatif
+  const sumOrders = dailyTrends.reduce((acc, d) => acc + Number(d.ordersCount || 0), 0);
+  const sumRev = dailyTrends.reduce((acc, d) => acc + Number(d.revenue || 0), 0);
+  const sumCogs = dailyTrends.reduce((acc, d) => acc + Number(d.cogs || 0), 0);
+  const sumGross = dailyTrends.reduce((acc, d) => acc + Number(d.grossProfit || 0), 0);
+  const sumCashOut = dailyTrends.reduce((acc, d) => acc + Number(d.cashOut || 0), 0);
+  const sumWaste = dailyTrends.reduce((acc, d) => acc + Number(d.waste || 0), 0);
+  const sumLabor = dailyTrends.reduce((acc, d) => acc + Number(d.labor || 0), 0);
+  const sumOps = dailyTrends.reduce((acc, d) => acc + Number(d.operationalExpenses || 0), 0);
+  const sumDep = dailyTrends.reduce((acc, d) => acc + Number(d.depreciation || 0), 0);
+  const sumExpenses = dailyTrends.reduce((acc, d) => acc + Number(d.totalExpenses || 0), 0);
+  const sumNet = dailyTrends.reduce((acc, d) => acc + Number(d.netProfit || 0), 0);
+  const avgMargin = sumRev > 0 ? `${((sumNet / sumRev) * 100).toFixed(1)}%` : '0.0%';
+
+  trendRows.push([
+    'TOTAL KESELURUHAN',
+    sumOrders,
+    sumRev,
+    sumCogs,
+    sumGross,
+    sumCashOut,
+    sumWaste,
+    sumLabor,
+    sumOps,
+    sumDep,
+    sumExpenses,
+    sumNet,
+    avgMargin,
+  ]);
+
+  const ws2 = XLSX.utils.aoa_to_sheet(trendRows);
+
+  ws2['!cols'] = [
+    { wch: 14 }, // Tanggal
+    { wch: 11 }, // Order
+    { wch: 16 }, // Omzet
+    { wch: 16 }, // HPP
+    { wch: 16 }, // Laba Kotor
+    { wch: 14 }, // Kas Kecil
+    { wch: 14 }, // Waste
+    { wch: 15 }, // Tenaga Kerja
+    { wch: 15 }, // Ops Rutin
+    { wch: 15 }, // Depresiasi
+    { wch: 16 }, // Total Beban
+    { wch: 16 }, // Laba Bersih
+    { wch: 12 }, // Margin
+  ];
+
+  if (ws2['A1']) ws2['A1'].s = EXCEL_STYLES.title;
+  if (ws2['A2']) {
+    ws2['A2'].s = {
+      font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '6B7280' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+
+  // Header Table Trend (Row 4)
+  trendHeaders.forEach((_, colIdx) => {
+    const colLetter = getColumnLetter(colIdx);
+    const cellRef = `${colLetter}4`;
+    if (ws2[cellRef]) ws2[cellRef].s = EXCEL_STYLES.header;
+  });
+
+  // Data rows styling
+  dailyTrends.forEach((_, rIdx) => {
+    const rowNum = rIdx + 5;
+    const isEven = rIdx % 2 === 0;
+    const bg = isEven ? 'FFFFFF' : 'F9FAFB';
+
+    trendHeaders.forEach((_, cIdx) => {
+      const colLetter = getColumnLetter(cIdx);
+      const cellRef = `${colLetter}${rowNum}`;
+      if (!ws2[cellRef]) return;
+
+      const isNum = cIdx >= 1 && cIdx <= 11;
+      ws2[cellRef].s = {
+        fill: { patternType: 'solid', fgColor: { rgb: bg } },
+        font: { name: 'Calibri', sz: 10, color: { rgb: '111827' } },
+        alignment: {
+          vertical: 'center',
+          horizontal: cIdx === 0 || cIdx === 12 ? 'center' : 'right',
+        },
+        border: {
+          top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+          right: { style: 'thin', color: { rgb: 'E5E7EB' } },
+        },
+      };
+      if (isNum) ws2[cellRef].z = '#,##0';
+    });
+  });
+
+  // Total Row Styling (Last Row)
+  const totalRowIndex = trendRows.length;
+  trendHeaders.forEach((_, cIdx) => {
+    const colLetter = getColumnLetter(cIdx);
+    const cellRef = `${colLetter}${totalRowIndex}`;
+    if (!ws2[cellRef]) return;
+
+    ws2[cellRef].s = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'DCFCE7' } },
+      font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '166534' } },
+      alignment: {
+        vertical: 'center',
+        horizontal: cIdx === 0 || cIdx === 12 ? 'center' : 'right',
+      },
+      border: {
+        top: { style: 'medium', color: { rgb: '166534' } },
+        bottom: { style: 'double', color: { rgb: '166534' } },
+      },
+    };
+    if (cIdx >= 1 && cIdx <= 11) ws2[cellRef].z = '#,##0';
+  });
+
+  const lastColTrend = getColumnLetter(trendHeaders.length - 1);
+  ws2['!autofilter'] = { ref: `A4:${lastColTrend}${trendRows.length - 1}` };
+  XLSX.utils.book_append_sheet(wb, ws2, 'Tren Harian');
+
+  // ==========================================
+  // SHEET 3: RINCIAN BEBAN (BREAKDOWNS)
+  // ==========================================
+  const breakdownRows = [
+    ['RINCIAN BIAYA OPERASIONAL & PENYUSUTAN'],
+    [`Periode: ${periodLabel}`],
+    [],
+    // Table 1: Beban Operasional per Kategori
+    ['RINCIAN BEBAN OPERASIONAL PER KATEGORI', 'NOMINAL (RP)'],
+  ];
+
+  const catBreakdowns = data.breakdowns?.expensesByCategory || [];
+  if (catBreakdowns.length === 0) {
+    breakdownRows.push(['Belum ada catatan pengeluaran operasional', 0]);
+  } else {
+    catBreakdowns.forEach((it) => {
+      breakdownRows.push([it.category || 'Lainnya', Number(it.amount || 0)]);
+    });
+  }
+
+  breakdownRows.push([]);
+  // Table 2: Penyusutan Aset
+  breakdownRows.push(['RINCIAN PENYUSUTAN ASET TETAP', 'NOMINAL (RP)']);
+  const assetBreakdowns = data.breakdowns?.depreciationsByAsset || [];
+  if (assetBreakdowns.length === 0) {
+    breakdownRows.push(['Belum ada depresiasi aktiva tercatat', 0]);
+  } else {
+    assetBreakdowns.forEach((it) => {
+      breakdownRows.push([it.asset || 'Aset Tetap', Number(it.amount || 0)]);
+    });
+  }
+
+  breakdownRows.push([]);
+  // Table 3: Kas Kecil
+  breakdownRows.push(['RINCIAN PENGELUARAN KAS KECIL (PETTY CASH)', 'NOMINAL (RP)']);
+  const pettyBreakdowns = data.breakdowns?.pettyCashByReason || [];
+  if (pettyBreakdowns.length === 0) {
+    breakdownRows.push(['Tidak ada kas keluar', 0]);
+  } else {
+    pettyBreakdowns.forEach((it) => {
+      breakdownRows.push([it.reason || 'Kas Keluar', Number(it.amount || 0)]);
+    });
+  }
+
+  breakdownRows.push([]);
+  // Table 4: Bahan Terbuang (Waste)
+  breakdownRows.push(['RINCIAN BIAYA BAHAN TERBUANG (WASTE)', 'ESTIMASI KERUGIAN (RP)']);
+  const wasteBreakdowns = data.breakdowns?.wasteByReason || [];
+  if (wasteBreakdowns.length === 0) {
+    breakdownRows.push(['Tidak ada catatan bahan terbuang', 0]);
+  } else {
+    wasteBreakdowns.forEach((it) => {
+      breakdownRows.push([it.reason || 'Bahan Rusak', Number(it.cost || 0)]);
+    });
+  }
+
+  const ws3 = XLSX.utils.aoa_to_sheet(breakdownRows);
+  ws3['!cols'] = [{ wch: 45 }, { wch: 22 }];
+
+  if (ws3['A1']) ws3['A1'].s = EXCEL_STYLES.title;
+  if (ws3['A2']) {
+    ws3['A2'].s = {
+      font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '6B7280' } },
+      alignment: { vertical: 'center', horizontal: 'left' },
+    };
+  }
+
+  // Format currency cells in Sheet 3
+  breakdownRows.forEach((row, rIdx) => {
+    const rowNum = rIdx + 1;
+    const isHeader = typeof row[0] === 'string' && row[0].startsWith('RINCIAN ');
+    if (isHeader && ws3[`A${rowNum}`]) {
+      ws3[`A${rowNum}`].s = EXCEL_STYLES.header;
+      if (ws3[`B${rowNum}`]) ws3[`B${rowNum}`].s = EXCEL_STYLES.header;
+    } else if (row.length === 2 && ws3[`B${rowNum}`]) {
+      ws3[`A${rowNum}`].s = EXCEL_STYLES.cell;
+      ws3[`B${rowNum}`].s = {
+        ...EXCEL_STYLES.cell,
+        alignment: { vertical: 'center', horizontal: 'right' },
+      };
+      ws3[`B${rowNum}`].z = '#,##0';
+    }
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws3, 'Rincian Beban');
+
+  // Simpan File Excel
+  const safeLabel = String(periodLabel).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `KOMAZI_Laba_Rugi_${safeLabel}_${dateStr}.xlsx`;
+
+  saveWorkbook(wb, fileName);
+
+  return { success: true, fileName };
+}
+
 

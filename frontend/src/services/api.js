@@ -440,6 +440,11 @@ export const api = {
       const qs = toCleanQuery(params);
       return request(`/ingredients/movements${qs}`);
     },
+    getStockCard: (id, params = {}) => {
+      const qs = toCleanQuery(params);
+      return request(`/ingredients/${id}/stock-card${qs}`);
+    },
+    recordInbound: (data) => request('/ingredients/inbound', { method: 'POST', body: JSON.stringify(data) }),
     create: (data) => request('/ingredients', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/ingredients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/ingredients/${id}`, { method: 'DELETE' }),

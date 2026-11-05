@@ -125,16 +125,21 @@ export const deltaInventoryService = {
     // 3. Potong stok dan catat StockMovement bertipe SALE
     const movements = [];
     for (const [, req] of aggregatedRequirements) {
-      await client.ingredient.update({
+      const updatedIng = await client.ingredient.update({
         where: { id: req.ingredientId },
         data: { stock: { decrement: req.needed } },
       });
+
+      const newStock = parseFloat(updatedIng.stock);
+      const stockBefore = newStock + parseFloat(req.needed);
 
       const movement = await client.stockMovement.create({
         data: {
           ingredientId: req.ingredientId,
           type: 'SALE',
           qty: req.needed,
+          stockBefore,
+          stockAfter: newStock,
           unitCost: req.costPerUnit,
           totalCost: req.costPerUnit * req.needed,
           note: `Sale: Order #${orderId} (${invoiceNo})`,
@@ -270,16 +275,21 @@ export const deltaInventoryService = {
       if (delta.deltaQty > 0) {
         // KASUS A: KUANTITAS BERTAMBAH (POTONG STOK TAMBAHAN)
         for (const bom of bomItems) {
-          await client.ingredient.update({
+          const updatedIng = await client.ingredient.update({
             where: { id: bom.ingredientId },
             data: { stock: { decrement: bom.requiredQty } },
           });
+
+          const newStock = parseFloat(updatedIng.stock);
+          const stockBefore = newStock + parseFloat(bom.requiredQty);
 
           await client.stockMovement.create({
             data: {
               ingredientId: bom.ingredientId,
               type: 'SALE',
               qty: bom.requiredQty,
+              stockBefore,
+              stockAfter: newStock,
               unitCost: bom.costPerUnit,
               totalCost: bom.costPerUnit * bom.requiredQty,
               note: `Delta Sale (+${delta.deltaQty}): Order #${orderId} (${invoiceNo}) - ${delta.productName} [${delta.variantName || 'Std'}]`,
@@ -289,16 +299,21 @@ export const deltaInventoryService = {
       } else {
         // KASUS B: KUANTITAS BERKURANG / DIBATALKAN (KEMBALIKAN STOK / REVERSAL)
         for (const bom of bomItems) {
-          await client.ingredient.update({
+          const updatedIng = await client.ingredient.update({
             where: { id: bom.ingredientId },
             data: { stock: { increment: bom.requiredQty } },
           });
+
+          const newStock = parseFloat(updatedIng.stock);
+          const stockBefore = newStock - parseFloat(bom.requiredQty);
 
           await client.stockMovement.create({
             data: {
               ingredientId: bom.ingredientId,
               type: 'ADJUSTMENT',
               qty: bom.requiredQty,
+              stockBefore,
+              stockAfter: newStock,
               unitCost: bom.costPerUnit,
               totalCost: bom.costPerUnit * bom.requiredQty,
               note: `Delta Restock (${delta.deltaQty}): Order #${orderId} (${invoiceNo}) - ${delta.productName} [${delta.variantName || 'Std'}]`,
@@ -367,16 +382,21 @@ export const deltaInventoryService = {
       );
 
       for (const bom of bomItems) {
-        await client.ingredient.update({
+        const updatedIng = await client.ingredient.update({
           where: { id: bom.ingredientId },
           data: { stock: { increment: bom.requiredQty } },
         });
+
+        const newStock = parseFloat(updatedIng.stock);
+        const stockBefore = newStock - parseFloat(bom.requiredQty);
 
         await client.stockMovement.create({
           data: {
             ingredientId: bom.ingredientId,
             type: 'ADJUSTMENT',
             qty: bom.requiredQty,
+            stockBefore,
+            stockAfter: newStock,
             unitCost: bom.costPerUnit,
             totalCost: bom.costPerUnit * bom.requiredQty,
             note: `Restock Void Order #${order.id} (${order.invoiceNo}) - ${item.productName} x${itemQty} (${reason})`,

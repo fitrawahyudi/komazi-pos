@@ -19,14 +19,23 @@ import {
   Check,
   Download,
   Eye,
+  Scale,
+  ArrowRight,
+  RefreshCw,
+  Wallet,
 } from 'lucide-react';
 import AlertModal from '../../components/ui/AlertModal';
 import Pagination from '../../components/ui/Pagination';
+import { getPurchaseUnitOptions, calculateInboundConversion } from '../../utils/unitConversion';
 
 export default function InboundStockPage() {
   const { inboundRecords, suppliers, addInboundRecord, deleteInboundRecord, bulkDeleteInboundRecords } =
     useInventoryStore();
-  const { ingredients } = useStockStore();
+  const { ingredients, fetchIngredients, recordInbound } = useStockStore();
+
+  useEffect(() => {
+    fetchIngredients?.();
+  }, [fetchIngredients]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = usePersistentState('inbound_statusFilter', 'ALL');
@@ -50,6 +59,8 @@ export default function InboundStockPage() {
     date: new Date().toISOString().split('T')[0],
     receivedBy: 'Manager',
     notes: '',
+    paymentMethod: 'CASH',
+    createExpense: true,
     items: [{ name: '', qty: 1, unit: 'kg', unitCost: 0 }],
   });
 
@@ -151,22 +162,57 @@ export default function InboundStockPage() {
     setRecordToDelete(null);
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Form Handlers
   const handleOpenAdd = () => {
+    const firstIng = ingredients[0];
+    const defaultMasterUnit = firstIng?.unit || 'pcs';
+    const unitOpts = getPurchaseUnitOptions(defaultMasterUnit);
+    const defaultPurchasedUnit = unitOpts[0]?.id || defaultMasterUnit;
+
     setFormData({
       supplierId: suppliers[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
       receivedBy: 'Manager',
       notes: '',
-      items: [{ name: ingredients[0]?.name || '', qty: 1, unit: ingredients[0]?.unit || 'kg', unitCost: 0 }],
+      paymentMethod: 'CASH',
+      createExpense: true,
+      items: [
+        {
+          ingredientId: firstIng?.id || '',
+          name: firstIng?.name || '',
+          masterUnit: defaultMasterUnit,
+          purchasedQty: 1,
+          purchasedUnit: defaultPurchasedUnit,
+          purchasedUnitCost: Number(firstIng?.costPerUnit) || 0,
+          customMultiplier: 1,
+        },
+      ],
     });
     setIsModalOpen(true);
   };
 
   const handleAddItemRow = () => {
+    const firstIng = ingredients[0];
+    const defaultMasterUnit = firstIng?.unit || 'pcs';
+    const unitOpts = getPurchaseUnitOptions(defaultMasterUnit);
+    const defaultPurchasedUnit = unitOpts[0]?.id || defaultMasterUnit;
+
     setFormData({
       ...formData,
-      items: [...formData.items, { name: '', qty: 1, unit: 'kg', unitCost: 0 }],
+      items: [
+        ...formData.items,
+        {
+          ingredientId: firstIng?.id || '',
+          name: firstIng?.name || '',
+          masterUnit: defaultMasterUnit,
+          purchasedQty: 1,
+          purchasedUnit: defaultPurchasedUnit,
+          purchasedUnitCost: Number(firstIng?.costPerUnit) || 0,
+          customMultiplier: 1,
+        },
+      ],
     });
   };
 
@@ -178,47 +224,120 @@ export default function InboundStockPage() {
     });
   };
 
-  const handleItemChange = (idx, field, value) => {
+  const handleIngredientChange = (idx, ingId) => {
+    const found = ingredients.find((i) => i.id === Number(ingId));
     const updated = [...formData.items];
-    updated[idx][field] = value;
-    // Auto-fill unit if selecting from ingredients
-    if (field === 'name') {
-      const found = ingredients.find((i) => i.name === value);
-      if (found) {
-        updated[idx].unit = found.unit;
-        updated[idx].unitCost = Number(found.costPerUnit) || 0;
-      }
-    }
+    const mUnit = found?.unit || 'pcs';
+    const opts = getPurchaseUnitOptions(mUnit);
+    const pUnit = opts[0]?.id || mUnit;
+
+    updated[idx] = {
+      ...updated[idx],
+      ingredientId: found ? found.id : '',
+      name: found ? found.name : '',
+      masterUnit: mUnit,
+      purchasedUnit: pUnit,
+      purchasedUnitCost: Number(found?.costPerUnit) || 0,
+      customMultiplier: 1,
+    };
     setFormData({ ...formData, items: updated });
   };
 
-  const handleSubmit = (e) => {
+  const handleItemFieldChange = (idx, field, value) => {
+    const updated = [...formData.items];
+    updated[idx][field] = value;
+    setFormData({ ...formData, items: updated });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const selectedSupplier = suppliers.find((s) => s.id === Number(formData.supplierId));
-    const totalAmount = formData.items.reduce(
-      (sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitCost) || 0),
-      0
-    );
+    const supplierName = selectedSupplier ? selectedSupplier.name : 'Pemasok Umum';
 
-    const record = {
-      supplierId: selectedSupplier ? selectedSupplier.id : null,
-      supplierName: selectedSupplier ? selectedSupplier.name : 'Pemasok Umum',
-      date: formData.date,
-      receivedBy: formData.receivedBy || 'Staff',
-      notes: formData.notes,
-      totalAmount,
-      items: formData.items.map((i) => ({
-        name: i.name,
-        qty: Number(i.qty) || 0,
-        unit: i.unit,
-        unitCost: Number(i.unitCost) || 0,
-        subtotal: (Number(i.qty) || 0) * (Number(i.unitCost) || 0),
-      })),
-    };
+    // Hitung konversi otomatis untuk setiap item
+    const processedItems = formData.items.map((item) => {
+      const conv = calculateInboundConversion({
+        masterUnit: item.masterUnit,
+        purchasedQty: item.purchasedQty,
+        purchasedUnit: item.purchasedUnit,
+        purchasedUnitCost: item.purchasedUnitCost,
+        customMultiplier: item.customMultiplier,
+      });
 
-    addInboundRecord(record);
-    toast.success('Penerimaan stok masuk berhasil dicatat!');
-    setIsModalOpen(false);
+      return {
+        ingredientId: item.ingredientId,
+        name: item.name,
+        purchasedQty: Number(item.purchasedQty) || 0,
+        purchasedUnit: item.purchasedUnit,
+        purchasedUnitCost: Number(item.purchasedUnitCost) || 0,
+        convertedQty: conv.convertedQty,
+        targetUnit: item.masterUnit,
+        effectiveUnitCost: conv.effectiveUnitCost,
+        subtotal: conv.totalAmount,
+        totalCost: conv.totalAmount,
+      };
+    });
+
+    const totalAmount = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
+
+    const todayStr = new Date().toISOString().slice(0, 7).replace('-', '');
+    const currentList = inboundRecords || [];
+    const nextId = currentList.length > 0 ? Math.max(...currentList.map((r) => r.id)) + 1 : 1;
+    const generatedInboundNumber = `INB-${todayStr}-${String(nextId).padStart(3, '0')}`;
+
+    setIsSubmitting(true);
+    try {
+      // 1. Sinkronisasi ke Database (Tambah stok bahan, catat StockMovement, dan buat Expense otomatis)
+      if (recordInbound) {
+        await recordInbound({
+          inboundNumber: generatedInboundNumber,
+          supplierName,
+          date: formData.date,
+          receivedBy: formData.receivedBy || 'Staff',
+          notes: formData.notes,
+          items: processedItems,
+          createExpense: formData.createExpense !== false,
+          paymentMethod: formData.paymentMethod || 'CASH',
+        });
+      }
+
+      // 2. Simpan record invoice lokal
+      const record = {
+        inboundNumber: generatedInboundNumber,
+        supplierId: selectedSupplier ? selectedSupplier.id : null,
+        supplierName,
+        date: formData.date,
+        receivedBy: formData.receivedBy || 'Staff',
+        notes: formData.notes,
+        paymentMethod: formData.paymentMethod || 'CASH',
+        createdExpense: formData.createExpense !== false,
+        totalAmount,
+        items: processedItems.map((i) => ({
+          name: i.name,
+          qty: i.convertedQty,
+          unit: i.targetUnit,
+          purchasedQty: i.purchasedQty,
+          purchasedUnit: i.purchasedUnit,
+          purchasedUnitCost: i.purchasedUnitCost,
+          unitCost: i.effectiveUnitCost,
+          subtotal: i.subtotal,
+        })),
+      };
+
+      addInboundRecord(record);
+      if (formData.createExpense) {
+        toast.success(`Stok masuk ${generatedInboundNumber} dicatat & pengeluaran kas otomatis disinkronkan ke menu Biaya!`);
+      } else {
+        toast.success(`Stok masuk ${generatedInboundNumber} berhasil dicatat & disinkronkan ke bahan baku!`);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      toast.error(`Gagal mencatat stok masuk: ${err.message || 'Terjadi kesalahan'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -322,7 +441,7 @@ export default function InboundStockPage() {
             className="px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
           >
             <option value="ALL">Semua Status</option>
-            <option value="COMPLETED">Selesai (Completed)</option>
+            <option value="COMPLETED">Selesai</option>
             <option value="PENDING">Menunggu Verifikasi</option>
           </select>
         </div>
@@ -565,7 +684,14 @@ export default function InboundStockPage() {
                     <tbody className="divide-y divide-komazi-border/50">
                       {selectedRecordDetail.items?.map((item, idx) => (
                         <tr key={idx}>
-                          <td className="py-2 px-3 font-semibold text-komazi-text">{item.name}</td>
+                          <td className="py-2 px-3 font-semibold text-komazi-text">
+                            <div>{item.name}</div>
+                            {item.purchasedUnit && item.purchasedUnit !== item.unit && (
+                              <div className="text-[10px] text-komazi-muted font-normal mt-0.5">
+                                Beli: {item.purchasedQty} {item.purchasedUnit} @ {formatRupiah(item.purchasedUnitCost)}
+                              </div>
+                            )}
+                          </td>
                           <td className="py-2 px-3 text-center font-mono">
                             {item.qty} {item.unit}
                           </td>
@@ -679,67 +805,133 @@ export default function InboundStockPage() {
                   </button>
                 </div>
 
-                {formData.items.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-komazi-surface-2 p-2 rounded-xl border border-komazi-border">
-                    <div className="col-span-5">
-                      <input
-                        type="text"
-                        required
-                        list="ingredient-suggestions"
-                        placeholder="Nama bahan..."
-                        value={item.name}
-                        onChange={(e) => handleItemChange(idx, 'name', e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none"
-                      />
-                      <datalist id="ingredient-suggestions">
-                        {ingredients.map((ing) => (
-                          <option key={ing.id} value={ing.name} />
-                        ))}
-                      </datalist>
+                {formData.items.map((item, idx) => {
+                  const unitOptions = getPurchaseUnitOptions(item.masterUnit);
+                  const isCustomUnit = item.purchasedUnit === 'custom' || item.purchasedUnit === 'pack' || item.purchasedUnit === 'dus';
+                  const conv = calculateInboundConversion({
+                    masterUnit: item.masterUnit,
+                    purchasedQty: item.purchasedQty,
+                    purchasedUnit: item.purchasedUnit,
+                    purchasedUnitCost: item.purchasedUnitCost,
+                    customMultiplier: item.customMultiplier,
+                  });
+
+                  return (
+                    <div key={idx} className="bg-komazi-surface-2 p-3 rounded-xl border border-komazi-border space-y-2">
+                      <div className="grid grid-cols-12 gap-2 items-center">
+                        {/* 1. Pilih Bahan Baku Master */}
+                        <div className="col-span-12 sm:col-span-5">
+                          <label className="text-[10px] text-komazi-muted font-bold uppercase block mb-1">
+                            Bahan Baku Master <span className="text-rose-400">*</span>
+                          </label>
+                          <select
+                            required
+                            value={item.ingredientId || ''}
+                            onChange={(e) => handleIngredientChange(idx, e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-xs"
+                          >
+                            <option value="">-- Pilih Bahan Baku --</option>
+                            {ingredients.map((ing) => (
+                              <option key={ing.id} value={ing.id}>
+                                {ing.name} ({ing.unit}) • Sisa: {ing.stock}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 2. Jumlah Beli */}
+                        <div className="col-span-4 sm:col-span-2">
+                          <label className="text-[10px] text-komazi-muted font-bold uppercase block mb-1">
+                            Qty Beli <span className="text-rose-400">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            required
+                            placeholder="1"
+                            value={item.purchasedQty}
+                            onChange={(e) => handleItemFieldChange(idx, 'purchasedQty', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-center font-mono text-xs"
+                          />
+                        </div>
+
+                        {/* 3. Satuan Beli */}
+                        <div className="col-span-4 sm:col-span-2">
+                          <label className="text-[10px] text-komazi-muted font-bold uppercase block mb-1">
+                            Satuan Beli
+                          </label>
+                          <select
+                            value={item.purchasedUnit}
+                            onChange={(e) => handleItemFieldChange(idx, 'purchasedUnit', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-xs"
+                          >
+                            {unitOptions.map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 4. Harga Beli Satuan */}
+                        <div className="col-span-3 sm:col-span-2">
+                          <label className="text-[10px] text-komazi-muted font-bold uppercase block mb-1">
+                            Harga/Unit (Rp)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={item.purchasedUnitCost}
+                            onChange={(e) => handleItemFieldChange(idx, 'purchasedUnitCost', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-right font-mono text-xs"
+                          />
+                        </div>
+
+                        {/* 5. Tombol Hapus Baris */}
+                        <div className="col-span-1 text-center pt-4 sm:pt-0">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemRow(idx)}
+                            disabled={formData.items.length <= 1}
+                            className="p-1 rounded text-rose-500 hover:text-rose-400 disabled:opacity-20 transition-colors"
+                            title="Hapus baris item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Multiplier Input if applicable */}
+                      {isCustomUnit && (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-komazi-surface border border-komazi-border/80 text-[11px]">
+                          <span className="text-komazi-muted">1 {item.purchasedUnit} =</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            value={item.customMultiplier || 1}
+                            onChange={(e) => handleItemFieldChange(idx, 'customMultiplier', e.target.value)}
+                            className="w-20 px-2 py-1 rounded bg-komazi-surface-2 border border-komazi-border text-center font-mono text-xs text-komazi-text"
+                          />
+                          <span className="text-komazi-muted">{item.masterUnit}</span>
+                        </div>
+                      )}
+
+                      {/* Live Conversion Preview Badge */}
+                      <div className="flex items-center justify-between text-[11px] px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/25 rounded-lg text-emerald-400">
+                        <span className="font-semibold flex items-center gap-1.5">
+                          <Scale className="w-3.5 h-3.5" />
+                          {conv.previewText}
+                        </span>
+                        <span className="font-mono font-bold text-emerald-300">
+                          Subtotal: {formatRupiah(conv.totalAmount)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="any"
-                        required
-                        placeholder="Qty"
-                        value={item.qty}
-                        onChange={(e) => handleItemChange(idx, 'qty', e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-center font-mono"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="text"
-                        placeholder="Satuan"
-                        value={item.unit}
-                        onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-center font-mono"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Harga/Unit"
-                        value={item.unitCost}
-                        onChange={(e) => handleItemChange(idx, 'unitCost', e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-komazi-surface border border-komazi-border text-komazi-text focus:border-komazi-coral focus:outline-none text-right font-mono"
-                      />
-                    </div>
-                    <div className="col-span-1 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItemRow(idx)}
-                        disabled={formData.items.length <= 1}
-                        className="p-1 rounded text-rose-500 hover:text-rose-400 disabled:opacity-20"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div>
@@ -753,19 +945,62 @@ export default function InboundStockPage() {
                 />
               </div>
 
+              {/* Opsi Pembayaran & Sinkronisasi ke Menu Buat Biaya */}
+              <div className="p-3.5 rounded-xl bg-komazi-surface-2 border border-komazi-border/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <label className="text-xs font-bold text-komazi-text flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formData.createExpense}
+                      onChange={(e) => setFormData({ ...formData, createExpense: e.target.checked })}
+                      className="w-4 h-4 rounded text-komazi-coral focus:ring-komazi-coral accent-komazi-coral cursor-pointer"
+                    />
+                    <Wallet className="w-4 h-4 text-komazi-coral" />
+                    <span>Otomatis catat pengeluaran ke menu "Buat Biaya"</span>
+                  </label>
+
+                  {formData.createExpense && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-komazi-muted font-medium">Metode Bayar:</span>
+                      <select
+                        value={formData.paymentMethod}
+                        onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                        className="px-2.5 py-1 rounded-lg bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none font-medium"
+                      >
+                        <option value="CASH">Kas Tunai Kasir</option>
+                        <option value="TRANSFER">Transfer Bank</option>
+                        <option value="PETTY_CASH">Kas Kecil</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {formData.createExpense && (
+                  <p className="text-[10px] text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 flex items-start gap-1.5 leading-relaxed">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+                    <span>
+                      Tercatat otomatis sebagai kategori <strong>Pembelian Bahan Baku</strong>. Laporan Laba Rugi terlindungi dari <em>double counting</em> dengan HPP Resep.
+                    </span>
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted hover:text-white transition-colors"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-xl bg-komazi-surface-2 hover:bg-komazi-border text-komazi-muted hover:text-white transition-colors disabled:opacity-50"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold transition-all shadow-md active:scale-95"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-xl bg-komazi-coral hover:bg-komazi-coral-dark text-white font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-2"
                 >
-                  Simpan Penerimaan Stok
+                  {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+                  <span>{isSubmitting ? 'Menyimpan & Menyinkronkan...' : 'Simpan Penerimaan Stok'}</span>
                 </button>
               </div>
             </form>

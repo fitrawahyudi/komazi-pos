@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -16,6 +16,9 @@ import {
   ArrowDownRight,
   Calendar,
   Sparkles,
+  FileSpreadsheet,
+  RefreshCw,
+  Filter,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,49 +33,193 @@ import {
 } from 'recharts';
 import { formatRupiah } from '../../utils/format';
 import { api } from '../../services/api';
+import { exportProfitLossToExcel } from '../../utils/excel';
+import { toast } from '../../store/toastStore';
 
-export default function ProfitLossView({ dateRange = 'TODAY' }) {
+/**
+ * Pemetaan kode period prop dari ReportsPage ke parameter profitService
+ */
+const DATE_RANGE_MAP = {
+  TODAY: 'today',
+  YESTERDAY: 'yesterday',
+  WEEK: '7d',
+  MONTH: 'month',
+  LAST_MONTH: 'last_month',
+  CUSTOM: 'custom',
+};
+
+const PERIOD_LABELS = {
+  today: 'Hari Ini',
+  yesterday: 'Kemarin',
+  '7d': '7 Hari Terakhir',
+  month: 'Bulan Ini',
+  last_month: 'Bulan Lalu',
+  custom: 'Rentang Kustom',
+};
+
+const formatChartDate = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const m = parseInt(parts[1], 10) - 1;
+    return `${parts[2]} ${months[m] || parts[1]}`;
+  }
+  return dateStr;
+};
+
+const formatCompactRupiah = (val) => {
+  if (val === 0) return '0';
+  const abs = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(1)}M`;
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}jt`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(0)}rb`;
+  return `${sign}${abs}`;
+};
+
+/**
+ * Custom Tooltip untuk Grafik Tren Laba Rugi
+ */
+const CustomTrendTooltip = ({ active, payload, label }) => {
+  if (!active || !payload || payload.length === 0) return null;
+  const item = payload[0]?.payload || {};
+
+  const rev = Number(item.revenue || 0);
+  const cogs = Number(item.cogs || 0);
+  const totalExp = Number(item.totalExpenses || 0);
+  const net = Number(item.netProfit || 0);
+  const margin = item.marginPct !== undefined ? item.marginPct : rev > 0 ? Math.round((net / rev) * 100) : 0;
+  const isNetPositive = net >= 0;
+
+  return (
+    <div className="bg-komazi-surface/95 backdrop-blur-md border border-komazi-border/80 shadow-2xl rounded-xl p-3.5 text-xs min-w-[240px] space-y-2 z-50">
+      <div className="flex items-center justify-between border-b border-komazi-border/60 pb-2">
+        <span className="font-bold text-komazi-text flex items-center gap-1.5">
+          <Calendar className="w-3.5 h-3.5 text-komazi-coral" />
+          <span>{item.date || label}</span>
+        </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-komazi-surface-2 text-komazi-muted font-mono">
+          {item.ordersCount || 0} Order
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-komazi-muted flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-teal-500 inline-block" />
+            <span>Omzet Penjualan</span>
+          </span>
+          <span className="font-mono font-bold text-komazi-text">{formatRupiah(rev)}</span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-komazi-muted flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" />
+            <span>HPP Resep</span>
+          </span>
+          <span className="font-mono font-bold text-warning">-{formatRupiah(cogs)}</span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-komazi-muted flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" />
+            <span>Beban Operasional</span>
+          </span>
+          <span className="font-mono font-bold text-danger">-{formatRupiah(totalExp)}</span>
+        </div>
+
+        <div className="pt-2 border-t border-komazi-border/60 flex items-center justify-between">
+          <span className="font-bold text-komazi-text flex items-center gap-1.5">
+            <span
+              className={`w-2.5 h-2.5 rounded-full inline-block ${
+                isNetPositive ? 'bg-emerald-500' : 'bg-red-500'
+              }`}
+            />
+            <span>Laba Bersih</span>
+          </span>
+          <div className="text-right">
+            <span
+              className={`font-mono font-black ${
+                isNetPositive ? 'text-emerald-400' : 'text-red-400'
+              }`}
+            >
+              {formatRupiah(net)}
+            </span>
+            <span className="text-[10px] text-komazi-muted ml-1.5">({margin}%)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function ProfitLossView({
+  dateRange = 'TODAY',
+  storeName = 'Komazi Coffee & Workspace',
+}) {
+  const activePeriod = DATE_RANGE_MAP[dateRange] || 'today';
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(
+    async (isManualRefresh = false) => {
+      if (isManualRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    const periodMap = {
-      TODAY: 'today',
-      WEEK: '7d',
-      MONTH: 'month',
-    };
-    const period = periodMap[dateRange] || 'today';
-
-    api.reports.getProfitLoss({ period })
-      .then((res) => {
-        if (!isMounted) return;
+      try {
+        const params = { period: activePeriod };
+        const res = await api.reports.getProfitLoss(params);
         if (res && res.success && res.data) {
           setData(res.data);
         } else {
           setError(res?.message || 'Gagal memuat laporan laba rugi');
         }
-      })
-      .catch((err) => {
-        if (!isMounted) return;
+      } catch (err) {
         console.error('Error fetching P&L report:', err);
         setError(err.message || 'Gagal terhubung ke server');
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [activePeriod]
+  );
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleExportExcel = () => {
+    if (!data || !data.summary) {
+      toast.error('Tidak ada data laba rugi untuk diekspor');
+      return;
+    }
+
+    try {
+      const periodLabel = PERIOD_LABELS[activePeriod] || 'Periode Laba Rugi';
+
+      exportProfitLossToExcel({
+        data,
+        periodLabel,
+        storeName,
       });
 
-    return () => {
-      isMounted = false;
-    };
-  }, [dateRange]);
+      toast.success('Laporan Laba Rugi Excel berhasil diunduh');
+    } catch (err) {
+      console.error('Gagal ekspor Excel P&L:', err);
+      toast.error(err.message || 'Gagal mengekspor Excel');
+    }
+  };
 
   const summary = data?.summary || {
     grossRevenue: 0,
+    totalDiscount: 0,
+    workspaceRevenue: 0,
     cogs: 0,
     grossProfit: 0,
     grossMarginPct: 0,
@@ -80,6 +227,8 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
       pettyCashOut: 0,
       wasteCost: 0,
       laborCost: 0,
+      operationalExpenses: 0,
+      depreciationCost: 0,
       totalOperatingExpenses: 0,
     },
     netProfit: 0,
@@ -89,9 +238,72 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
   };
 
   const isProfitable = summary.netProfit >= 0;
+  const dailyTrends = Array.isArray(data?.dailyTrends) ? data.dailyTrends : [];
 
   return (
     <div className="space-y-6">
+      {/* 0. Header Toolbar Laba Rugi (Single Source of Truth dengan Filter Utama) */}
+      <div className="p-4 rounded-2xl bg-komazi-surface border border-komazi-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-komazi-coral/15 flex items-center justify-center text-komazi-coral shrink-0">
+            <Scale className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-komazi-text">Laporan Laba Rugi</h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-komazi-coral/15 text-komazi-coral border border-komazi-coral/30">
+                {PERIOD_LABELS[activePeriod] || 'Hari Ini'}
+              </span>
+            </div>
+            {data?.startDate && data?.endDate && (
+              <p className="text-[11px] text-komazi-muted mt-0.5">
+                Rentang data: {new Date(data.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} s/d {new Date(data.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Actions: Ekspor Excel & Refresh */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={() => fetchData(true)}
+            disabled={loading || refreshing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface-2 border border-komazi-border hover:border-komazi-teal/50 text-komazi-muted hover:text-komazi-text text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+            title="Muat Ulang Data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-komazi-teal' : ''}`} />
+            <span>Muat Ulang</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={loading || !data}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Ekspor Excel P&L</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-danger/10 border border-danger/30 text-danger flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => fetchData(true)}
+            className="px-3 py-1 bg-danger text-white rounded-lg font-bold hover:bg-danger/90 transition-all text-xs"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      )}
+
       {/* 1. Executive Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* Omzet Penjualan */}
@@ -299,7 +511,110 @@ export default function ProfitLossView({ dateRange = 'TODAY' }) {
         </div>
       </div>
 
-      {/* 3. Detailed Expense Breakdowns: Biaya, Penyusutan, Petty Cash & Waste */}
+      {/* 3. Daily Financial Trend Chart (Grafik Tren Finansial Harian) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-komazi-surface border border-komazi-border space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-komazi-border pb-3">
+          <div>
+            <h3 className="font-bold text-sm text-komazi-text flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-komazi-teal" />
+              <span>Tren Performa Finansial Harian</span>
+            </h3>
+            <p className="text-xs text-komazi-muted mt-0.5">
+              Visualisasi perbandingan Omzet vs Beban Operasional & HPP Resep, serta garis tren Laba Bersih.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px] text-komazi-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-teal-500 inline-block" />
+              <span>Omzet</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" />
+              <span>HPP</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" />
+              <span>Beban Ops</span>
+            </span>
+            <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+              <span>Laba Bersih</span>
+            </span>
+          </div>
+        </div>
+
+        {dailyTrends.length === 0 ? (
+          <div className="h-64 flex flex-col items-center justify-center text-center text-komazi-muted">
+            <BarChart3 className="w-10 h-10 stroke-[1.2] mb-2 opacity-40" />
+            <p className="text-xs">Tidak ada data tren finansial untuk periode ini.</p>
+          </div>
+        ) : (
+          <div className="h-80 sm:h-96 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={dailyTrends}
+                margin={{ top: 10, right: 10, left: 10, bottom: 20 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.35} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatChartDate}
+                  stroke="#94A3B8"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={{ stroke: '#475569' }}
+                />
+                <YAxis
+                  tickFormatter={formatCompactRupiah}
+                  stroke="#94A3B8"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={{ stroke: '#475569' }}
+                  width={60}
+                />
+                <Tooltip content={<CustomTrendTooltip />} />
+                <Legend
+                  wrapperStyle={{ paddingTop: '12px', fontSize: '11px' }}
+                  formatter={(value) => <span className="text-komazi-text font-medium">{value}</span>}
+                />
+                <Bar
+                  dataKey="revenue"
+                  name="Omzet Penjualan"
+                  fill="#14B8A6"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={40}
+                />
+                <Bar
+                  dataKey="cogs"
+                  name="HPP Resep"
+                  fill="#F59E0B"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={40}
+                />
+                <Bar
+                  dataKey="totalExpenses"
+                  name="Beban Operasional"
+                  fill="#EF4444"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={40}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="netProfit"
+                  name="Laba Bersih"
+                  stroke="#10B981"
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: '#10B981', strokeWidth: 1, stroke: '#FFFFFF' }}
+                  activeDot={{ r: 6, fill: '#34D399' }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Detailed Expense Breakdowns: Biaya, Penyusutan, Petty Cash & Waste */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <ExpenseBreakdownCard
           title="Biaya Operasional"

@@ -22,10 +22,12 @@ function resolveDateRange(period = 'today', customStart = null, customEnd = null
   let start = new Date();
   let end = new Date();
 
-  if (customStart && customEnd) {
-    start = new Date(customStart);
+  if (customStart || customEnd) {
+    const s = customStart || customEnd;
+    const e = customEnd || customStart;
+    start = new Date(s);
     start.setHours(0, 0, 0, 0);
-    end = new Date(customEnd);
+    end = new Date(e);
     end.setHours(23, 59, 59, 999);
     return { start, end };
   }
@@ -35,7 +37,7 @@ function resolveDateRange(period = 'today', customStart = null, customEnd = null
     start.setHours(0, 0, 0, 0);
     end.setDate(end.getDate() - 1);
     end.setHours(23, 59, 59, 999);
-  } else if (period === '7d') {
+  } else if (period === '7d' || period === 'week') {
     start.setDate(start.getDate() - 6);
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
@@ -238,6 +240,12 @@ export const profitService = {
     let totalOperationalExpenses = 0;
     const expenseCategoryBreakdown = {};
     for (const exp of expenses) {
+      // Pembelian bahan baku (Stok Masuk) adalah belanja persediaan (Aset), bukan Beban Operasional (OPEX).
+      // Biaya bahan baku otomatis dibebankan saat resep produk terjual sebagai HPP (COGS).
+      // Dikecualikan di sini agar TIDAK TERJADI DOUBLE COUNTING di Laba Rugi!
+      if (exp.sourceType === 'INBOUND' || exp.category?.name === 'Pembelian Bahan Baku') {
+        continue;
+      }
       const amt = parseFloat(exp.amount || 0);
       totalOperationalExpenses += amt;
       const cat = exp.category?.name || 'Biaya Lainnya';
@@ -330,6 +338,9 @@ export const profitService = {
     });
 
     expenses.forEach((exp) => {
+      if (exp.sourceType === 'INBOUND' || exp.category?.name === 'Pembelian Bahan Baku') {
+        return; // Dikecualikan agar tidak dobel hitung dengan HPP
+      }
       const dDateStr = formatDayKey(exp.date);
       const dCreatedStr = formatDayKey(exp.createdAt);
       const targetDay = dayMap[dDateStr] ? dDateStr : dayMap[dCreatedStr] ? dCreatedStr : Object.keys(dayMap)[0];
@@ -416,14 +427,17 @@ export const profitService = {
             amount: Math.round(amount * 100) / 100,
           }))
           .sort((a, b) => b.amount - a.amount),
-        recentExpenses: expenses.slice(0, 5).map((e) => ({
-          id: e.id,
-          referenceNo: e.referenceNo,
-          description: e.description,
-          amount: parseFloat(e.amount),
-          category: e.category?.name,
-          date: e.date,
-        })),
+        recentExpenses: expenses
+          .filter((e) => e.sourceType !== 'INBOUND' && e.category?.name !== 'Pembelian Bahan Baku')
+          .slice(0, 5)
+          .map((e) => ({
+            id: e.id,
+            referenceNo: e.referenceNo,
+            description: e.description,
+            amount: parseFloat(e.amount),
+            category: e.category?.name,
+            date: e.date,
+          })),
         recentDepreciations: depreciations.slice(0, 5).map((d) => ({
           id: d.id,
           assetName: d.asset?.name,

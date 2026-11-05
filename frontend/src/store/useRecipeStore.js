@@ -127,10 +127,18 @@ export const useRecipeStore = create(
 
         const overview = products.map((prod) => {
           const recipe = recipes[prod.id] || [];
-          const baseCost = recipe.reduce((sum, item) => {
-            const ing = ingMap.get(Number(item.ingredientId));
-            return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
-          }, 0);
+          const hasRecipe = recipe.length > 0;
+          const manualCost = Number(prod.costPrice) || 0;
+
+          let baseCost = 0;
+          if (hasRecipe) {
+            baseCost = recipe.reduce((sum, item) => {
+              const ing = ingMap.get(Number(item.ingredientId));
+              return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
+            }, 0);
+          } else if (manualCost > 0) {
+            baseCost = manualCost;
+          }
 
           const price = Number(prod.price) || 0;
           const hpp = Math.round(baseCost * 100) / 100;
@@ -143,10 +151,12 @@ export const useRecipeStore = create(
             sku: prod.sku,
             categoryName: prod.category?.name || prod.categoryName || '-',
             price,
+            costPrice: manualCost,
             hpp,
             grossProfit,
             margin,
-            hasRecipe: recipe.length > 0,
+            hasRecipe,
+            isManualHpp: !hasRecipe && manualCost > 0,
             ingredientCount: recipe.length,
           };
         });
@@ -158,20 +168,26 @@ export const useRecipeStore = create(
       // Calculate single product HPP helper
       calculateProductHpp: (productId) => {
         const overviewItem = get().cogsOverview.find((p) => p.id === productId);
-        if (overviewItem && overviewItem.hasRecipe) {
+        if (overviewItem && (overviewItem.hasRecipe || overviewItem.isManualHpp)) {
           return Number(overviewItem.hpp) || 0;
         }
 
         const recipe = get().recipes[productId] || [];
-        const ingredients = useStockStore.getState().ingredients || [];
-        const ingMap = new Map(ingredients.map((i) => [Number(i.id), i]));
+        if (recipe.length > 0) {
+          const ingredients = useStockStore.getState().ingredients || [];
+          const ingMap = new Map(ingredients.map((i) => [Number(i.id), i]));
 
-        const cost = recipe.reduce((sum, item) => {
-          const ing = ingMap.get(Number(item.ingredientId));
-          return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
-        }, 0);
+          const cost = recipe.reduce((sum, item) => {
+            const ing = ingMap.get(Number(item.ingredientId));
+            return sum + (Number(item.quantity) || 0) * (Number(ing?.costPerUnit) || 0);
+          }, 0);
 
-        return Math.round(cost * 100) / 100;
+          return Math.round(cost * 100) / 100;
+        }
+
+        // Fallback to manual costPrice
+        const product = usePosStore.getState().products?.find((p) => p.id === productId);
+        return Number(product?.costPrice) || 0;
       },
     }),
     {

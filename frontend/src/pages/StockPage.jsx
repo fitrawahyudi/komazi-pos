@@ -33,12 +33,16 @@ import {
   PackagePlus,
   PackageX,
   ClipboardCheck,
+  BookOpen,
+  Calendar,
 } from 'lucide-react';
 import AlertModal from '../components/ui/AlertModal';
 import Pagination from '../components/ui/Pagination';
 import ExcelImportModal from '../components/common/ExcelImportModal';
+import StockCardModal from '../components/inventory/StockCardModal';
 import { exportToExcel } from '../utils/excel';
 import { toast } from '../store/toastStore';
+import api from '../services/api';
 
 export default function StockPage() {
   const { user } = useAuthStore();
@@ -47,6 +51,7 @@ export default function StockPage() {
   const {
     ingredients,
     movements,
+    movementsMeta,
     isMovementsLoading,
     fetchMovements,
     fetchIngredients,
@@ -83,6 +88,7 @@ export default function StockPage() {
   const [ingredientToDelete, setIngredientToDelete] = useState(null);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
   const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
+  const [selectedStockCardIngredient, setSelectedStockCardIngredient] = useState(null);
 
   const handleExportStock = () => {
     if (!ingredients || ingredients.length === 0) {
@@ -167,97 +173,163 @@ export default function StockPage() {
   const [movementSearchQuery, setMovementSearchQuery] = useState('');
   const [movementTypeFilter, setMovementTypeFilter] = usePersistentState('stock_movementTypeFilter', 'ALL'); // 'ALL' | 'PURCHASE' | 'WASTE' | 'SALE' | 'ADJUSTMENT'
   const [movementIngredientFilter, setMovementIngredientFilter] = useState('ALL');
+  const [movementDateFilter, setMovementDateFilter] = usePersistentState('stock_movementDateFilter', 'ALL'); // 'ALL' | 'TODAY' | '7D' | 'MONTH' | 'CUSTOM'
+  const [movementCustomStartDate, setMovementCustomStartDate] = useState('');
+  const [movementCustomEndDate, setMovementCustomEndDate] = useState('');
+
+  // Hitung rentang tanggal mutasi stok
+  const movementDateRange = useMemo(() => {
+    const now = new Date();
+    if (movementDateFilter === 'TODAY') {
+      const todayStr = now.toISOString().slice(0, 10);
+      return { startDate: todayStr, endDate: todayStr };
+    }
+    if (movementDateFilter === '7D') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      return { startDate: d.toISOString().slice(0, 10), endDate: now.toISOString().slice(0, 10) };
+    }
+    if (movementDateFilter === 'MONTH') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { startDate: startOfMonth.toISOString().slice(0, 10), endDate: now.toISOString().slice(0, 10) };
+    }
+    if (movementDateFilter === 'CUSTOM') {
+      return {
+        startDate: movementCustomStartDate || undefined,
+        endDate: movementCustomEndDate || undefined,
+      };
+    }
+    return {};
+  }, [movementDateFilter, movementCustomStartDate, movementCustomEndDate]);
 
   useEffect(() => {
     setMovementPage(1);
-  }, [movementTypeFilter, movementIngredientFilter, movementSearchQuery]);
+  }, [
+    movementTypeFilter,
+    movementIngredientFilter,
+    movementDateFilter,
+    movementCustomStartDate,
+    movementCustomEndDate,
+    movementSearchQuery,
+  ]);
+
+  // Server-side fetching untuk pergerakan stok
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchMovements({
+        page: movementPage,
+        limit: movementsPerPage,
+        type: movementTypeFilter === 'ALL' ? undefined : movementTypeFilter,
+        ingredientId: movementIngredientFilter === 'ALL' ? undefined : movementIngredientFilter,
+        search: movementSearchQuery.trim() || undefined,
+        startDate: movementDateRange.startDate,
+        endDate: movementDateRange.endDate,
+      });
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    fetchMovements,
+    movementPage,
+    movementsPerPage,
+    movementTypeFilter,
+    movementIngredientFilter,
+    movementSearchQuery,
+    movementDateRange,
+  ]);
 
   const movementCounts = useMemo(() => {
-    const counts = { ALL: (movements || []).length, PURCHASE: 0, WASTE: 0, SALE: 0, ADJUSTMENT: 0 };
+    const counts = { ALL: movementsMeta?.total || (movements || []).length, PURCHASE: 0, WASTE: 0, SALE: 0, ADJUSTMENT: 0 };
     for (const m of movements || []) {
       if (counts[m.type] !== undefined) {
         counts[m.type]++;
       }
     }
     return counts;
-  }, [movements]);
+  }, [movements, movementsMeta?.total]);
 
-  const filteredMovements = useMemo(() => {
-    return (movements || []).filter((m) => {
-      if (movementTypeFilter !== 'ALL' && m.type !== movementTypeFilter) {
-        return false;
-      }
-      if (movementIngredientFilter !== 'ALL' && String(m.ingredientId) !== String(movementIngredientFilter)) {
-        return false;
-      }
-      if (movementSearchQuery.trim()) {
-        const q = movementSearchQuery.toLowerCase().trim();
-        const matchName = (m.ingredientName || '').toLowerCase().includes(q);
-        const matchNote = (m.note || '').toLowerCase().includes(q);
-        const matchStaff = (m.recordedBy || '').toLowerCase().includes(q);
-        if (!matchName && !matchNote && !matchStaff) return false;
-      }
-      return true;
-    });
-  }, [movements, movementTypeFilter, movementIngredientFilter, movementSearchQuery]);
-
-  const paginatedMovements = useMemo(() => {
-    const start = (movementPage - 1) * movementsPerPage;
-    return filteredMovements.slice(start, start + movementsPerPage);
-  }, [filteredMovements, movementPage, movementsPerPage]);
+  const paginatedMovements = movements || [];
 
   const handleRefreshMovements = async () => {
     try {
-      await useStockStore.getState().fetchMovements?.();
+      await fetchMovements({
+        page: movementPage,
+        limit: movementsPerPage,
+        type: movementTypeFilter === 'ALL' ? undefined : movementTypeFilter,
+        ingredientId: movementIngredientFilter === 'ALL' ? undefined : movementIngredientFilter,
+        search: movementSearchQuery.trim() || undefined,
+        startDate: movementDateRange.startDate,
+        endDate: movementDateRange.endDate,
+      });
       toast.success('Riwayat log stok berhasil diperbarui');
     } catch {
       toast.error('Gagal memperbarui riwayat log stok');
     }
   };
 
-  const handleExportMovements = () => {
-    if (!filteredMovements || filteredMovements.length === 0) {
-      toast.error('Tidak ada data riwayat pergerakan stok untuk diekspor');
-      return;
+  const handleExportMovements = async () => {
+    try {
+      toast.info('Menyiapkan data mutasi stok untuk diekspor...');
+      const res = await api.stock.getMovements({
+        limit: 1000,
+        type: movementTypeFilter === 'ALL' ? undefined : movementTypeFilter,
+        ingredientId: movementIngredientFilter === 'ALL' ? undefined : movementIngredientFilter,
+        search: movementSearchQuery.trim() || undefined,
+        startDate: movementDateRange.startDate,
+        endDate: movementDateRange.endDate,
+      });
+
+      const exportList = (res && res.success && Array.isArray(res.data)) ? res.data : paginatedMovements;
+      if (!exportList || exportList.length === 0) {
+        toast.error('Tidak ada data riwayat pergerakan stok untuk diekspor');
+        return;
+      }
+
+      const exportData = exportList.map((m, idx) => ({
+        'No': idx + 1,
+        'Waktu': formatDateTime(m.createdAt),
+        'Tipe Mutasi':
+          m.type === 'PURCHASE'
+            ? 'Masuk / Pembelian'
+            : m.type === 'WASTE'
+            ? 'Terbuang / Waste'
+            : m.type === 'SALE'
+            ? 'Penjualan POS'
+            : m.type === 'ADJUSTMENT'
+            ? 'Penyesuaian Opname'
+            : m.type,
+        'Nama Bahan': m.ingredientName || m.ingredient?.name || '-',
+        'Saldo Sebelum': m.stockBefore !== null && m.stockBefore !== undefined ? `${m.stockBefore} ${m.unit || ''}` : '-',
+        'Perubahan Qty': `${
+          m.type === 'PURCHASE'
+            ? '+'
+            : m.type === 'WASTE' || m.type === 'SALE'
+            ? '-'
+            : m.qty >= 0
+            ? '+'
+            : ''
+        }${Math.abs(m.qty)} ${m.unit || ''}`,
+        'Saldo Sesudah': m.stockAfter !== null && m.stockAfter !== undefined ? `${m.stockAfter} ${m.unit || ''}` : '-',
+        'Satuan': m.unit || '',
+        'Keterangan / Alasan': m.note || '-',
+        'Dicatat Oleh': m.recordedBy || 'Sistem',
+        ...(canViewCost
+          ? {
+              'Biaya Satuan': m.unitCost ? formatRupiah(m.unitCost) : '-',
+              'Nilai Total': m.totalCost ? formatRupiah(m.totalCost) : '-',
+            }
+          : {}),
+      }));
+
+      exportToExcel(
+        exportData,
+        `riwayat_mutasi_stok_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        'Log Mutasi Stok'
+      );
+      toast.success(`Berhasil mengekspor ${exportList.length} baris riwayat mutasi ke Excel`);
+    } catch {
+      toast.error('Gagal mengekspor riwayat mutasi stok');
     }
-    const exportData = filteredMovements.map((m, idx) => ({
-      'No': idx + 1,
-      'Waktu': formatDateTime(m.createdAt),
-      'Tipe Mutasi':
-        m.type === 'PURCHASE'
-          ? 'Masuk / Pembelian'
-          : m.type === 'WASTE'
-          ? 'Terbuang / Waste'
-          : m.type === 'SALE'
-          ? 'Penjualan POS'
-          : m.type === 'ADJUSTMENT'
-          ? 'Penyesuaian Opname'
-          : m.type,
-      'Nama Bahan': m.ingredientName || '-',
-      'Perubahan Qty': `${
-        m.type === 'PURCHASE'
-          ? '+'
-          : m.type === 'WASTE' || m.type === 'SALE'
-          ? '-'
-          : m.qty >= 0
-          ? '+'
-          : ''
-      }${Math.abs(m.qty)} ${m.unit || ''}`,
-      'Satuan': m.unit || '',
-      'Keterangan / Alasan': m.note || '-',
-      'Dicatat Oleh': m.recordedBy || 'Sistem',
-      ...(canViewCost
-        ? {
-            'Nilai Total': m.totalCost ? formatRupiah(m.totalCost) : '-',
-          }
-        : {}),
-    }));
-    exportToExcel(
-      exportData,
-      `riwayat_mutasi_stok_komazi_${new Date().toISOString().slice(0, 10)}.xlsx`,
-      'Log Mutasi Stok'
-    );
-    toast.success('Riwayat log stok berhasil diekspor ke Excel');
   };
 
   const lowStock = getLowStockItems();
@@ -823,6 +895,15 @@ export default function StockPage() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => setSelectedStockCardIngredient(ing)}
+                            className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-sky-500/20 text-sky-400 border border-komazi-border hover:border-sky-500/40 transition-all active:scale-95"
+                            title="Buka Kartu Stok (Running Balance)"
+                            aria-label="Buka Kartu Stok"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenMovementModal('WASTE', ing.id)}
                             className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-rose-500/20 text-rose-400 border border-komazi-border hover:border-rose-500/40 transition-all active:scale-95"
                             title="Catat bahan terbuang / rusak (Waste)"
@@ -981,8 +1062,59 @@ export default function StockPage() {
           </div>
         </div>
 
-        {/* Filter Controls: Type Tabs, Search, Ingredient Select */}
+        {/* Filter Controls: Date Range, Type Tabs, Search, Ingredient Select */}
         <div className="space-y-3">
+          {/* Movement Date Filter Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              { id: 'ALL', label: 'Semua Periode' },
+              { id: 'TODAY', label: 'Hari Ini' },
+              { id: '7D', label: '7 Hari Terakhir' },
+              { id: 'MONTH', label: 'Bulan Ini' },
+              { id: 'CUSTOM', label: '📅 Tanggal Kustom' },
+            ].map((dTab) => {
+              const active = movementDateFilter === dTab.id;
+              return (
+                <button
+                  key={dTab.id}
+                  type="button"
+                  onClick={() => setMovementDateFilter(dTab.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border active:scale-95 ${
+                    active
+                      ? 'bg-komazi-teal text-white border-komazi-teal shadow-sm shadow-komazi-teal/20'
+                      : 'bg-komazi-surface-2 text-komazi-muted border-komazi-border hover:text-komazi-text hover:bg-komazi-border/50'
+                  }`}
+                >
+                  {dTab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {movementDateFilter === 'CUSTOM' && (
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-komazi-surface-2 border border-komazi-border text-xs flex-wrap sm:flex-nowrap">
+              <Calendar className="w-3.5 h-3.5 text-komazi-coral shrink-0" />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-[11px] text-komazi-muted">Dari:</span>
+                <input
+                  type="date"
+                  value={movementCustomStartDate}
+                  onChange={(e) => setMovementCustomStartDate(e.target.value)}
+                  className="px-2 py-1 rounded-lg bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-[11px] text-komazi-muted">Sampai:</span>
+                <input
+                  type="date"
+                  value={movementCustomEndDate}
+                  onChange={(e) => setMovementCustomEndDate(e.target.value)}
+                  className="px-2 py-1 rounded-lg bg-komazi-surface border border-komazi-border text-xs text-komazi-text focus:border-komazi-coral focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Movement Type Filter Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             {[
@@ -1158,20 +1290,48 @@ export default function StockPage() {
                     </div>
                   </div>
 
-                  <div className="text-left sm:text-right shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-komazi-border/50 flex sm:flex-col justify-between sm:justify-start items-center sm:items-end">
-                    <div>
-                      <p className={`font-mono font-bold text-sm ${badgeConfig.qtyColor}`}>
-                        {displayQty}
-                      </p>
-                      {canViewCost && m.totalCost && Number(m.totalCost) > 0 && (
-                        <p className="text-[10px] text-komazi-muted font-mono">
-                          Total: {formatRupiah(m.totalCost)}
+                  <div className="flex items-center gap-3">
+                    {m.stockBefore !== null && m.stockAfter !== null && (
+                      <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-komazi-surface-3/60 border border-komazi-border text-[11px] font-mono shrink-0">
+                        <span className="text-komazi-muted" title="Saldo Sebelum">{m.stockBefore}</span>
+                        <span className="text-komazi-muted/40">→</span>
+                        <span className={`font-bold ${badgeConfig.qtyColor}`}>{displayQty}</span>
+                        <span className="text-komazi-muted/40">→</span>
+                        <span className="text-komazi-text font-bold" title="Saldo Sesudah">{m.stockAfter}</span>
+                        <span className="text-komazi-muted text-[10px]">{m.unit}</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetIng = ingredients.find((i) => i.id === m.ingredientId) || {
+                          id: m.ingredientId,
+                          name: m.ingredientName,
+                          unit: m.unit,
+                        };
+                        setSelectedStockCardIngredient(targetIng);
+                      }}
+                      className="p-1.5 rounded-lg bg-komazi-surface-2 hover:bg-sky-500/20 text-sky-400 border border-komazi-border hover:border-sky-500/40 transition-all active:scale-95 shrink-0"
+                      title="Buka Kartu Stok Bahan Ini"
+                      aria-label="Buka Kartu Stok"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="text-left sm:text-right shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-komazi-border/50 flex sm:flex-col justify-between sm:justify-start items-center sm:items-end min-w-[90px]">
+                      <div>
+                        <p className={`font-mono font-bold text-sm ${badgeConfig.qtyColor}`}>
+                          {displayQty}
                         </p>
-                      )}
+                        {canViewCost && m.totalCost && Number(m.totalCost) > 0 && (
+                          <p className="text-[10px] text-komazi-muted font-mono">
+                            Total: {formatRupiah(m.totalCost)}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-komazi-muted font-mono">
+                        {formatDateTime(m.createdAt)}
+                      </p>
                     </div>
-                    <p className="text-[10px] text-komazi-muted font-mono">
-                      {formatDateTime(m.createdAt)}
-                    </p>
                   </div>
                 </div>
               );
@@ -1182,7 +1342,7 @@ export default function StockPage() {
         {/* Pagination Controls for Movements */}
         <Pagination
           currentPage={movementPage}
-          totalItems={filteredMovements.length}
+          totalItems={movementsMeta?.total || paginatedMovements.length}
           itemsPerPage={movementsPerPage}
           onPageChange={setMovementPage}
           onItemsPerPageChange={setMovementsPerPage}
@@ -1855,6 +2015,16 @@ export default function StockPage() {
           toast.success('Bahan baku berhasil diimpor!');
         }}
       />
+
+      {/* Modal Kartu Stok Bahan Baku (Running Balance Ledger) */}
+      {selectedStockCardIngredient && (
+        <StockCardModal
+          isOpen={Boolean(selectedStockCardIngredient)}
+          onClose={() => setSelectedStockCardIngredient(null)}
+          ingredient={selectedStockCardIngredient}
+          canViewCost={canViewCost}
+        />
+      )}
     </div>
   );
 }
