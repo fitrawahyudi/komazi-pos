@@ -312,14 +312,6 @@ export default function CustomerTableOrderPage() {
           Fitur pemesanan mandiri via QR meja saat ini sedang dinonaktifkan sementara. Silakan pesan dan lakukan
           pembayaran langsung di meja kasir kami ya!
         </p>
-        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 max-w-sm w-full text-left text-xs text-zinc-400 space-y-2">
-          <div className="flex items-center gap-2 text-zinc-300 font-semibold text-sm">
-            <UtensilsCrossed size={16} className="text-amber-500" />
-            <span>{config?.storeName || 'Komazi Coffee & Space'}</span>
-          </div>
-          {config?.storeAddress && <p>📍 {config.storeAddress}</p>}
-          <p className="text-emerald-400 font-medium">✨ Barista kami siap meracik pesanan favorit Anda.</p>
-        </div>
       </div>
     );
   }
