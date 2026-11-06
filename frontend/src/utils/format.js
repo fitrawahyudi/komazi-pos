@@ -322,4 +322,19 @@ export function getLocalDateString(dateInput = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Sanitasi dan format label nomor meja agar tidak terjadi duplikasi kata (anti double-word)
+ * e.g., "Meja Meja 12" -> "Meja 12"
+ *       "Meja 12"      -> "Meja 12"
+ *       "12"           -> "Meja 12"
+ *       null / "-"     -> "-"
+ */
+export function formatTableNumber(rawTable, prefix = 'Meja') {
+  if (!rawTable || rawTable === '-') return '-';
+  const clean = String(rawTable).replace(/^(meja\s*)+/i, '').trim();
+  if (!clean) return '-';
+  return prefix ? `${prefix} ${clean}` : clean;
+}
+
+
 

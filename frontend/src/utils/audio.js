@@ -49,3 +49,55 @@ export function playKitchenChime() {
     console.warn('Audio chime notice:', e);
   }
 }
+
+/**
+ * Web Audio API Bell Chime khusus untuk Pesanan Meja QR Baru (Triple Bell).
+ * Didesain terdengar jelas di tengah kebisingan mesin kopi / grinder.
+ */
+export function playQrOrderChime() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+
+    const triggerSound = () => {
+      try {
+        const tones = [
+          { freq: 523.25, time: 0, dur: 0.35, gain: 0.35 },    // C5 (Ding)
+          { freq: 659.25, time: 0.14, dur: 0.35, gain: 0.38 }, // E5 (Dong)
+          { freq: 783.99, time: 0.28, dur: 0.55, gain: 0.42 }, // G5 (Ding~)
+        ];
+
+        tones.forEach(({ freq, time, dur, gain: targetGain }) => {
+          const osc = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          osc.type = 'triangle'; // Suara bell kafe lebih renyah dan tembus kebisingan
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + time);
+          gainNode.gain.setValueAtTime(targetGain, ctx.currentTime + time);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + time + dur);
+
+          osc.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          osc.start(ctx.currentTime + time);
+          osc.stop(ctx.currentTime + time + dur);
+        });
+      } catch (err) {
+        console.warn('QR chime tone synthesis error:', err);
+      }
+    };
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(triggerSound).catch(() => {});
+    } else {
+      triggerSound();
+    }
+
+    // Pola getar berulang yang terasa jelas di saku barista
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate([300, 150, 300, 150, 400]);
+    }
+  } catch (e) {
+    console.warn('QR audio chime notice:', e);
+  }
+}
+

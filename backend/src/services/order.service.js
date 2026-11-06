@@ -348,7 +348,7 @@ export const orderService = {
     const [paidOrders, openOrders] = await Promise.all([
       prisma.order.findMany({
         where: {
-          status: { in: ['PAID', 'SERVED', 'COMPLETED'] },
+          status: { in: ['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'] },
           OR: [
             { paidAt: { gte: startDate, lte: endDate } },
             { createdAt: { gte: startDate, lte: endDate } },
@@ -393,7 +393,7 @@ export const orderService = {
             byMethod.CASH += amt;
           }
         }
-      } else if (['PAID', 'SERVED', 'COMPLETED'].includes(order.status)) {
+      } else if (['PAID', 'PREPARING', 'IN_PROGRESS', 'PARTIALLY_READY', 'READY', 'SERVED', 'COMPLETED'].includes(order.status)) {
         // Fallback jika pesanan lunas namun relasi payment belum tersinkron
         const ordTotal = Number(order.total) || 0;
         const refStr = String(order.invoiceNo || '').toUpperCase();

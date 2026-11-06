@@ -156,6 +156,13 @@ export function parseNaturalScheduleText(text, callerTelegramId = null) {
   const hasIntent = intentRegex.test(raw) && actionRegex.test(raw);
   if (!hasIntent) return null;
 
+  // Hindari salah deteksi permintaan laporan on-demand seketika sebagai jadwal berulang
+  const isImmediateReportRequest = /(?:^|\s)(?:buat|buatkan|bikin|minta|tampilkan|lihat|cek|tarik|kirimkan?)\s+(?:semua\s+)?(?:laporan|omzet|penjualan)/i.test(raw);
+  const hasScheduleIndicator = /(?:jadwal|jadwalkan|rutin|otomatis|pengingat|reminder|cronjob|setiap|tiap|pukul\s+\d|jam\s+\d|besok|nanti|harian|mingguan)/i.test(raw);
+  if (isImmediateReportRequest && !hasScheduleIndicator) {
+    return null;
+  }
+
   // 3. Deteksi apakah pengingat personal ("saya", "aku")
   const isPersonal = /(?:ingatkan\s+(?:saya|aku)|untuk\s+(?:saya|aku))/i.test(raw);
 

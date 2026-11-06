@@ -24,7 +24,7 @@ import {
   MapPin,
   Flame,
 } from 'lucide-react';
-import { formatRupiah, formatDateTime } from '../../utils/format';
+import { formatRupiah, formatDateTime, formatTableNumber } from '../../utils/format';
 import { toast } from '../../store/toastStore';
 
 export default function OrderDetailModal({
@@ -208,7 +208,7 @@ export default function OrderDetailModal({
                 <span>Layanan</span>
               </div>
               <p className="text-xs font-bold text-komazi-text">
-                {isDineIn ? `Dine In • Meja ${order.tableNo || '-'}` : 'Take Away'}
+                {isDineIn ? `Dine In • ${formatTableNumber(order.tableNo)}` : 'Take Away'}
               </p>
               <p className="text-[10px] text-komazi-muted truncate">
                 {order.customerName || 'Tamu Reguler'}

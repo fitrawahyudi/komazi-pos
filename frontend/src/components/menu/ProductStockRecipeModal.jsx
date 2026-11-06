@@ -383,11 +383,6 @@ export default function ProductStockRecipeModal({
           >
             <Boxes className="w-4 h-4" />
             <span>Komposisi & Estimasi Porsi</span>
-            {enrichedItems.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-[10px] font-mono font-bold">
-                {enrichedItems.length}
-              </span>
-            )}
           </button>
 
           <button
@@ -401,11 +396,6 @@ export default function ProductStockRecipeModal({
           >
             <History className="w-4 h-4" />
             <span>Riwayat Pergerakan Stok</span>
-            {movementsTotal > 0 && (
-              <span className="px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-[10px] font-mono font-bold">
-                {movementsTotal}
-              </span>
-            )}
           </button>
         </div>
 

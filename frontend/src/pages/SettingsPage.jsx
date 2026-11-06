@@ -50,6 +50,7 @@ import PrinterPage from './PrinterPage';
 import WifiManagerCard from '../components/settings/WifiManagerCard';
 import QrisUploader from '../components/settings/QrisUploader';
 import BankTransferSettingsCard from '../components/settings/BankTransferSettingsCard';
+import QrOrderSettingsCard from '../components/settings/QrOrderSettingsCard';
 import TelegramBotSettingsCard from '../components/settings/TelegramBotSettingsCard';
 import AndroidNotificationCard from '../components/settings/AndroidNotificationCard';
 import BackupRecoveryCard from '../components/settings/BackupRecoveryCard';
@@ -838,6 +839,9 @@ export default function SettingsPage() {
               formState={formState}
               setFormState={setFormState}
             />
+
+            {/* Konfigurasi Pemesanan Mandiri Meja (QR Self-Order) */}
+            <QrOrderSettingsCard />
           </div>
         )}
 

@@ -124,6 +124,31 @@ export async function executeAiQuery(ctx, rawQuery, options = {}) {
     return ctx.reply(listText, { parse_mode: 'HTML' });
   }
 
+  // 1b. Menu Laporan Langsung pada Mode Bebas Chat (tanpa perlu /laporan)
+  if (isManagerOrOwner && /^(?:laporan|menu\s+laporan|buka\s+laporan|pilih\s+laporan)$/i.test(lowerQuery)) {
+    const kb = new InlineKeyboard()
+      .text('Hari Ini', 'rep_per:today')
+      .text('Kemarin', 'rep_per:yesterday')
+      .row()
+      .text('7 Hari Terakhir', 'rep_per:7d')
+      .text('Bulan Ini', 'rep_per:month')
+      .row()
+      .text('Bulan Lalu', 'rep_per:last_month')
+      .text('📅 Tanggal Kustom', 'rep_action:custom_prompt');
+
+    return ctx.reply(
+      '📊 <b>Pilih Periode Laporan Penjualan:</b>\n\n' +
+      'Pilih tombol periode di bawah, atau ketik langsung dengan tanggal:\n' +
+      '• <code>/laporan 15-10-2026</code>\n' +
+      '• <code>/laporan 10-10-2026 s/d 15-10-2026</code>\n' +
+      '• <code>/laporan 15 Oktober 2026</code>',
+      {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      }
+    );
+  }
+
   // 1b. Kueri status sentinel / kesehatan sistem secara alami
   if (isManagerOrOwner && /^(?:status|cek|kesehatan|health|sentinel)\s*(?:sistem|server|bot|sentinel|database)?$/i.test(lowerQuery)) {
     const status = await checkSystemHealth({ checkAi: true });
@@ -257,6 +282,10 @@ export async function executeAiQuery(ctx, rawQuery, options = {}) {
             .text(buttonLabel.slice(0, 50), `qjs:${scheduleDraftId}`)
             .row()
             .text('❌ Batal', 'job_action:cancel');
+        } else if (isManagerOrOwner && /(?:laporan|omzet|omset|penjualan|sales|transaksi|kasir|profit|laba)/i.test(lowerQuery)) {
+          replyOptions.reply_markup = new InlineKeyboard()
+            .text('📊 Menu Laporan Periode', 'go:report')
+            .text('☕ Ringkasan Visual', 'go:summary');
         }
 
         if (!finalCaption.includes('@komazi-assistant')) {

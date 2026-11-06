@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useOrdersStore } from '../store/ordersStore';
 import { useAuthStore } from '../store/authStore';
 import { useShiftStore } from '../store/shiftStore';
-import { formatRupiah, formatDateTime, getLocalDateString } from '../utils/format';
+import { formatRupiah, formatDateTime, getLocalDateString, formatTableNumber } from '../utils/format';
 import ThermalReceiptModal from '../components/pos/ThermalReceiptModal';
 import ShiftModal from '../components/shift/ShiftModal';
 import Pagination from '../components/ui/Pagination';
@@ -1036,7 +1036,7 @@ export default function OrdersPage() {
                         </div>
                         <div className="text-[10px] text-komazi-muted">
                           {(order.type === 'DINE_IN' || order.orderType === 'DINE_IN')
-                            ? `Dine In • Meja ${order.tableNo || '-'}`
+                            ? `Dine In • ${formatTableNumber(order.tableNo)}`
                             : 'Take Away'}
                         </div>
                       </td>

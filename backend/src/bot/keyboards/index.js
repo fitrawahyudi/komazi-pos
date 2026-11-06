@@ -24,10 +24,10 @@ export function mainMenu(role) {
         .text('ℹ️ Status Bot', 'go:infobot');
       break;
     case 'OWNER':
-      kb.text('📊 Ringkasan Omzet', 'go:summary').text('✅ Approval', 'go:approval').row()
-        .text('📦 Stok', 'go:stock').text('🔗 Tautkan Staf', 'go:link').row()
+      kb.text('📊 Ringkasan Omzet', 'go:summary').text('📊 Laporan', 'go:report').row()
+        .text('📦 Stok', 'go:stock').text('✅ Approval', 'go:approval').row()
         .text('⏰ Jadwal Otomatis', 'go:jobs').text('🤖 Asisten AI', 'go:ai_menu').row()
-        .text('ℹ️ Status Bot', 'go:infobot');
+        .text('🔗 Tautkan Staf', 'go:link').text('ℹ️ Status Bot', 'go:infobot');
       break;
     default:
       kb.text('ℹ️ Info Akun', 'go:whoami').text('ℹ️ Status Bot', 'go:infobot');

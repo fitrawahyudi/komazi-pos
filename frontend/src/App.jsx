@@ -17,6 +17,7 @@ import { useNotificationStore } from './store/notificationStore';
 import { useToastStore } from './store/toastStore';
 import { usePrinterStore } from './store/printerStore';
 import { useCmsStore } from './store/cmsStore';
+import { useQrOrderStore } from './store/qrOrderStore';
 import { getSocket } from './services/socket';
 import { isAndroid, isNative, isInstalledApp } from './services/platform';
 
@@ -61,6 +62,7 @@ const CmsTestimonialsPage = lazy(() => import('./pages/cms/CmsTestimonialsPage')
 const CmsOutletPage = lazy(() => import('./pages/cms/CmsOutletPage'));
 const CmsSeoPage = lazy(() => import('./pages/cms/CmsSeoPage'));
 const DownloadPage = lazy(() => import('./pages/DownloadPage'));
+const CustomerTableOrderPage = lazy(() => import('./pages/CustomerTableOrderPage'));
 
 // Index Redirect Component
 function IndexRedirect() {
@@ -249,6 +251,7 @@ export default function App() {
       initOrdersSocketSync?.();
       initCustomersSocketSync?.();
       initShiftSocketSync?.();
+      useQrOrderStore.getState().initSocketSync?.();
       usePosStore.getState().fetchCategories();
       usePosStore.getState().fetchProducts();
       useOrdersStore.getState().fetchOrders().then(() => {
@@ -297,6 +300,32 @@ export default function App() {
         <Route path="/unduh" element={<Navigate to="/download" replace />} />
         <Route path="/apk" element={<Navigate to="/download" replace />} />
         <Route path="/panduan" element={<Navigate to="/download" replace />} />
+
+        {/* Public Customer QR Self-Order Routes (Pemesanan Mandiri Meja) */}
+        <Route
+          path="/meja/:tableNo"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <CustomerTableOrderPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/meja"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <CustomerTableOrderPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/order"
+          element={
+            <Suspense fallback={<PageFallbackSkeleton />}>
+              <CustomerTableOrderPage />
+            </Suspense>
+          }
+        />
 
         {/* Dedicated Standalone KDS Screen (No Sidebar, No Navbar - Dedicated for Kitchen/Bar Display) */}
         <Route

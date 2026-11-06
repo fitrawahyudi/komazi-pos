@@ -354,6 +354,44 @@ export async function notifyNewOrder(order) {
   return notifyPaidTransaction(order);
 }
 
+/**
+ * Notifikasi instan ke Telegram saat pelanggan mengirim pesanan meja mandiri via QR
+ */
+export async function notifyNewQrOrder(order) {
+  if (!order) return;
+  try {
+    const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';
+    if (!botEnabled) return;
+
+    const tableNo = order.tableNo || '-';
+    const customer = order.customerName || 'Tamu';
+    const total = Number(order.total || 0).toLocaleString('id-ID');
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsSummary = items
+      .map((it) => `• <b>${it.qty || 1}×</b> ${it.productName || it.name || 'Menu'}`)
+      .join('\n');
+
+    const message = `
+🔔 <b>PESANAN MEJA BARU MASUK!</b>
+━━━━━━━━━━━━━━━━━━
+📍 <b>Meja:</b> ${tableNo}
+👤 <b>Pelanggan:</b> ${customer}
+🧾 <b>Invoice:</b> <code>${order.invoiceNo || '-'}</code>
+💰 <b>Total:</b> Rp${total}
+
+<b>Daftar Menu:</b>
+${itemsSummary || '• Menu pesanan meja'}
+
+⚠️ <i>Menunggu verifikasi bukti transfer oleh kasir di POS.</i>
+━━━━━━━━━━━━━━━━━━`;
+
+    await sendTelegramMessage(message);
+  } catch (err) {
+    console.warn('[TelegramService] notifyNewQrOrder warning:', err.message);
+  }
+}
+
+
 export async function notifyLowStock({ ingredientName, currentStock, minStock, unit }) {
   try {
     const botEnabled = (await getBotSetting('botEnabled', 'true')) === 'true';

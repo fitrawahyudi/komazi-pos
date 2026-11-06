@@ -142,7 +142,13 @@ export function registerCashier(bot) {
     }
 
     const itemsLines = (order.items || [])
-      .map((it) => `• <b>${it.quantity}×</b> ${esc(it.productName)} — ${rupiah(it.price * it.quantity)}${it.notes ? ` <i>[${esc(it.notes)}]</i>` : ''}`)
+      .map((it) => {
+        const qty = it.qty ?? it.quantity ?? 1;
+        const total = it.lineTotal ? Number(it.lineTotal) : (Number(it.unitPrice || it.price || 0) * qty);
+        const note = it.note || it.notes;
+        const name = it.variantName ? `${it.productName} (${it.variantName})` : it.productName;
+        return `• <b>${qty}×</b> ${esc(name)} — ${rupiah(total)}${note ? ` <i>[${esc(note)}]</i>` : ''}`;
+      })
       .join('\n') || '<i>(Tidak ada rincian item)</i>';
 
     const detailText = `

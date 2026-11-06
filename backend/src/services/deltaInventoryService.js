@@ -66,8 +66,9 @@ export const deltaInventoryService = {
    * @param {number} orderId
    * @param {string} invoiceNo
    * @param {Array} items - Array of { productId, productName, variantName, qty }
+   * @param {string|null} recordedBy - Nama kasir/staf yang memproses pesanan
    */
-  async deductNewOrderStock(tx, orderId, invoiceNo, items) {
+  async deductNewOrderStock(tx, orderId, invoiceNo, items, recordedBy = null) {
     const client = tx || prisma;
 
     // 1. Agregasi total kebutuhan bahan baku dari seluruh item pesanan
@@ -122,6 +123,20 @@ export const deltaInventoryService = {
       throw error;
     }
 
+    // 2.5 Ambil nama kasir penanggung jawab transaksi jika belum diberikan
+    let cashierName = recordedBy;
+    if (!cashierName && orderId) {
+      try {
+        const orderInfo = await client.order.findUnique({
+          where: { id: parseInt(orderId, 10) },
+          select: { cashier: { select: { name: true } } },
+        });
+        cashierName = orderInfo?.cashier?.name || null;
+      } catch {
+        // abaikan fallback error
+      }
+    }
+
     // 3. Potong stok dan catat StockMovement bertipe SALE
     const movements = [];
     for (const [, req] of aggregatedRequirements) {
@@ -143,6 +158,7 @@ export const deltaInventoryService = {
           unitCost: req.costPerUnit,
           totalCost: req.costPerUnit * req.needed,
           note: `Sale: Order #${orderId} (${invoiceNo})`,
+          recordedBy: cashierName || 'Kasir',
         },
       });
       movements.push(movement);
@@ -166,10 +182,25 @@ export const deltaInventoryService = {
    * @param {string} invoiceNo - Nomor Faktur Pesanan
    * @param {Array} existingItems - Item pesanan yang saat ini tersimpan di DB
    * @param {Array} incomingItems - Item pesanan baru yang dikirim kasir
+   * @param {string|null} recordedBy - Nama kasir yang mengedit
    */
-  async processOrderDelta(tx, orderId, invoiceNo, existingItems, incomingItems) {
+  async processOrderDelta(tx, orderId, invoiceNo, existingItems, incomingItems, recordedBy = null) {
     const client = tx || prisma;
     const buildKey = (item) => `${item.productId}_${(item.variantName || '').toLowerCase().trim()}`;
+
+    // Resolusi nama kasir penanggung jawab transaksi jika belum diberikan
+    let cashierName = recordedBy;
+    if (!cashierName && orderId) {
+      try {
+        const orderInfo = await client.order.findUnique({
+          where: { id: parseInt(orderId, 10) },
+          select: { cashier: { select: { name: true } } },
+        });
+        cashierName = orderInfo?.cashier?.name || null;
+      } catch {
+        // abaikan fallback error
+      }
+    }
 
     // 1. Buat Peta Identifikasi Item Unik berdasarkan (productId_variantName)
     const existingMap = new Map();
@@ -293,6 +324,7 @@ export const deltaInventoryService = {
               unitCost: bom.costPerUnit,
               totalCost: bom.costPerUnit * bom.requiredQty,
               note: `Delta Sale (+${delta.deltaQty}): Order #${orderId} (${invoiceNo}) - ${delta.productName} [${delta.variantName || 'Std'}]`,
+              recordedBy: cashierName || 'Kasir',
             },
           });
         }
@@ -317,6 +349,7 @@ export const deltaInventoryService = {
               unitCost: bom.costPerUnit,
               totalCost: bom.costPerUnit * bom.requiredQty,
               note: `Delta Restock (${delta.deltaQty}): Order #${orderId} (${invoiceNo}) - ${delta.productName} [${delta.variantName || 'Std'}]`,
+              recordedBy: cashierName || 'Kasir',
             },
           });
         }
@@ -336,8 +369,9 @@ export const deltaInventoryService = {
    * @param {object} tx - Prisma Transaction Client
    * @param {number} orderId
    * @param {string} reason
+   * @param {string|null} recordedBy
    */
-  async restoreOrderStock(tx, orderId, reason = 'Pembatalan Pesanan (Void)') {
+  async restoreOrderStock(tx, orderId, reason = 'Pembatalan Pesanan (Void)', recordedBy = null) {
     const client = tx || prisma;
     const parsedOrderId = parseInt(orderId, 10);
 
@@ -345,6 +379,7 @@ export const deltaInventoryService = {
       where: { id: parsedOrderId },
       include: {
         items: true,
+        cashier: { select: { name: true } },
       },
     });
 
@@ -400,6 +435,7 @@ export const deltaInventoryService = {
             unitCost: bom.costPerUnit,
             totalCost: bom.costPerUnit * bom.requiredQty,
             note: `Restock Void Order #${order.id} (${order.invoiceNo}) - ${item.productName} x${itemQty} (${reason})`,
+            recordedBy: recordedBy || order?.cashier?.name || 'Kasir',
           },
         });
         restoredMovements++;

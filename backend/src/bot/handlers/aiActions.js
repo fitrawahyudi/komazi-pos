@@ -214,6 +214,7 @@ export function registerAiActionHandlers(bot) {
           ingredientId: ingId,
           qty: draft.qty,
           note: `Restock via AI Copilot oleh ${user.name} (${user.role})`,
+          recordedBy: user.name || 'AI Copilot',
         });
 
         await logBotAudit(user.id, 'AI_COPILOT_RESTOCK', {

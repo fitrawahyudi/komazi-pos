@@ -130,10 +130,17 @@ export function registerManager(bot) {
     });
 
     const statusText = decision ? '✅ Disetujui' : '❌ Ditolak';
-    await ctx.editMessageText(
-      `🔔 <b>Permintaan Persetujuan #${reqId}</b>\n━━━━━━━━━━━━━━━━━━\nStatus: <b>${statusText}</b> oleh <b>${esc(ctx.user.name)}</b> (${ctx.user.role})\n━━━━━━━━━━━━━━━━━━`,
-      { parse_mode: 'HTML' }
-    );
+    const updatedCaption = `🔔 <b>Permintaan Persetujuan #${reqId}</b>\n━━━━━━━━━━━━━━━━━━\nStatus: <b>${statusText}</b> oleh <b>${esc(ctx.user.name)}</b> (${ctx.user.role})\n━━━━━━━━━━━━━━━━━━`;
+    try {
+      if (ctx.callbackQuery?.message?.photo || ctx.msg?.photo) {
+        await ctx.editMessageCaption({ caption: updatedCaption, parse_mode: 'HTML' });
+      } else {
+        await ctx.editMessageText(updatedCaption, { parse_mode: 'HTML' });
+      }
+    } catch {
+      await ctx.editMessageCaption({ caption: updatedCaption, parse_mode: 'HTML' })
+        .catch(() => ctx.editMessageText(updatedCaption, { parse_mode: 'HTML' }).catch(() => {}));
+    }
 
     // Kirim notifikasi ke kasir yang meminta dengan kartu visual ApprovalResult
     if (result.request.requesterId) {

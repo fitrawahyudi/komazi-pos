@@ -470,7 +470,8 @@ export async function createOrder(req, res) {
             tx,
             order.id,
             order.invoiceNo,
-            items
+            items,
+            req.user?.name
           );
 
           return order;
@@ -1023,7 +1024,8 @@ export async function payOrder(req, res) {
           tx,
           order.id,
           order.invoiceNo,
-          activeItems
+          activeItems,
+          req.user?.name || order.cashier?.name
         );
       }
       // Jika sudah ada pergerakan SALE sebelumnya, STOK TIDAK DIPOTONG LAGI!

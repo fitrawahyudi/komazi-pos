@@ -1,13 +1,15 @@
 import { telegramLinkService } from '../../services/telegramLinkService.js';
 import { setCommandsForUser } from '../commands.js';
 import { mainMenu, buildStaffReplyKeyboard } from '../keyboards/index.js';
-import { esc } from '../utils/format.js';
+import { esc, rupiah } from '../utils/format.js';
 import { generateBotImage } from '../../services/botImage/index.js';
 import { replyWithPhotoFallback } from '../utils/sendVisual.js';
 import { getBotStatusData } from '../../services/botStatusService.js';
 import { withLoadingAnimation } from '../utils/loading.js';
 import { InlineKeyboard } from 'grammy';
 import { renderJobsList } from './jobs.js';
+import { orderService } from '../../services/order.service.js';
+import { workspaceService } from '../../services/workspace.service.js';
 
 /**
  * Format teks informasi status bot yang komprehensif, rapi, dan sesuai PUEBI.
@@ -208,9 +210,82 @@ export function registerStart(bot) {
         return ctx.reply('Gunakan perintah /approval untuk melihat permintaan persetujuan menunggu.');
       case 'soldout':
         return ctx.reply('Gunakan perintah /habis untuk menandai menu habis atau tersedia.');
-      case 'report':
-      case 'summary':
-        return ctx.reply('Gunakan perintah /laporan atau /ringkasan untuk melihat omzet.');
+      case 'report': {
+        const kb = new InlineKeyboard()
+          .text('Hari Ini', 'rep_per:today')
+          .text('Kemarin', 'rep_per:yesterday')
+          .row()
+          .text('7 Hari Terakhir', 'rep_per:7d')
+          .text('Bulan Ini', 'rep_per:month')
+          .row()
+          .text('Bulan Lalu', 'rep_per:last_month')
+          .text('📅 Tanggal Kustom', 'rep_action:custom_prompt');
+
+        return ctx.reply(
+          '📊 <b>Pilih Periode Laporan Penjualan:</b>\n\n' +
+          'Pilih tombol periode di bawah, atau ketik langsung dengan tanggal:\n' +
+          '• <code>/laporan 15-10-2026</code>\n' +
+          '• <code>/laporan 10-10-2026 s/d 15-10-2026</code>\n' +
+          '• <code>/laporan 15 Oktober 2026</code>',
+          {
+            parse_mode: 'HTML',
+            reply_markup: kb,
+          }
+        );
+      }
+      case 'summary': {
+        return withLoadingAnimation(
+          ctx,
+          { chatAction: 'upload_photo' },
+          async () => {
+            const [today, yesterday, activeWs] = await Promise.all([
+              orderService.getSummary('today'),
+              orderService.getSummary('yesterday'),
+              workspaceService.getActiveSessions(),
+            ]);
+
+            const growth = yesterday.totalRevenue > 0
+              ? (((today.totalRevenue - yesterday.totalRevenue) / yesterday.totalRevenue) * 100).toFixed(1)
+              : null;
+
+            const growthText = growth !== null
+              ? (Number(growth) >= 0 ? `(+${growth}%) 📈` : `(${growth}%) 📉`)
+              : '-';
+
+            const caption = `
+☕ <b>RINGKASAN EKSEKUTIF OWNER</b>
+━━━━━━━━━━━━━━━━━━
+<b>Omzet Hari Ini:</b> <b>${rupiah(today.totalRevenue)}</b> ${growthText}
+<b>Omzet Kemarin:</b> ${rupiah(yesterday.totalRevenue)}
+
+<b>Aktivitas Transaksi:</b>
+• Transaksi Selesai: <b>${today.totalTransactions}</b>
+• Tamu Workspace Aktif: <b>${activeWs.length}</b> sesi berjalan
+
+<b>Metode Pembayaran:</b>
+• Tunai: ${rupiah(today.byMethod.CASH)}
+• QRIS Dinamis: ${rupiah(today.byMethod.QRIS)}
+• Transfer Bank: ${rupiah(today.byMethod.TRANSFER)}
+━━━━━━━━━━━━━━━━━━
+<i>Gunakan /laporan untuk melihat laporan per periode.</i>
+
+🤖 <i>@komazi-assistant</i>
+            `.trim();
+
+            return replyWithPhotoFallback(ctx, {
+              imageBufferPromise: generateBotImage('realtime_sales', {
+                totalRevenue: today.totalRevenue,
+                totalTransactions: today.totalTransactions,
+                byMethod: today.byMethod,
+                growth: Number(growth),
+                activeWsCount: activeWs.length,
+                topProducts: today.topProducts,
+              }),
+              captionHtml: caption,
+            });
+          }
+        );
+      }
       case 'link':
         return ctx.reply('Gunakan perintah /tautkan untuk membuat kode tautan staf baru.');
       case 'jobs':

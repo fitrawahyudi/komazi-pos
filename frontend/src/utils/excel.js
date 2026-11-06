@@ -2537,8 +2537,7 @@ export function exportProfitLossToExcel({
     ['A. PENDAPATAN OPERASIONAL (REVENUE)', '', '', ''],
     ['1. Total Omzet Penjualan (Gross Sales)', grossRev, '100.0%', `Total penerimaan kasir (${summary.totalOrders || 0} order)`],
     ['2. Diskon & Potongan Harga', -Number(summary.totalDiscount || 0), calcPct(summary.totalDiscount), 'Potongan harga transaksi'],
-    ['3. Pendapatan Workspace / Reservasi', Number(summary.workspaceRevenue || 0), calcPct(summary.workspaceRevenue), 'Penerimaan sewa ruangan/meja workspace'],
-    ['[SUBTOTAL] PENDAPATAN BERSIH', netRevenue, calcPct(netRevenue), 'Total Omzet dikurangi Diskon ditambah Workspace'],
+    ['[SUBTOTAL] PENDAPATAN BERSIH', netRevenue, calcPct(netRevenue), 'Total Omzet dikurangi Diskon'],
 
     // B. HARGA POKOK PENJUALAN
     ['B. HARGA POKOK PENJUALAN (COGS)', '', '', ''],

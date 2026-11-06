@@ -16,7 +16,7 @@ export const stockService = {
     return ingredients.filter((ing) => parseFloat(ing.stock) <= parseFloat(ing.minStock));
   },
 
-  async recordStockIn({ ingredientId, qty, unitCost = null, note = 'Stok Masuk via Bot' }) {
+  async recordStockIn({ ingredientId, qty, unitCost = null, note = 'Stok Masuk via Bot', recordedBy = 'Staff Bot' }) {
     const numericQty = parseFloat(qty);
     if (numericQty <= 0) throw new Error('Jumlah stok masuk harus lebih dari 0');
 
@@ -26,23 +26,29 @@ export const stockService = {
       });
       if (!ing) throw new Error('Bahan baku tidak ditemukan');
 
+      const currentStock = parseFloat(ing.stock || 0);
+      const newStock = currentStock + numericQty;
       const cost = unitCost ? parseFloat(unitCost) : parseFloat(ing.costPerUnit || 0);
+      const totalCost = cost * numericQty;
 
       const movement = await tx.stockMovement.create({
         data: {
           ingredientId: Number(ingredientId),
           type: 'PURCHASE',
           qty: numericQty,
-          unitCost: cost,
-          totalCost: cost * numericQty,
+          stockBefore: currentStock,
+          stockAfter: newStock,
+          unitCost: cost > 0 ? cost : null,
+          totalCost: totalCost > 0 ? totalCost : null,
           note,
+          recordedBy: recordedBy || 'Staff Bot',
         },
       });
 
       const updated = await tx.ingredient.update({
         where: { id: Number(ingredientId) },
         data: {
-          stock: { increment: numericQty },
+          stock: newStock,
         },
       });
 

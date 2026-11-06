@@ -41,36 +41,37 @@ function buildSentinelKeyboard(sentinelJob) {
   return kb;
 }
 
-export function registerOwner(bot) {
-  // 1) Ringkasan Realtime (Dengan Animasi Loading Bar)
-  bot.command('ringkasan', requireRole('OWNER'), async (ctx) => {
-    return withLoadingAnimation(
-      ctx,
-      { chatAction: 'upload_photo' },
-      async () => {
-        const [today, yesterday, activeWs] = await Promise.all([
-          orderService.getSummary('today'),
-          orderService.getSummary('yesterday'),
-          workspaceService.getActiveSessions(),
-        ]);
+/**
+ * Handler Ringkasan Penjualan Realtime HD Card & Caption
+ */
+export async function handleSummary(ctx) {
+  return withLoadingAnimation(
+    ctx,
+    { chatAction: 'upload_photo' },
+    async () => {
+      const [today, yesterday] = await Promise.all([
+        orderService.getSummary('today'),
+        orderService.getSummary('yesterday'),
+        workspaceService.getActiveSessions(),
+      ]);
 
-        const growth = yesterday.totalRevenue > 0
-          ? (((today.totalRevenue - yesterday.totalRevenue) / yesterday.totalRevenue) * 100).toFixed(1)
-          : null;
+      const growth = yesterday.totalRevenue > 0
+        ? (((today.totalRevenue - yesterday.totalRevenue) / yesterday.totalRevenue) * 100).toFixed(1)
+        : null;
 
-        const growthText = growth !== null
-          ? (Number(growth) >= 0 ? `(+${growth}%) 📈` : `(${growth}%) 📉`)
-          : '-';
+      const growthText = growth !== null
+        ? (Number(growth) >= 0 ? `(+${growth}%) 📈` : `(${growth}%) 📉`)
+        : '-';
 
-        const caption = `
-☕ <b>RINGKASAN EKSEKUTIF OWNER</b>
+      const roleLabel = ctx.user?.role === 'MANAGER' ? 'MANAGER' : 'OWNER';
+      const caption = `
+☕ <b>RINGKASAN EKSEKUTIF ${roleLabel}</b>
 ━━━━━━━━━━━━━━━━━━
 <b>Omzet Hari Ini:</b> <b>${rupiah(today.totalRevenue)}</b> ${growthText}
 <b>Omzet Kemarin:</b> ${rupiah(yesterday.totalRevenue)}
 
 <b>Aktivitas Transaksi:</b>
 • Transaksi Selesai: <b>${today.totalTransactions}</b>
-• Tamu Workspace Aktif: <b>${activeWs.length}</b> sesi berjalan
 
 <b>Metode Pembayaran:</b>
 • Tunai: ${rupiah(today.byMethod.CASH)}
@@ -80,22 +81,25 @@ export function registerOwner(bot) {
 <i>Gunakan /laporan untuk melihat laporan per periode.</i>
 
 🤖 <i>@komazi-assistant</i>
-        `.trim();
+      `.trim();
 
-        return replyWithPhotoFallback(ctx, {
-          imageBufferPromise: generateBotImage('realtime_sales', {
-            totalRevenue: today.totalRevenue,
-            totalTransactions: today.totalTransactions,
-            byMethod: today.byMethod,
-            growth: Number(growth),
-            activeWsCount: activeWs.length,
-            topProducts: today.topProducts,
-          }),
-          captionHtml: caption,
-        });
-      }
-    );
-  });
+      return replyWithPhotoFallback(ctx, {
+        imageBufferPromise: generateBotImage('realtime_sales', {
+          totalRevenue: today.totalRevenue,
+          totalTransactions: today.totalTransactions,
+          byMethod: today.byMethod,
+          growth: Number(growth),
+          topProducts: today.topProducts,
+        }),
+        captionHtml: caption,
+      });
+    }
+  );
+}
+
+export function registerOwner(bot) {
+  // 1) Ringkasan Realtime (Dengan Animasi Loading Bar)
+  bot.command(['ringkasan', 'summary'], requireRole('OWNER', 'MANAGER'), handleSummary);
 
   // 2) Laporan Berbagai Periode & Tanggal Kustom (Owner & Manager)
   bot.command('laporan', requireRole('OWNER', 'MANAGER'), async (ctx) => {
@@ -294,7 +298,7 @@ Status Keuangan: ${statusIcon}
   });
 
   // 4) Komazi AI Proactive & Predictive Commands (Real-time Machine Curve & AI Narrative)
-  bot.command(['prediksi', 'briefing'], requireRole('OWNER'), async (ctx) => {
+  bot.command(['prediksi', 'briefing'], requireRole('OWNER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
       { chatAction: 'typing' },
@@ -377,7 +381,7 @@ ${aiInsight}
     );
   });
 
-  bot.command(['cek_stok_kritis', 'prediksi_stok'], requireRole('OWNER'), async (ctx) => {
+  bot.command(['cek_stok_kritis', 'prediksi_stok'], requireRole('OWNER', 'MANAGER'), async (ctx) => {
     return withLoadingAnimation(
       ctx,
       { chatAction: 'typing' },
@@ -783,50 +787,9 @@ ${stockForecast.criticalItems.slice(0, 5).map((it) => `• <b>${esc(it.name)}</b
     }
   });
 
-  bot.callbackQuery('prediksi_action:omzet_today', requireRole('OWNER'), async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => { });
-    try {
-      const [today, yesterday, activeWs] = await Promise.all([
-        orderService.getSummary('today'),
-        orderService.getSummary('yesterday'),
-        workspaceService.getActiveSessions(),
-      ]);
-
-      const growth = yesterday.totalRevenue > 0
-        ? (((today.totalRevenue - yesterday.totalRevenue) / yesterday.totalRevenue) * 100).toFixed(1)
-        : null;
-
-      const visualData = {
-        totalRevenue: rupiah(today.totalRevenue),
-        growth: growth ? `${growth > 0 ? '+' : ''}${growth}%` : 'N/A',
-        totalOrders: today.totalOrders,
-        activeWorkspace: activeWs.length,
-        cashShare: today.cashShare,
-        qrisShare: today.qrisShare,
-        transferShare: today.transferShare,
-      };
-
-      const caption = `
-📊 <b>KOMAZI POS — RINGKASAN HARI INI</b>
-━━━━━━━━━━━━━━━━━━
-💰 <b>Total Omzet:</b> ${rupiah(today.totalRevenue)} (${growth ? `${growth > 0 ? '+' : ''}${growth}% vs kemarin` : 'Hari pertama'})
-🧾 <b>Total Pesanan:</b> ${today.totalOrders} transaksi
-💻 <b>Workspace Aktif:</b> ${activeWs.length} pengguna
-💳 <b>Metode Pembayaran:</b>
-   • Tunai: ${today.cashShare}%
-   • QRIS: ${today.qrisShare}%
-   • Transfer: ${today.transferShare}%
-━━━━━━━━━━━━━━━━━━
-<i>Data sinkronisasi real-time • @komazi-assistant</i>
-      `.trim();
-
-      return replyWithPhotoFallback(ctx, {
-        imageBufferPromise: generateBotImage('ringkasan_realtime', visualData),
-        captionHtml: caption,
-      });
-    } catch (err) {
-      return ctx.reply(`❌ Gagal memuat ringkasan omzet: ${err.message}`);
-    }
+  bot.callbackQuery('prediksi_action:omzet_today', requireRole('OWNER', 'MANAGER'), async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    return handleSummary(ctx);
   });
 
   // 7) Pencadangan Database Langsung via Bot (/backup)

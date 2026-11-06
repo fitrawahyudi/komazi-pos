@@ -6,6 +6,7 @@ import { useCustomerStore } from '../../store/customerStore';
 import { useShiftStore } from '../../store/shiftStore';
 import { useAuthStore } from '../../store/authStore';
 import { useHrisStore } from '../../store/hrisStore';
+import { useQrOrderStore } from '../../store/qrOrderStore';
 import { formatRupiah } from '../../utils/format';
 import {
   Trash2,
@@ -88,6 +89,7 @@ export default function CartSidebar({
   } = useCartStore();
 
   const products = usePosStore((state) => state.products);
+  const { pendingOrders, setIsPendingModalOpen } = useQrOrderStore();
   const [editingDynamicItem, setEditingDynamicItem] = useState(null);
   const [editingNoteItem, setEditingNoteItem] = useState(null);
   const [editingModifiersItem, setEditingModifiersItem] = useState(null);
@@ -366,6 +368,28 @@ export default function CartSidebar({
               Batal Edit
             </button>
           </div>
+        )}
+
+        {/* Banner Pesanan Meja Menunggu Konfirmasi */}
+        {pendingOrders.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIsPendingModalOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 hover:bg-amber-500/25 text-amber-300 transition-all text-xs font-semibold group shadow-sm animate-pulse cursor-pointer"
+            title="Lihat pesanan meja yang menunggu konfirmasi bukti bayar"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+              </span>
+              <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="truncate font-bold">{pendingOrders.length} Pesanan Meja Menunggu</span>
+            </div>
+            <span className="text-[10px] font-bold bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30 text-amber-300 shrink-0">
+              Tinjau
+            </span>
+          </button>
         )}
 
         {/* Banner Open Bills (jika ada pesanan tertahan) */}

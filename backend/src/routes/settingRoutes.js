@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getSettings, updateSettings, verifySupervisorPin } from '../controllers/settingController.js';
+import { updateQrOrderConfig } from '../controllers/qrOrderController.js';
 import { authenticate, optionalAuthenticate } from '../middlewares/auth.js';
 import { requireRole } from '../middlewares/role.js';
 
@@ -23,6 +24,9 @@ router.get('/', optionalAuthenticate, getSettings);
 
 // Verifikasi PIN otorisasi supervisor (dilindungi rate limiter anti brute-force)
 router.post('/verify-pin', authenticate, pinLimiter, verifySupervisorPin);
+
+// Pengaturan fitur QR Order Meja (Owner & Manager)
+router.put('/qr-order', authenticate, requireRole(['OWNER', 'MANAGER']), updateQrOrderConfig);
 
 // Modifying settings requires OWNER (PRD Section 8)
 router.put('/', authenticate, requireRole(['OWNER']), updateSettings);

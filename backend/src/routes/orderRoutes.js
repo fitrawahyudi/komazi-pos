@@ -9,6 +9,11 @@ import {
   voidOrder,
   refundOrder,
 } from '../controllers/orderController.js';
+import {
+  getPendingQrOrders,
+  confirmQrOrderPayment,
+  rejectQrOrderPayment,
+} from '../controllers/qrOrderController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { requireRole } from '../middlewares/role.js';
 import { validate } from '../middlewares/validate.js';
@@ -21,6 +26,11 @@ import {
 const router = Router();
 
 router.use(authenticate);
+
+// Pesanan QR Order Meja yang menunggu verifikasi bukti transfer
+router.get('/qr-pending', requireRole(['OWNER', 'MANAGER', 'CASHIER']), getPendingQrOrders);
+router.post('/:id/confirm-qr-payment', requireRole(['OWNER', 'MANAGER', 'CASHIER']), confirmQrOrderPayment);
+router.post('/:id/reject-qr-payment', requireRole(['OWNER', 'MANAGER', 'CASHIER']), rejectQrOrderPayment);
 
 router.get('/', getAllOrders);
 router.get('/:id', getOrderById);

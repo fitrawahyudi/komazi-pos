@@ -254,6 +254,7 @@ export async function stockIn(conversation, ctx) {
         qty,
         unitCost,
         note,
+        recordedBy: user.name || 'Staff Bot',
       });
       return {
         ingredient: {

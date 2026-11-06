@@ -78,6 +78,9 @@ export const inventoryService = {
             },
           },
         },
+        cashier: {
+          select: { name: true },
+        },
       },
     });
 
@@ -151,6 +154,7 @@ export const inventoryService = {
             unitCost,
             totalCost,
             note: `Sale: Order #${order.id} (${order.invoiceNo}) - ${item.productName} x${itemQty}`,
+            recordedBy: order.cashier?.name || 'Kasir',
           },
         });
 
@@ -196,6 +200,9 @@ export const inventoryService = {
 
     const order = await client.order.findUnique({
       where: { id: parseInt(orderId, 10) },
+      include: {
+        cashier: { select: { name: true } },
+      },
     });
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
@@ -249,6 +256,7 @@ export const inventoryService = {
           unitCost: mov.unitCost,
           totalCost: mov.totalCost,
           note: `Restock Order #${order.id} (${order.invoiceNo}) - Alasan: ${reason}`,
+          recordedBy: order.cashier?.name || 'Kasir',
         },
       });
     }

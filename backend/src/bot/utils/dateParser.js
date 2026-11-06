@@ -134,7 +134,41 @@ export function parseReportDateInput(input = '') {
   clean = clean.replace(/^\/laporan(?:\s+|$)/i, '').trim();
   if (!clean) return null;
 
-  // Cek pemisah rentang tanggal
+  const lower = clean.toLowerCase();
+  const now = new Date();
+
+  // 1. Dukungan kata kunci periode bahasa Indonesia standar
+  if (lower === 'hari ini' || lower === 'today') {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { startDate, endDate, label: 'Hari Ini', isSingleDay: true, period: 'today', formattedPeriod: 'Hari Ini' };
+  }
+
+  if (lower === 'kemarin' || lower === 'yesterday') {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
+    return { startDate, endDate, label: 'Kemarin', isSingleDay: true, period: 'yesterday', formattedPeriod: 'Kemarin' };
+  }
+
+  if (/^(?:7\s*hari(?:[- ]terakhir)?|7d|seminggu|pekan ini|minggu ini)$/i.test(lower)) {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { startDate, endDate, label: '7 Hari Terakhir', isSingleDay: false, period: '7d', formattedPeriod: '7 Hari Terakhir' };
+  }
+
+  if (/^(?:bulan ini|this month|month)$/i.test(lower)) {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { startDate, endDate, label: 'Bulan Ini', isSingleDay: false, period: 'month', formattedPeriod: 'Bulan Ini' };
+  }
+
+  if (/^(?:bulan lalu|bulan kemarin|last month)$/i.test(lower)) {
+    const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    return { startDate, endDate, label: 'Bulan Lalu', isSingleDay: false, period: 'last_month', formattedPeriod: 'Bulan Lalu' };
+  }
+
+  // 2. Cek pemisah rentang tanggal
   const rangeRegex = /\s+(?:s\/d|sd|sampai|hingga|to|-)\s+/i;
   if (rangeRegex.test(clean)) {
     const parts = clean.split(rangeRegex).map((p) => p.trim());
@@ -159,7 +193,7 @@ export function parseReportDateInput(input = '') {
     }
   }
 
-  // Cek apakah tanggal tunggal
+  // 3. Cek apakah tanggal tunggal
   const single = parseSingleDateToken(clean);
   if (single) {
     const startDate = new Date(single.year, single.month - 1, single.day, 0, 0, 0, 0);
@@ -171,6 +205,18 @@ export function parseReportDateInput(input = '') {
       label,
       isSingleDay: true,
       formattedPeriod: label,
+    };
+  }
+
+  // 4. Fallback ke universal natural date parser
+  const nat = parseNaturalDateQuery(clean, now);
+  if (nat && nat.startDate && nat.endDate) {
+    return {
+      startDate: nat.startDate,
+      endDate: nat.endDate,
+      label: nat.label,
+      isSingleDay: nat.periodType === 'SINGLE_DAY' || nat.isToday,
+      formattedPeriod: nat.label,
     };
   }
 

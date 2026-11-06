@@ -6,6 +6,8 @@
 
 import prisma from '../../config/db.js';
 import { stockService } from '../../services/stock.service.js';
+import { orderService } from '../../services/order.service.js';
+import { profitService } from '../../services/profitService.js';
 import { rupiah } from '../utils/format.js';
 import { findPosKnowledge, formatPosKnowledgeForPrompt } from '../../services/ai/posKnowledgeBase.js';
 import { getLongTermMemoryPrompt } from '../../services/ai/markdownMemoryManager.js';
@@ -21,26 +23,9 @@ import {
  */
 export async function getYesterdaySalesSummary() {
   try {
-    const now = new Date();
-    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
-    const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
-
-    const paidOrders = await prisma.order.findMany({
-      where: {
-        status: { in: ['PAID', 'SERVED', 'COMPLETED'] },
-        createdAt: { gte: startOfYesterday, lte: endOfYesterday },
-      },
-      select: {
-        id: true,
-        total: true,
-      },
-    });
-
-    const totalOrders = paidOrders.length;
-    let totalRevenue = 0;
-    for (const order of paidOrders) {
-      totalRevenue += (Number(order.total) || 0);
-    }
+    const summary = await orderService.getSummary('yesterday');
+    const totalOrders = Number(summary.totalTransactions) || 0;
+    const totalRevenue = Number(summary.totalRevenue) || 0;
     const averageBasket = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
 
     return {
@@ -48,6 +33,8 @@ export async function getYesterdaySalesSummary() {
       totalRevenue,
       totalRevenueFormatted: rupiah(totalRevenue),
       averageBasketFormatted: rupiah(averageBasket),
+      byMethod: summary.byMethod || { CASH: 0, QRIS: 0, TRANSFER: 0 },
+      topProducts: summary.topProducts || [],
       hasSales: totalOrders > 0,
     };
   } catch (err) {
@@ -56,6 +43,8 @@ export async function getYesterdaySalesSummary() {
       totalRevenue: 0,
       totalRevenueFormatted: 'Rp 0',
       averageBasketFormatted: 'Rp 0',
+      byMethod: { CASH: 0, QRIS: 0, TRANSFER: 0 },
+      topProducts: [],
       hasSales: false,
     };
   }
@@ -66,47 +55,9 @@ export async function getYesterdaySalesSummary() {
  */
 export async function getTodaySalesSummary() {
   try {
-    const now = new Date();
-    // Gunakan rentang waktu hari ini berdasarkan UTC/lokal
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    const paidOrders = await prisma.order.findMany({
-      where: {
-        status: 'PAID',
-        createdAt: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
-      },
-      select: {
-        id: true,
-        total: true,
-        payments: {
-          select: {
-            method: true,
-            amount: true,
-          },
-        },
-        createdAt: true,
-      },
-    });
-
-    const totalOrders = paidOrders.length;
-    let totalRevenue = 0;
-    const paymentMethods = {};
-
-    for (const order of paidOrders) {
-      const amount = Number(order.total) || 0;
-      totalRevenue += amount;
-      if (order.payments && order.payments.length > 0) {
-        for (const p of order.payments) {
-          const method = p.method || 'LAINNYA';
-          paymentMethods[method] = (paymentMethods[method] || 0) + (Number(p.amount) || 0);
-        }
-      }
-    }
-
+    const summary = await orderService.getSummary('today');
+    const totalOrders = Number(summary.totalTransactions) || 0;
+    const totalRevenue = Number(summary.totalRevenue) || 0;
     const averageBasket = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
 
     return {
@@ -114,7 +65,11 @@ export async function getTodaySalesSummary() {
       totalRevenue,
       totalRevenueFormatted: rupiah(totalRevenue),
       averageBasketFormatted: rupiah(averageBasket),
-      paymentMethods,
+      byMethod: summary.byMethod || { CASH: 0, QRIS: 0, TRANSFER: 0 },
+      topProducts: summary.topProducts || [],
+      unpaidRevenue: summary.unpaidRevenue || 0,
+      unpaidTransactions: summary.unpaidTransactions || 0,
+      hasSales: totalOrders > 0,
     };
   } catch (err) {
     return {
@@ -122,7 +77,11 @@ export async function getTodaySalesSummary() {
       totalRevenue: 0,
       totalRevenueFormatted: 'Rp 0',
       averageBasketFormatted: 'Rp 0',
-      paymentMethods: {},
+      byMethod: { CASH: 0, QRIS: 0, TRANSFER: 0 },
+      topProducts: [],
+      unpaidRevenue: 0,
+      unpaidTransactions: 0,
+      hasSales: false,
       error: err.message,
     };
   }
@@ -269,6 +228,39 @@ export async function buildAiSystemContext(user, userQuery = '', options = {}) {
     ? `• Rekap Penjualan Kemarin (Performa H-1): ${yesterdaySales.hasSales ? `${yesterdaySales.totalRevenueFormatted} (${yesterdaySales.totalOrders} transaksi lunas)` : 'Tidak ada transaksi lunas (tutup/libur)'}\n`
     : '';
 
+  const topProductsLine = sales.topProducts && sales.topProducts.length > 0
+    ? `• Menu Paling Diminati Hari Ini: ${sales.topProducts.map((p) => `${p.name} (${p.qty}x)`).join(', ')}\n`
+    : '';
+  const byMethodLine = sales.byMethod
+    ? `• Rincian Metode Bayar Hari Ini: Tunai: ${rupiah(sales.byMethod.CASH || 0)}, QRIS: ${rupiah(sales.byMethod.QRIS || 0)}, Transfer: ${rupiah(sales.byMethod.TRANSFER || 0)}\n`
+    : '';
+  const unpaidLine = sales.unpaidTransactions > 0
+    ? `• Tagihan Belum Lunas (Open Bill): ${sales.unpaidTransactions} pesanan (${rupiah(sales.unpaidRevenue)})\n`
+    : '';
+
+  // Injeksi konteks profit / laba rugi P&L jika pengguna menanyakannya
+  const isProfitQuery = /(?:laba|rugi|profit|pnl|p&l|cogs|hpp|keuntungan|margin|pengeluaran|beban)/i.test(userQuery);
+  let profitSection = '';
+  if (isProfitQuery && isManagerOrOwner) {
+    try {
+      const pReport = await profitService.calculateProfitAndLoss({
+        period: parsedDate && parsedDate.isHistorical ? 'custom' : 'today',
+        startDate: parsedDate?.startDate || null,
+        endDate: parsedDate?.endDate || null,
+      });
+      if (pReport?.summary) {
+        const ps = pReport.summary;
+        profitSection = `\n\n=== DATA ESTIMASI LABA BERSIH & BEBAN OPERASIONAL (P&L) ===
+• Omzet Penjualan (Gross Revenue): ${rupiah(ps.grossRevenue)} (${ps.totalOrders} transaksi)
+• Beban Pokok Penjualan (HPP / COGS): -${rupiah(ps.cogs)}
+• Laba Kotor (Gross Profit): ${rupiah(ps.grossProfit)} (Gross Margin: ${ps.grossMarginPct}%)
+• Beban Operasional: -${rupiah(ps.expenses?.totalOperatingExpenses || 0)} (Kas keluar: ${rupiah(ps.expenses?.pettyCashOut || 0)}, Waste: ${rupiah(ps.expenses?.wasteCost || 0)}, Biaya shift: ${rupiah(ps.expenses?.laborCost || 0)})
+• Estimasi Laba Bersih (Net Profit): ${rupiah(ps.netProfit)} (Net Margin: ${ps.netMarginPct}%)
+• Status Finansial: ${ps.isProfitable ? 'PROFIT / UNTUNG' : 'DEFISIT'}`;
+      }
+    } catch {}
+  }
+
   return `
 Kamu adalah Komazi, asisten AI resmi untuk operasional kedai kopi & ruang kerja "Komazi Coffee & Workspace".
 Kamu sedang berbicara langsung dengan: ${userGreeting} (Peran resmi: ${user?.role || 'STAFF'}).
@@ -282,7 +274,7 @@ ${memorySection}
 • Total Pesanan Selesai (PAID): ${sales.totalOrders} transaksi
 • Total Omset Penjualan Hari Ini: ${sales.totalRevenueFormatted}
 • Rata-rata Nilai Transaksi: ${sales.averageBasketFormatted}
-${yesterdayLine}${historicalSection}
+${topProductsLine}${byMethodLine}${unpaidLine}${yesterdayLine}${historicalSection}${profitSection}
 
 === STATUS BAHAN BAKU & INVENTARIS ===
 ${lowStockText}

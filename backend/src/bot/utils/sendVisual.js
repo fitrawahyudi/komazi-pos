@@ -3,9 +3,9 @@ import { bot } from '../index.js';
 import prisma from '../../config/db.js';
 
 /**
- * Helper to safely resolve image buffer with timeout guard (default 8 seconds)
+ * Helper to safely resolve image buffer with timeout guard (default 15 seconds)
  */
-async function resolveBufferSafe(imageBufferPromise, timeoutMs = 8000) {
+async function resolveBufferSafe(imageBufferPromise, timeoutMs = 15000) {
   if (!imageBufferPromise) return null;
   try {
     const buffer = await Promise.race([

@@ -14,6 +14,8 @@ import ThermalReceiptModal from '../components/pos/ThermalReceiptModal';
 import SplitBillModal from '../components/pos/SplitBillModal';
 import OpenBillsModal from '../components/pos/OpenBillsModal';
 import MergeBillModal from '../components/pos/MergeBillModal';
+import PendingQrOrdersModal from '../components/orders/PendingQrOrdersModal';
+import { useQrOrderStore } from '../store/qrOrderStore';
 import PosMenuSkeleton from '../components/ui/loading/skeletons/PosMenuSkeleton';
 import OpenShiftGateModal from '../components/shift/OpenShiftGateModal';
 import ShiftModal from '../components/shift/ShiftModal';
@@ -51,6 +53,14 @@ export default function PosPage() {
   const hasClockedIn = isOwner || !isAttendanceEnforced || Boolean(myTodaySchedule?.hasClockedIn || myTodayAttendance?.clockIn);
   const isAttendanceBlocked = !isOwner && isAttendanceEnforced && !isScheduleBlocked && myTodaySchedule !== null && !hasClockedIn;
 
+  const {
+    pendingOrders,
+    isPendingModalOpen,
+    setIsPendingModalOpen,
+    fetchPendingOrders,
+    initSocketSync: initQrSocketSync,
+  } = useQrOrderStore();
+
   const [activeModalProduct, setActiveModalProduct] = useState(null);
   const [activeDynamicProduct, setActiveDynamicProduct] = useState(null);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
@@ -83,6 +93,8 @@ export default function PosPage() {
     sync();
     fetchActiveShift?.();
     fetchMyTodaySchedule?.();
+    fetchPendingOrders?.();
+    initQrSocketSync?.();
     if (user?.id) {
       fetchTodayAttendance?.(user.id);
     }
@@ -102,6 +114,7 @@ export default function PosPage() {
         lastSync = Date.now();
         sync();
         fetchActiveShift?.();
+        fetchPendingOrders?.();
         const pState = usePosStore.getState();
         if (!pState.products || pState.products.length === 0) {
           pState.fetchProducts?.();
@@ -219,6 +232,36 @@ export default function PosPage() {
           </div>
         )}
 
+        {/* Sticky Banner Pesanan Meja Baru Menunggu Verifikasi */}
+        {pendingOrders.length > 0 && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsPendingModalOpen(true)}
+            className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/25 via-orange-500/20 to-amber-500/25 border-2 border-amber-500/60 flex items-center justify-between text-amber-200 text-xs shadow-lg shadow-amber-500/10 animate-pulse cursor-pointer hover:border-amber-400 transition-all select-none shrink-0"
+            title="Klik untuk membuka daftar pesanan meja mandiri yang menunggu verifikasi bukti transfer"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black shrink-0 shadow text-base">
+                🔔
+              </div>
+              <div className="min-w-0">
+                <strong className="block text-white text-xs sm:text-sm font-black truncate">
+                  {pendingOrders.length} Pesanan Meja Menunggu Verifikasi Bukti Bayar!
+                </strong>
+                <span className="text-[11px] text-amber-300/90 truncate block">
+                  Pelanggan telah kirim bukti transfer. Klik untuk verifikasi & kirim ke barista/dapur.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              <span className="px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-black shadow hover:bg-amber-400">
+                Tinjau &rarr;
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Search Bar & Mobile Cart Toggle */}
         <div className="flex items-center gap-2">
           {/* Search Input */}
@@ -256,6 +299,22 @@ export default function PosPage() {
               </span>
             )}
           </button> */}
+
+          {/* QR Table Orders Indicator */}
+          {pendingOrders.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsPendingModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 text-xs font-bold shadow-sm animate-pulse cursor-pointer shrink-0 transition-colors"
+              title="Ada pesanan mandiri meja yang menunggu verifikasi bukti transfer"
+            >
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Pesanan Meja:</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black">
+                {pendingOrders.length}
+              </span>
+            </button>
+          )}
 
           {/* Quick Counter (desktop) */}
           <div className="hidden xl:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-komazi-surface border border-komazi-border text-xs text-komazi-muted shrink-0">
@@ -561,6 +620,14 @@ export default function PosPage() {
           if (user?.id) await fetchTodayAttendance?.(user.id);
           toast.success('Presensi berhasil diverifikasi! Sesi kasir siap digunakan.');
         }}
+      />
+
+      {/* Modal Tinjau Bukti Bayar Pesanan Meja */}
+      <PendingQrOrdersModal
+        isOpen={isPendingModalOpen}
+        onClose={() => setIsPendingModalOpen(false)}
+        pendingOrders={pendingOrders}
+        onRefresh={fetchPendingOrders}
       />
     </div>
   );

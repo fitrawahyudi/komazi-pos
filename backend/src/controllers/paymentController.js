@@ -183,7 +183,8 @@ export async function handlePaymentWebhook(req, res) {
           tx,
           order.id,
           order.invoiceNo,
-          activeItems
+          activeItems,
+          order.cashier?.name || req.user?.name
         );
       }
 
